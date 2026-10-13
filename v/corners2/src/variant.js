@@ -43,8 +43,11 @@
       const v = SR.view;
       if (SR.inToday()) return false;
       if (v.bench && v.bench.tab === 'blocks') return true;
-      return v.zoom === 'day' && !v.bench && !SR.trayCollapsed();
+      return v.zoom === 'day' && !v.bench && !window.SR_kitAway;
     };
+    /* in the day view the rack stands beside the day until you put it away; this device remembers */
+    try { window.SR_kitAway = localStorage.getItem('sundayreset.v2.kitAway') === '1'; } catch (e) { /* fine */ }
+    const kitAway = (away) => { window.SR_kitAway = away; try { localStorage.setItem('sundayreset.v2.kitAway', away ? '1' : ''); } catch (e) { /* fine */ } };
     function toBoard() {
       SRFocus.close(); Kit.closeSheet(); closeMenu();
       if (SR.inToday()) SR.setMode('planner');
@@ -52,14 +55,14 @@
     }
     function blockLibrary() {
       if (libOpen()) {
-        if (SR.view.zoom === 'day' && !SR.view.bench) SR.setTrayCollapsed(true); else SR.view.bench = null;
+        if (SR.view.zoom === 'day' && !SR.view.bench) kitAway(true); else SR.view.bench = null;
         SR.Snd.slide && SR.Snd.slide();
         SR.render();
         return;
       }
       toBoard();
       const v = SR.view;
-      if (v.zoom === 'day') { v.bench = null; SR.setTrayCollapsed(false); }
+      if (v.zoom === 'day') { v.bench = null; kitAway(false); }
       else { v.tab = 'blocks'; v.level = null; v.bench = { tab: 'blocks', level: null }; }
       SR.Snd.zoom && SR.Snd.zoom(false);
       SR.render();
@@ -294,6 +297,7 @@
       meCircle.textContent = name.slice(0, 1).toUpperCase(); meName.textContent = name.split(' ')[0];
       me.title = 'Settings and everything else';
       document.body.classList.toggle('c-pomo-on', running);
+      document.body.classList.toggle('c-resetting', !!v.reset);
       requestAnimationFrame(() => { measure(); place(); });
     }
     /* Today's band and dock make room for the corners beside them */
@@ -302,7 +306,12 @@
       s.setProperty('--c-tl-w', me.offsetWidth + 'px');
       s.setProperty('--c-tr-w', tr.offsetWidth + 'px');
       s.setProperty('--c-bl-w', bl.offsetWidth + 'px');
+      const rack = document.getElementById('rack');
+      const rh = rack && SR.view.reset ? rack.offsetHeight + 'px' : '0px';
+      if (s.getPropertyValue('--c-rack-h') !== rh) { s.setProperty('--c-rack-h', rh); SR.layoutInsets(); }
     }
+    /* the reset's steps change height from step to step, and the corners ride on top of them */
+    if (window.ResizeObserver && document.getElementById('rack')) new ResizeObserver(() => requestAnimationFrame(measure)).observe(document.getElementById('rack'));
     Kit.renders.push(sync);
   });
 })();

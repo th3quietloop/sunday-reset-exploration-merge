@@ -120,7 +120,9 @@
 
 /* no flat tray in V2: only the reset's steps and Today's dock use the bar */
 body.v-corners2:not(.k-today) .rack:not(.resetting) { display: none !important; }
-.rack { bottom: 80px; left: 16px; right: 16px; }
+.rack { bottom: 16px; left: 16px; right: 16px; }
+/* during the Sunday Reset its steps sit at the very bottom and the corners ride on top of them */
+body.c-resetting .c-bl, body.c-resetting .c-br { bottom: calc(var(--c-rack-h, 0px) + 26px); }
 body.k-today .rack { bottom: 16px; }
 body.k-today .rack.collapsed { left: 16px; }
 /* Today: the band sits beside you on the top; Today's dock sits beside a running timer on the bottom; the corner Add replaces Today's own */

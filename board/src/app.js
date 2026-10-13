@@ -540,9 +540,12 @@
         const fly = lastZoom !== 'day' || lastDay !== view.focus;
         W.setDay(daySpec(view.focus, previewDays && previewDays[view.focus]), { fly, onLand: landTick });
       } else if (lastZoom === 'day') W.setDay(null);
-      W.setAlone(inToday() || phoneDay());
-      W.setBench(view.bench ? benchSpec() : view.zoom === 'day' && !inToday() && !phoneDay() ? kitSpec() : null);
-      W.setBenchOpen(!!view.bench || (view.zoom === 'day' && !inToday() && !phoneDay()));
+      /* a version of the board can put the day's Block library away (window.SR_kitAway): the day then stands alone, as in Today */
+      const kitAway = view.zoom === 'day' && !view.bench && !!window.SR_kitAway;
+      W.setAlone(inToday() || phoneDay() || kitAway);
+      const dayKit = view.zoom === 'day' && !inToday() && !phoneDay() && !kitAway;
+      W.setBench(view.bench ? benchSpec() : dayKit ? kitSpec() : null);
+      W.setBenchOpen(!!view.bench || dayKit);
       W.setZoom(view.zoom, M.weekday(view.focus));
       if (W.layout !== 'week') W.showLayout('week', W.rowWorld(M.weekday(view.focus)), tick);
       else if (!previewDays && lastWeek && lastWeek !== ws && view.zoom === 'week') W.rippleWeek(ws > lastWeek ? 1 : -1);
