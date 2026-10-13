@@ -1,0 +1,281 @@
+/* Corners V3: V2 with the Sunday Reset as a moment. From V2: you top left, the date in the middle, the zoom top right; hours yours bottom left; Add,
+   To-dos, Block library, and the Sunday Reset bottom right. Pieces come out beside the board, never on a flat tray. */
+/* == charcoal, the board's own HUD color, in place of the kit's espresso == */
+:root {
+  --esp: #252928;
+  --esp-2: #2E3332;
+  --esp-3: #3A403E;
+  --esp-glass: rgba(37, 41, 40, 0.92);
+  --cream: #FFFFFF;
+  --cream-2: #B8B0A3;
+  --panel: rgba(37, 41, 40, 0.93);
+  --panel-2: rgba(255, 255, 255, 0.07);
+  --panel-3: rgba(255, 255, 255, 0.13);
+}
+.side, .drawer, .sheet, .quick, .kinds-row, .agenda { background: rgba(37, 41, 40, 0.96) !important; }
+.side { background: rgba(37, 41, 40, 0.9) !important; }
+.rack { background: rgba(37, 41, 40, 0.92); }
+.band-in { background: rgba(37, 41, 40, 0.94) !important; }
+.scrim { background: rgba(14, 16, 16, 0.3) !important; }
+.k-scrim { background: rgba(14, 16, 16, 0.32); }
+.k-sheet { background: rgba(37, 41, 40, 0.97); box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.7); }
+.k-chip { box-shadow: 0 10px 28px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+
+.c-tl { position: absolute; z-index: 30; top: 16px; left: 16px; display: flex; gap: 10px; align-items: stretch; }
+.c-tl .k-chip { position: static; }
+/* the date, and in the day view its kind of day and the week's seven days under it */
+.c-tc.c-dayview { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px 8px; }
+.c-tc .k-date { justify-content: space-between; }
+.c-kinds:empty, .c-days:empty { display: none; }
+.c-kinds { display: flex; justify-content: center; }
+.c-kinds #kinds { position: relative; margin: 0; }
+.c-days .pills { margin: 0; padding: 0; gap: 4px; }
+.c-days .daypill { min-height: 46px; padding: 6px 0 9px; min-width: 40px; }
+/* saved: a small dot on your circle, green when it's kept, gold while saving, red when it isn't */
+.k .c-me { position: relative; }
+.c-me > .c-save { position: absolute; left: 33px; top: 33px; }
+.c-save { width: 11px; height: 11px; border-radius: 50%; background: #5FBF8A; box-shadow: 0 0 0 2px var(--esp); }
+.c-save.saving, .c-save.offline { background: var(--k-gold); }
+.c-save.error { background: #E0563F; }
+.c-save.preview { background: var(--cream-2); }
+.k .c-saveline { display: flex; align-items: center; gap: 7px; padding: 2px 0; font-size: 13px; font-weight: 400; color: var(--cream-2); text-align: left; }
+.k .c-saveline:hover { color: var(--cream); text-decoration: underline; }
+.c-saveline .c-save { flex: none; width: 8px; height: 8px; box-shadow: none; }
+.c-tc { top: 16px; left: 50%; transform: translateX(-50%); }
+.c-tr { top: 16px; right: 16px; }
+.c-bl { bottom: 16px; left: 16px; }
+.c-br { bottom: 16px; right: 16px; }
+.k-chip[hidden], .c-bl > [hidden] { display: none !important; }
+.c-hours { padding: 6px 14px 6px 12px; }
+.c-br .k-reset { padding: 10px 16px; border-radius: 14px; margin-left: 4px; }
+
+/* your account: the obvious door to Settings, in the same espresso as every other chip */
+.k .c-me { display: flex; align-items: center; gap: 9px; padding: 6px 14px 6px 6px; border-radius: 18px; background: var(--esp-glass); color: var(--cream); font-size: 14px; font-weight: 600; cursor: pointer; }
+.k .c-me:hover { background: rgba(50, 55, 54, 0.95); }
+.k .c-me[aria-expanded="true"] { background: var(--cream); color: var(--esp); }
+.c-me canvas { width: 12px; height: 12px; }
+.c-me-dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--k-gold); color: #2A1D10; font-weight: 700; font-size: 15px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
+.c-me-dot.big { width: 44px; height: 44px; font-size: 19px; }
+.c-menu { position: absolute; z-index: 92; top: 76px; left: 16px; width: 300px; max-height: calc(100vh - 100px); overflow-y: auto; padding: 8px; border-radius: 20px; background: rgba(37, 41, 40, 0.97); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6); animation: cmenu 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes cmenu { from { transform: translateY(-6px); opacity: 0; } }
+.c-menu-head { display: flex; align-items: center; gap: 12px; padding: 10px 10px 14px; }
+.c-menu-head b { display: block; font-size: 16px; font-weight: 600; }
+.c-mi { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 12px; font-size: 14px; font-weight: 500; text-align: left; }
+.c-mi:hover, .c-mi:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
+.c-mi.first { background: rgba(255, 255, 255, 0.08); font-weight: 600; margin-bottom: 4px; }
+.c-mi.first:hover { background: rgba(255, 255, 255, 0.14); }
+.c-mlabel { padding: 10px 12px 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream-2); }
+.c-menu hr { border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 6px 4px; }
+
+/* the stacks sheet holds still: one size, a fixed grid, only the cards scroll */
+.k-sheet.c-fixed { width: min(1120px, calc(100vw - 48px)); height: min(700px, calc(100vh - 80px)); max-height: none; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.c-head { flex: none; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; padding-right: 50px; }
+.c-head .k-lede { margin-bottom: 0; }
+.c-tools { display: flex; gap: 10px; align-items: center; }
+.c-filter { background: rgba(255, 255, 255, 0.06); padding: 4px; border-radius: 14px; }
+.c-filter button { padding: 8px 14px; }
+.c-find { font: 400 15px var(--k-font); padding: 11px 14px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.05); color: var(--cream); width: 220px; }
+.c-find::placeholder { color: var(--cream-2); }
+.c-find:focus-visible { outline: 2.5px solid var(--k-gold); outline-offset: 1px; }
+.c-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -32px; padding: 4px 32px 32px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.2) transparent; }
+.c-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px 16px; align-content: start; }
+.c-sect { grid-column: 1 / -1; margin: 6px 0 -6px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cream-2); align-self: end; }
+.c-card { position: relative; height: 176px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 16px 14px; border-radius: 20px; background: #F6EEE2 !important; color: #2A1D10 !important; text-align: left; box-shadow: 0 5px 0 -1px #E4D6C2, 0 9px 0 -2px #CDBCA4, 0 18px 30px -16px rgba(0, 0, 0, 0.6); transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.14s; animation: ccard 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 16ms); min-width: 0; }
+@keyframes ccard { from { transform: translateY(8px); opacity: 0; } }
+.c-card:hover { transform: translateY(-3px); box-shadow: 0 5px 0 -1px #E4D6C2, 0 9px 0 -2px #CDBCA4, 0 24px 36px -16px rgba(0, 0, 0, 0.7); }
+.c-card-top { display: flex; width: 100%; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.c-mark { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--c); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.c-mark canvas { width: 22px; height: 22px; }
+.c-n { min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; background: #252928; color: #FFFFFF; font-size: 13px; font-weight: 600; display: grid; place-items: center; }
+.c-card b { font-family: 'Gabarito', var(--k-font); font-size: 21px; font-weight: 800; letter-spacing: -0.01em; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.c-line { font-size: 13px; font-weight: 600; color: #5B4632; }
+.c-peek { margin-top: auto; padding-top: 9px; width: 100%; border-top: 1px solid #E2D4C0; font-size: 13px; color: #5B4632; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.c-new { background: transparent !important; color: var(--cream) !important; border: 2px dashed rgba(255, 255, 255, 0.25); box-shadow: none; align-items: center; justify-content: center; text-align: center; }
+.c-new:hover { box-shadow: none; border-color: rgba(255, 255, 255, 0.45); }
+.c-new .c-line { color: var(--cream-2); }
+.c-new b { font-family: var(--k-font); font-size: 16px; font-weight: 600; }
+.c-plus { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.1); font-size: 24px; margin-bottom: 6px; }
+.c-sect:first-child { margin-top: 0; }
+.c-none { grid-column: 1 / -1; color: var(--cream-2); font-size: 15px; }
+
+/* the Pomodoro, beside the clock */
+.c-pomo:hover { background: rgba(255, 255, 255, 0.08); }
+.c-pdot { width: 10px; height: 10px; border-radius: 50%; background: #E0563F; box-shadow: 0 0 0 3px rgba(224, 86, 63, 0.25); animation: cpulse 2s ease-in-out infinite; }
+.c-pomo.rest .c-pdot { background: #7CC6A4; box-shadow: 0 0 0 3px rgba(124, 198, 164, 0.25); }
+@keyframes cpulse { 50% { box-shadow: 0 0 0 6px rgba(224, 86, 63, 0.08); } }
+.c-pt { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--k-gold); }
+.c-pl { font-size: 13px; color: var(--cream-2); }
+.c-timer { position: absolute; z-index: 70; width: 320px; padding: 20px 20px 18px; border-radius: 24px; background: rgba(37, 41, 40, 0.95); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.65); display: flex; flex-direction: column; gap: 10px; animation: cmenu 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.c-tx { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border-radius: 50%; background: rgba(255, 255, 255, 0.1) !important; display: grid; place-items: center; }
+.c-tx canvas { width: 14px; height: 14px; }
+.c-tkick { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #E0563F; }
+.c-timer.rest .c-tkick { color: #7CC6A4; }
+.c-ttime { font-family: 'Gabarito', var(--k-font); font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.c-tphase { font-size: 14px; color: var(--cream-2); }
+.c-tbar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.c-tbar i { display: block; height: 100%; background: #E0563F; border-radius: 4px; transition: width 0.5s linear; }
+.c-timer.rest .c-tbar i { background: #7CC6A4; }
+.c-tdots { display: flex; gap: 6px; }
+.c-tdots i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+.c-tdots i.did { background: var(--cream-2); }
+.c-tdots i.now { background: #E0563F; }
+.c-timer.rest .c-tdots i.now { background: #7CC6A4; }
+.c-tacts { display: flex; gap: 8px; margin-top: 4px; }
+.c-tgo { flex: 1; padding: 12px 16px; border-radius: 14px; background: var(--k-gold) !important; color: #2A1D10 !important; font-size: 15px; font-weight: 600; }
+.c-tgo:hover { background: #F7DA93 !important; }
+.c-tq { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.08) !important; font-size: 14px; font-weight: 600; }
+.c-tq:hover { background: rgba(255, 255, 255, 0.16) !important; }
+.c-tpre { background: rgba(255, 255, 255, 0.06); padding: 4px; border-radius: 12px; }
+.c-tpre button { flex: 1; padding: 7px 10px; font-size: 13px; }
+.c-town { display: grid; grid-template-columns: auto 30px 1fr 30px; align-items: center; gap: 4px 6px; font-size: 13px; }
+.c-tlab { color: var(--cream-2); padding-right: 6px; }
+.c-tstep { width: 30px; height: 30px; border-radius: 9px; background: rgba(255, 255, 255, 0.08) !important; font-size: 16px; font-weight: 600; }
+.c-tstep:hover { background: rgba(255, 255, 255, 0.16) !important; }
+.c-tv { text-align: center; font-weight: 600; }
+
+/* no flat tray in V2: only the reset's steps and Today's dock use the bar */
+body.v-corners3:not(.k-today) .rack:not(.resetting) { display: none !important; }
+.rack { bottom: 16px; left: 16px; right: 16px; }
+/* during the Sunday Reset the corners step away: the reset has the screen */
+body.c-resetting .c-tl, body.c-resetting .c-tc, body.c-resetting .c-tr, body.c-resetting .c-bl, body.c-resetting .c-br { display: none !important; }
+body.k-today .rack { bottom: 16px; }
+body.k-today .rack.collapsed { left: 16px; }
+/* Today: the band sits beside you on the top; Today's dock sits beside a running timer on the bottom; the corner Add replaces Today's own */
+body.k-today .band { top: 16px; left: calc(var(--c-tl-w, 140px) + 26px); transform: none; width: min(820px, calc(100vw - var(--c-tl-w, 140px) - var(--c-tr-w, 420px) - 72px)); }
+body.k-today.c-pomo-on .rack.collapsed { left: calc(var(--c-bl-w, 180px) + 26px); }
+#fab { display: none !important; }
+.c-bl .c-pomo { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 12px; border-radius: 12px; }
+@media (max-width: 1180px) { .c-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .c-me-name { display: none; } }
+@media (max-width: 960px) { .c-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .c-bl { display: none; } }
+
+/* == V3: the Sunday Reset chip, one per week's moment == */
+.k .c-rchip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; margin-left: 4px; border-radius: 14px; font-size: 14px; white-space: nowrap; transition: background 0.15s; }
+.c-rchip b { font-weight: 600; }
+.c-rchip .c-rmeta { font-weight: 400; opacity: 0.85; }
+.c-rchip canvas { width: 16px !important; height: 16px !important; }
+.k .c-rchip.sunday { background: var(--k-gold); color: #252928; }
+.k .c-rchip.sunday:hover { background: #F7DA93; }
+.k .c-rchip.snoozed { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28); }
+.k .c-rchip.snoozed:hover { background: rgba(255, 255, 255, 0.08); }
+.c-rdot { width: 8px; height: 8px; border-radius: 50%; background: var(--k-gold); }
+.k .c-rchip.progress { background: rgba(124, 198, 164, 0.2); color: #CFEBDD; }
+.k .c-rchip.progress:hover { background: rgba(124, 198, 164, 0.3); }
+.k .c-rchip.midweek { background: rgba(242, 207, 122, 0.14); color: #F5DFA6; }
+.k .c-rchip.midweek:hover { background: rgba(242, 207, 122, 0.22); }
+.k .c-rchip.plan b { font-weight: 500; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+.k .c-rchip.plan:hover { background: rgba(255, 255, 255, 0.08); }
+.k .c-rchip.quiet:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* == V3: the intro, the whole reset on one page before it starts == */
+.k-sheet.c-intro { width: min(1180px, calc(100vw - 48px)); padding: 64px 72px 60px; border-radius: 30px; background: rgba(28, 31, 30, 0.98); }
+.c-intro-in { display: grid; grid-template-columns: 1.15fr 1fr; gap: 64px; align-items: start; }
+.c-kick { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cream-2); }
+.c-kick.gold { color: var(--k-gold); }
+.k-sheet .c-intro-h { margin: 16px 0 0; font-size: clamp(44px, 5.4vw, 72px); line-height: 1.02; font-weight: 700; letter-spacing: -0.035em; }
+.c-intro-p { margin: 22px 0 0; font-size: 17px; line-height: 1.5; color: var(--cream-2); max-width: 46ch; }
+.c-intro-note { margin-top: 30px; }
+.c-intro-note p { margin: 6px 0 0; font-size: 16px; line-height: 1.4; }
+.c-intro-acts { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
+.k-sheet .c-go { padding: 15px 26px; border-radius: 16px; background: var(--k-gold); color: #252928; font-size: 16px; font-weight: 600; }
+.k-sheet .c-go:hover { background: #F7DA93; }
+.k-sheet .c-ghost { padding: 13px 24px; border-radius: 16px; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); font-size: 16px; font-weight: 600; }
+.k-sheet .c-ghost:hover { background: rgba(255, 255, 255, 0.07); }
+.c-intro-r { padding-top: 26px; }
+.c-steplist { list-style: none; margin: 16px 0 0; padding: 0; }
+.c-steplist li { display: flex; align-items: center; gap: 16px; padding: 15px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.09); font-size: 17px; }
+.c-snum { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 14px; font-weight: 700; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+.c-sname { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.c-sname b { font-weight: 600; }
+.c-sname small { font-size: 13px; color: var(--cream-2); }
+.c-rchip[hidden] { display: none !important; }
+.c-smin { color: var(--cream-2); font-size: 14px; }
+.c-intro-small { margin: 18px 0 0; font-size: 14px; line-height: 1.5; color: var(--cream-2); }
+
+/* == V3: while it runs, the reset takes the screen: its step on the left, the live week on the right == */
+body.c-resetting .rack.resetting { top: 16px; bottom: 16px; left: 16px; right: auto; width: 440px; height: auto; padding: 26px 24px 20px; border-radius: 26px; display: flex; flex-direction: column; }
+body.c-resetting .rack.resetting .rack-top { display: contents; }
+body.c-resetting .rack.resetting .reset-head { order: 1; flex: none; display: block; }
+body.c-resetting .rack.resetting .reset-words { display: flex; flex-direction: column; gap: 8px; }
+body.c-resetting .rack.resetting .reset-title { font-size: 34px; line-height: 1.05; white-space: normal; letter-spacing: -0.01em; }
+body.c-resetting .rack.resetting .reset-line { white-space: normal; overflow: visible; font-size: 15px; line-height: 1.45; }
+body.c-resetting .rack.resetting .reset-how { display: none; }
+body.c-resetting .rack.resetting .rack-body { order: 2; flex: 1; min-height: 0; flex-wrap: wrap; align-content: flex-start; overflow-x: hidden; overflow-y: auto; margin: 18px -6px 0; padding: 4px 6px 12px; -webkit-mask-image: none; mask-image: none; }
+body.c-resetting .rack.resetting .rack-body > * { flex: 0 0 auto; }
+body.c-resetting .rack.resetting .rack-body .stat { flex: 1 1 100%; }
+body.c-resetting .rack.resetting .rack-body .rack-note { max-width: none; flex: 1 1 100%; }
+body.c-resetting .rack.resetting .rack-body .sep { flex: 1 1 100%; height: 1px; width: auto; }
+body.c-resetting .rack.resetting .rack-right { order: 3; flex: none; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, 0.09); justify-content: flex-end; flex-wrap: wrap; }
+body.c-resetting .rack.resetting .dots { display: none; }
+body.c-resetting .rack.resetting .rack-right .go { padding: 12px 18px; }
+/* in the panel, sections stack and their rows wrap; the week's dinners read as a list of seven nights */
+body.c-resetting .rack.resetting .rsec { flex: 1 1 100%; min-width: 0; }
+body.c-resetting .rack.resetting .rsec + .rsec { margin: 14px 0 0; }
+body.c-resetting .rack.resetting .rsec-row { flex-wrap: wrap; }
+body.c-resetting .rack.resetting .slots { flex: 1 1 100%; flex-direction: column; gap: 6px; }
+body.c-resetting .rack.resetting .slot { width: auto; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 10px 12px; }
+body.c-resetting .rack.resetting .slot .dn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.c-resetting .rack.resetting .slot .ck { text-align: right; }
+body.c-resetting .rack.resetting .slot .slot-plus { justify-self: start; }
+body.c-resetting .rack.resetting .rsec-row > .cta { flex: 1 1 100%; width: auto; }
+.c-repeat { margin: 0 0 6px; flex: 1 1 100% !important; }
+.c-repeat b { font-weight: 800; }
+
+/* the named line of steps across the top */
+.c-steps { top: 16px; left: calc(472px + (100vw - 472px) / 2); transform: translateX(-50%); gap: 0; padding: 7px 10px; max-width: calc(100vw - 500px); }
+.c-steps[hidden] { display: none !important; }
+.k .c-sbtn { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 12px; font-size: 13px; color: var(--cream-2); white-space: nowrap; }
+.k .c-sbtn:hover { background: rgba(255, 255, 255, 0.08); color: var(--cream); }
+.c-sdot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.1); color: var(--cream); }
+.c-sdot canvas { width: 12px !important; height: 12px !important; }
+.k .c-sbtn.did { color: var(--cream); }
+.c-sbtn.did .c-sdot { background: var(--cream); }
+.k .c-sbtn.on { color: var(--cream); font-weight: 600; }
+.c-sbtn.on .c-sdot { background: var(--k-gold); color: #252928; }
+.c-sline { width: 18px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.14); flex: none; }
+.c-sline.did { background: rgba(255, 255, 255, 0.6); }
+@media (max-width: 1240px) { .c-sbtn span:not(.c-sdot) { display: none; } .c-sbtn.on span { display: inline !important; } }
+
+/* == V3: This week's plan == */
+.k-sheet.c-plan { width: min(1180px, calc(100vw - 48px)); max-height: calc(100vh - 56px); padding: 40px 44px 36px; }
+.c-plan-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; padding-right: 48px; margin-bottom: 26px; }
+.c-plan-head h2 { margin-top: 8px; font-size: 40px; }
+.c-plan-head .k-lede { margin: 6px 0 0; }
+.c-plan-acts { display: flex; gap: 10px; }
+.c-plan-acts .c-go, .c-plan-acts .c-ghost { padding: 12px 20px; font-size: 15px; }
+.c-plan-grid { display: grid; grid-template-columns: 1fr 1fr 0.9fr; gap: 16px; align-items: start; }
+.c-pcol { display: flex; flex-direction: column; gap: 16px; }
+.c-pcard { padding: 22px 24px; border-radius: 22px; background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.c-pcard h3 { margin: 0 0 10px; font-size: 18px; font-weight: 600; }
+.k-sheet .c-prow { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); text-align: left; border-radius: 8px; }
+.k-sheet .c-prow:hover { background: rgba(255, 255, 255, 0.05); }
+.c-pday { width: 34px; flex: none; font-size: 13px; font-weight: 600; color: var(--cream-2); }
+.c-pname { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-pname.quiet { color: var(--cream-2); }
+.c-who { flex: none; min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.c-who.me { background: var(--k-gold); color: #252928; }
+.c-who.them { background: #C9A6D4; color: #2A1F30; }
+.c-who.word { background: rgba(255, 255, 255, 0.1); color: var(--cream); font-weight: 600; }
+.c-trow { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 15px; }
+.k-sheet .c-check { flex: none; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4); display: grid; place-items: center; }
+.k-sheet .c-check.on { background: #5FBF8A; box-shadow: none; }
+.c-check canvas { width: 12px !important; height: 12px !important; }
+.c-tname { flex: 1; min-width: 0; }
+.c-trow.done .c-tname { color: var(--cream-2); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.35); }
+.c-twhen { flex: none; font-size: 13px; color: var(--cream-2); }
+.c-pfoot, .c-pnone { margin: 14px 0 0; font-size: 14px; color: var(--cream-2); }
+.c-pbody { margin: 8px 0 0; font-size: 15px; line-height: 1.5; }
+.c-pcard.kept { background: rgba(124, 198, 164, 0.16); box-shadow: none; }
+.c-pcard.kept .c-kick { color: #A9DCC2; }
+.c-kbig { margin-top: 10px; font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; }
+.c-pcard.kept p { margin: 12px 0 0; font-size: 15px; line-height: 1.5; color: #DCEFE5; }
+.c-changed { margin-top: 18px; padding: 24px; border-radius: 22px; background: rgba(255, 255, 255, 0.04); }
+.c-changed h3 { margin: 0; font-size: 20px; font-weight: 600; }
+.c-changed > p { margin: 6px 0 16px; color: var(--cream-2); font-size: 15px; }
+.c-fixes { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.k-sheet .c-fix { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 16px 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.07); text-align: left; }
+.k-sheet .c-fix:hover { background: rgba(255, 255, 255, 0.12); }
+.c-fix b { font-size: 16px; font-weight: 600; }
+.c-fix span { font-size: 13px; color: var(--cream-2); }
+.k-sheet .c-again { margin-top: 16px; font-size: 14px; color: var(--cream-2); text-decoration: underline; text-underline-offset: 3px; }
+.k-sheet .c-again:hover { color: var(--cream); }
+@media (max-width: 1100px) { .c-plan-grid { grid-template-columns: 1fr 1fr; } .c-intro-in { grid-template-columns: 1fr; gap: 32px; } }

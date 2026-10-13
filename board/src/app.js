@@ -317,6 +317,8 @@
       if (st.key === 'kim' && !useTogether()) return false;
       /* a board that's newer than last week has nothing to look back on yet */
       if (st.key === 'back' && view.reset && nothingBehind(view.reset.week)) return false;
+      /* a version of the board can leave steps out of every reset (window.SR_resetSkip) */
+      if ((window.SR_resetSkip || []).includes(st.key)) return false;
       return !off.includes(st.key);
     });
   }
@@ -828,7 +830,7 @@
   }
   /* The merge's chrome: things marked data-edge="top|bottom|left|right" keep the board clear of them,
      and a tray that's hidden takes no room. */
-  function rackBox() { const r = $('rack'); return r.offsetParent !== null ? r.getBoundingClientRect() : { top: window.innerHeight, bottom: window.innerHeight, left: 0, right: 0 }; }
+  function rackBox() { const r = $('rack'); return r.offsetParent !== null && !r.dataset.edge ? r.getBoundingClientRect() : { top: window.innerHeight, bottom: window.innerHeight, left: 0, right: 0 }; }
   function chromeEdges() {
     const e = { top: 0, bottom: 0, left: 0, right: 0, boxes: [] };
     document.querySelectorAll('[data-edge]').forEach((x) => {
@@ -1853,7 +1855,10 @@
     const k = el('div');
     /* a catch up names the days it covers, Thursday to Saturday, not a span of dates to work out */
     const left = M.addDays(r.week, 6), catchSpan = today >= left ? M.DAY_LONG[M.weekday(left)] : M.DAY_LONG[M.weekday(today)] + ' to ' + M.DAY_LONG[M.weekday(left)];
-    k.appendChild(el('div', 'reset-kicker', (r.catchup ? 'Catch up' : 'Sunday Reset') + ' · ' + (r.step + 1) + ' of ' + steps.length + ' · ' + (r.catchup ? catchSpan : M.spanText(r.week, left))));
+    /* a version can count the steps without the recap (window.SR_recapApart): 3 of 6, then Your week */
+    const apart = !!window.SR_recapApart, counted = apart ? steps.length - 1 : steps.length;
+    const where = apart && st.key === 'done' ? 'All ' + counted + ' done' : (r.step + 1) + ' of ' + counted;
+    k.appendChild(el('div', 'reset-kicker', (r.catchup ? 'Catch up' : 'Sunday Reset') + ' · ' + where + ' · ' + (r.catchup ? catchSpan : M.spanText(r.week, left))));
     k.appendChild(el('div', 'reset-title', st.key === 'done' ? recapTitle() : stepTitle(st)));
     head.appendChild(k);
     k.className = 'reset-words';
@@ -2061,6 +2066,8 @@
       return;
     }
     if (st.key === 'dinners') {
+      /* a version can add to the dinner step (window.SR_dinnerExtras), like Repeat last week */
+      if (window.SR_dinnerExtras) window.SR_dinnerExtras(body, M.range(ws, 7), ws);
       dinnersBody(body, M.range(ws, 7));
       return;
     }
@@ -8653,7 +8660,7 @@
     get state() { return state; }, get view() { return view; }, get today() { return today; }, get nowMin() { return nowMin; },
     M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
     trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay, shift, openSel, openQuick, redo,
-    barCatalog, useDinners, useTogether, withName, layOut,
+    barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
     openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
     closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {
