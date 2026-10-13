@@ -819,6 +819,24 @@
     const kinds = $('kinds');
     return Math.max($('hud').getBoundingClientRect().bottom, $('topright').getBoundingClientRect().bottom, kinds.hidden ? 0 : kinds.getBoundingClientRect().bottom);
   }
+  /* The merge's chrome: things marked data-edge="top|bottom|left|right" keep the board clear of them,
+     and a tray that's hidden takes no room. */
+  function rackBox() { const r = $('rack'); return r.offsetParent !== null ? r.getBoundingClientRect() : { top: window.innerHeight, bottom: window.innerHeight, left: 0, right: 0 }; }
+  function chromeEdges() {
+    const e = { top: 0, bottom: 0, left: 0, right: 0, boxes: [] };
+    document.querySelectorAll('[data-edge]').forEach((x) => {
+      if (x.hidden || x.offsetParent === null) return;
+      const r = x.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const k = x.dataset.edge;
+      if (k === 'top') e.top = Math.max(e.top, r.bottom);
+      if (k === 'bottom') e.bottom = Math.max(e.bottom, window.innerHeight - r.top);
+      if (k === 'left') e.left = Math.max(e.left, r.right);
+      if (k === 'right') e.right = Math.max(e.right, window.innerWidth - r.left);
+      e.boxes.push({ x0: Math.round(r.left), x1: Math.round(r.right), y0: Math.round(r.top), y1: Math.round(r.bottom) });
+    });
+    return e;
+  }
   function layoutInsets() {
     const side = $('side'), kinds = $('kinds'), doMode = inToday(), fab = $('fab');
     /* the phone's day: the bar on top, an open panel along the bottom, and the board between them */
@@ -862,17 +880,20 @@
         top = (cr.top < window.innerHeight / 2 ? cr.bottom : Math.max($('hud').getBoundingClientRect().bottom, $('topright').getBoundingClientRect().bottom)) + 10;
         if (!kinds.hidden) { const kr = kinds.getBoundingClientRect(), sl = window.innerWidth - 16 - side.offsetWidth; if (kr.right > sl - 8) top = Math.max(top, kr.bottom + 10); }
         /* it ends above the tray bar, never over Set up this week */
-        side.style.maxHeight = view.phone ? '' : Math.round(Math.max(220, $('rack').getBoundingClientRect().top - 10 - top)) + 'px';
+        top = Math.max(top, chromeEdges().top + 10);
+        side.style.maxHeight = view.phone ? '' : Math.round(Math.max(220, Math.min(rackBox().top, window.innerHeight - chromeEdges().bottom) - 10 - top)) + 'px';
       }
       side.style.top = Math.round(top) + 'px';
     }
     placeViewCtl();
     fitBar();
-    const top = headBottom() + 14;
-    const rack = $('rack').getBoundingClientRect();
-    let bottom = window.innerHeight - rack.top + 12;
+    const edges = chromeEdges();
+    const top = Math.max(headBottom() + 14, edges.top + 14);
+    const rack = rackBox();
+    let bottom = Math.max(window.innerHeight - rack.top + 12, edges.bottom + 12);
     if (doMode && !fab.hidden) bottom = Math.max(bottom, window.innerHeight - $('fab-add').getBoundingClientRect().top + 12);
-    const right = $('side').hidden ? 16 : window.innerWidth - $('side').getBoundingClientRect().left + 12;
+    const right = Math.max($('side').hidden ? 16 : window.innerWidth - $('side').getBoundingClientRect().left + 12, edges.right + 12);
+    const left = Math.max(16, edges.left + 12);
     /* A preview's bar sits on the tray's top edge, centered in the room beside an open panel; the board
        and the toasts stay above it, so it never covers the work or what a tap did. On the phone
        style.css puts it at the top. */
@@ -887,13 +908,13 @@
     const ag = $('agenda');
     if (ag && !ag.hidden) { ag.style.top = Math.round(top) + 'px'; ag.style.bottom = Math.round(bottom) + 'px'; ag.style.right = Math.round(right) + 'px'; }
     /* the panels over the desk, so a prop under one steps out instead of hiding half behind it */
-    const blockers = (doMode ? ['topnav', 'band', 'moment', 'fab', 'rack', 'side', 'preview-bar'] : ['topnav', 'hud', 'yours', 'kinds', 'topright', 'corner', 'rack', 'side', 'preview-bar']).map($).filter((x) => x && !x.hidden && x.offsetParent !== null).map((x) => { const r = x.getBoundingClientRect(); return { x0: Math.round(r.left), x1: Math.round(r.right), y0: Math.round(r.top), y1: Math.round(r.bottom) }; });
+    const blockers = (doMode ? ['topnav', 'band', 'moment', 'fab', 'rack', 'side', 'preview-bar'] : ['topnav', 'hud', 'yours', 'kinds', 'topright', 'corner', 'rack', 'side', 'preview-bar']).map($).filter((x) => x && !x.hidden && x.offsetParent !== null).map((x) => { const r = x.getBoundingClientRect(); return { x0: Math.round(r.left), x1: Math.round(r.right), y0: Math.round(r.top), y1: Math.round(r.bottom) }; }).concat(edges.boxes);
     /* Settings on a wide window: the desk slides over and is framed in the room beside the panel,
        above the tray bar, so a theme, a layout, the light, or the bar changes in front of you */
     const live = !!view.drawer && wideSettings() && !noDesk && !view.list;
     document.body.classList.toggle('drawer-live', live);
     if (live) {
-      const dr = $('drawer').getBoundingClientRect(), rk = $('rack').getBoundingClientRect();
+      const dr = $('drawer').getBoundingClientRect(), rk = rackBox();
       const box = (r) => ({ x0: Math.round(r.left), x1: Math.round(r.right), y0: Math.round(r.top), y1: Math.round(r.bottom) });
       W.setDayOnly(false); W.setTight(false);
       W.setInsets({ top: 28, bottom: Math.round(window.innerHeight - rk.top + 16), left: Math.round(dr.right + 20), right: 20, blockers: [box(dr), box(rk)], hold: false });
@@ -902,7 +923,7 @@
     }
     W.setDayOnly(!doMode && view.zoom === 'day' && !view.reset && !trayCollapsed());
     W.setTight(!doMode && view.zoom === 'week' && (!!view.reset || !trayCollapsed()));
-    W.setInsets({ top, bottom, right, left: 16, blockers, hold: !$('side').hidden });
+    W.setInsets({ top, bottom, right, left, blockers, hold: !$('side').hidden });
   }
 
   /* a short spoken line for screen readers, for changes that don't move focus */
@@ -8568,7 +8589,7 @@
     else if (new URLSearchParams(location.search).get('link')) probe.then(() => setTimeout(() => openLinkSheet(new URLSearchParams(location.search).get('link')), 300));
     else if (!saved && loadDraft()) setTimeout(() => resumeSetup(), 500);
     else if (!saved && !window.SR_MERGE) setTimeout(() => openWelcome('first'), 500);
-    else if (fresh) setTimeout(() => openSel({ type: 'help' }), 700);
+    else if (fresh && !window.SR_QUIET) setTimeout(() => openSel({ type: 'help' }), 700);
     else if (tzHome && tzHere && tzHome !== tzHere && !sessionStorage.getItem('sundayreset.tzsaid')) { try { sessionStorage.setItem('sundayreset.tzsaid', '1'); } catch (e) { /* fine */ } setTimeout(() => toast('Times here are in ' + tzName(tzHome) + ' time. This device is on ' + tzName(tzHere) + ' time.', '', { label: 'Change', fn: () => openDrawer('days') }), 900); }
     else if (keepAtRisk() && !view.phone && Date.now() - backupAt() > 7 * 864e5 && !(Date.now() - (keepSeen().toldAt || 0) < 14 * 864e5)) { markKeep({ toldAt: Date.now() }); setTimeout(() => toast('This browser can clear your board after seven days without a visit.', '', { label: 'How to keep it', fn: () => openDrawer('data') }), 900); }
     else if (M.weekday(today) === 0 && !(state.weeks[resetWeek()] && state.weeks[resetWeek()].reset && state.weeks[resetWeek()].reset.done)) setTimeout(() => toast('It’s Sunday. Ready for your reset?'), 700);
@@ -8618,7 +8639,10 @@
   window.SR = {
     get state() { return state; }, get view() { return view; }, get today() { return today; }, get nowMin() { return nowMin; },
     M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
-    trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay,
+    trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay, shift, openSel, openQuick, redo,
+    barCatalog, useDinners, useTogether, withName, layOut,
+    openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
+    closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {
       if (catchUpDue()) return { label: 'Catch up this week', strong: true, run: () => startReset(M.weekStart(today), true) };
       const ws = resetWeek(), w = state.weeks[ws] && state.weeks[ws].reset;

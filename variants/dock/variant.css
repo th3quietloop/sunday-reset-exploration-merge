@@ -1,0 +1,24 @@
+/* Dock: nothing on top but the board; one dock at the bottom */
+.d-dock { bottom: 16px; left: 50%; transform: translateX(-50%); padding: 7px; gap: 6px; border-radius: 22px; max-width: calc(100vw - 24px); }
+.d-sep { width: 1px; height: 30px; background: rgba(255, 240, 220, 0.12); margin: 0 2px; flex: none; }
+.d-date[hidden] { display: none; }
+.d-date .k-title { font-size: 15px; }
+.d-zoom button { padding: 9px 12px; }
+.d-stack { display: flex; gap: 2px; }
+.d-item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 10px 5px; border-radius: 14px; color: var(--cream-2) !important; min-width: 58px; transition: background 0.15s, color 0.15s, transform 0.12s; }
+.d-item[hidden] { display: none; }
+.d-item canvas { width: 19px; height: 19px; }
+.d-name { font-size: 11px; font-weight: 500; white-space: nowrap; }
+.d-item:hover { background: rgba(255, 240, 220, 0.08); color: var(--cream) !important; transform: translateY(-2px); }
+.d-item.on { background: rgba(255, 240, 220, 0.16); color: var(--cream) !important; }
+.d-badge { position: absolute; top: 0; right: 4px; transform: scale(0.85); }
+.d-me { width: 38px; height: 38px; border-radius: 50%; background: #3D2E22 !important; color: var(--cream) !important; font-weight: 600; font-size: 15px; margin-left: 4px; flex: none; }
+.d-reset { flex: none; }
+/* the tray rises above the dock; Today's own Add steps aside for the dock's */
+.rack { bottom: 92px; }
+#fab { display: none !important; }
+body.k-today .rack.collapsed { display: none; }
+body.k-today .band { top: 16px; }
+.toasts { bottom: max(var(--toast-bottom, 0px), 96px) !important; }
+@media (max-width: 1320px) { .d-name { display: none; } .d-item { min-width: 40px; padding: 9px; } .d-date .k-sub { display: none; } }
+@media (max-width: 1100px) { .d-reset span { display: none; } }

@@ -4,11 +4,11 @@
    whenever it can be; the copy is only for when the network can't answer. The API is never kept.
    What every desk needs is kept at install; a kit layout's own things are kept the first time that
    layout is used, the same way. */
-const SHELL = 'sundayreset-merge-shell-v1';
+const SHELL = 'sundayreset-merge-shell-v2';
 const KEEP = /\.(?:js|css|html|webmanifest|png|webp|svg|woff2?)$|\/$/;
 const OTHER = /^https:\/\/(?:cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/src/style.css', '/src/merge.css', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png']).catch(() => {})).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/src/style.css', '/src/merge.css', '/src/focus.js', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png']).catch(() => {})).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('sundayreset-merge-shell-') && k !== SHELL).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', (e) => {

@@ -1,0 +1,16 @@
+/* Corners: four chips and the board between them */
+.c-tl { top: 16px; left: 16px; }
+.c-tc { top: 16px; left: 50%; transform: translateX(-50%); }
+.c-tr { top: 16px; right: 16px; }
+.c-bl { bottom: 16px; left: 16px; }
+.c-br { bottom: 16px; right: 16px; }
+.k-chip[hidden] { display: none; }
+.c-bl .k-pill.due { background: var(--k-gold); color: #2A1D10; }
+.c-tl .k-kinds #kinds { margin-left: 6px; }
+/* the tray, when it's open, floats above the bottom chips */
+.rack { bottom: 80px; left: 16px; right: 16px; }
+body.k-today .rack { bottom: 16px; }
+body.k-today .band { top: 16px; }
+@media (max-width: 1100px) { .c-tc { display: none; } }
+body.k-today .band { left: 16px; transform: none; width: min(860px, calc(100vw - 420px)); }
+body.k-today .rack.collapsed { left: 250px; }

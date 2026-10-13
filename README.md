@@ -49,3 +49,12 @@ npm run build
 - `src/views.js` the screens. `src/panels.js` the block sheet, the reset, what this is.
 - `src/marks.js` 303's hand drawn marks, unchanged except the export.
 - `src/sound.js` taps.
+
+## Round three: four minimal versions (Oct 13)
+
+Each is the desk board with the desk's own chrome put away and espresso pieces in its place. Built by `node scripts/make-variants.mjs` from `board/` plus `variants/kit` and `variants/<id>`, into `v/<id>` (each its own Vercel project). See [docs/ROUND-THREE.md](docs/ROUND-THREE.md).
+
+- **Corners** (`v/corners`): the board edge to edge, four small chips in the corners, one menu with every place.
+- **Rail** (`v/rail`): Patreon's idea, a slim rail of places down the left.
+- **Library** (`v/library`): time on top, things on the bottom; Block library is a sheet of stacked cards.
+- **Dock** (`v/dock`): nothing on top but the board; one dock at the bottom.
