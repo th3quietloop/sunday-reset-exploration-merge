@@ -28,7 +28,7 @@
 .rack { bottom: 82px; }
 body.k-today .rack { bottom: 82px; }
 body.k-today .band { top: calc(var(--nav) + 12px); }
-body.k-today #fab { bottom: 82px; }
+#fab { display: none !important; }
 .drawer { top: calc(var(--nav) + 12px); }
 .quick { top: calc(var(--nav) + 40px); }
 .k-scrim { top: var(--nav); }

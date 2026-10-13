@@ -165,7 +165,11 @@
     const go = () => {
       if (!window.SR || !SR.state || !$('hud-title') || !window.SRFocus) { setTimeout(go, 40); return; }
       /* a fresh visit starts with the tray away, so the board has the room */
-      if (!sessionStorage.getItem('k-started')) { try { sessionStorage.setItem('k-started', '1'); } catch (e) { /* fine */ } if (!SR.inToday() && !SR.trayCollapsed()) SR.setTrayCollapsed(true); }
+      let first = false;
+      try { first = !localStorage.getItem('sundayreset.kit.seen'); localStorage.setItem('sundayreset.kit.seen', '1'); } catch (e) { /* fine */ }
+      /* a first visit opens on the week, the board at its biggest, with the tray away */
+      if (first && !SR.view.phone) { if (SR.inToday()) SR.setMode('planner'); if (SR.view.zoom !== 'week') SR.setZoom('week'); }
+      if (first && !SR.trayCollapsed()) SR.setTrayCollapsed(true);
       build();
       SRFocus.onChange = sync;
       SR.render();
