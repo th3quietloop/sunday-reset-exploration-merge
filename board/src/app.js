@@ -2609,6 +2609,7 @@
     if (hit.kind === 'lamp') { toggleLamp(); return; }
     Snd.pick();
     if (hit.kind === 'notepad') { openDueSoon(); return; }
+    if (hit.kind === 'clock') { if (window.SR_onClock) window.SR_onClock(); return; }
     if (hit.kind === 'block') {
       const date = sourceDate(hit.block, hit.date), key = sourceKey(hit.block);
       near();
@@ -2829,6 +2830,8 @@
     } else if (hit.kind === 'lamp') {
       W.setHover(null); stage.className = 'pointer';
       showChipAt(e.clientX, e.clientY, 'Desk lamp', view.lamp ? 'Tap to turn it off' : 'Tap to turn it on');
+    } else if (hit.kind === 'clock') {
+      if (window.SR_onClock) { W.setHover(null); stage.className = 'pointer'; showChipAt(e.clientX, e.clientY, 'Clock', 'Tap for a Pomodoro timer'); } else { hideChip(); stage.className = ''; }
     } else if (hit.kind === 'notepad') {
       W.setHover(null); stage.className = 'pointer';
       const d = dueList(), open = view.bench && view.bench.tab === 'todo' && view.bench.level === 'soon';

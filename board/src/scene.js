@@ -1889,6 +1889,8 @@
     const st = (g.userData.anchors || {}).steam || (id === 'mug' ? [0, 1.87, 0] : null);
     if (st) buildSteam(g, st);
     if (thing && thing.scale) g.scale.setScalar(thing.scale);
+    /* a clock can be tapped: the chrome may hang a timer on it */
+    if (id === 'clock' || (thing && thing.hands)) { g.userData.pickKind = 'clock'; g.userData.pickable = true; }
     return g;
   }
   function dropThing(o) {
@@ -3184,7 +3186,7 @@
       if (bench.group.userData.shown) bench.pieces.forEach((m) => { if (live(m)) list.push(m); });
     } else if (layout === 'month') list = month.cards.filter((c) => c.userData.present && live(c));
     else list = year.cards.filter(live);
-    [lampRig.body, pad.obj].concat(thingLights.map((t) => t.owner)).forEach((o) => { if (o && o.visible && o.scale.x > 0.5) list.push(o); });
+    [lampRig.body, pad.obj].concat(thingLights.map((t) => t.owner), propList.filter((p) => p.obj && p.obj.userData.pickKind === 'clock').map((p) => p.obj)).forEach((o) => { if (o && o.visible && o.scale.x > 0.5) list.push(o); });
     const hits = ray.intersectObjects(list, true);
     for (const h of hits) {
       const o = owner(h.object);
@@ -3249,6 +3251,14 @@
     const r = renderer.domElement.getBoundingClientRect();
     return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, behind: p.z > 1 };
   }
+  /* where a desk thing is on screen, for the chrome to point at; null when it's stepped out */
+  function propScreen(kind) {
+    const p = propList.find((x) => x.obj && x.obj.userData.pickKind === kind && x.obj.visible && x.obj.scale.x > 0.5);
+    if (!p) return null;
+    const box = new T.Box3().setFromObject(p.obj), c = box.getCenter(new T.Vector3());
+    const r = renderer.domElement.getBoundingClientRect(), q = c.clone().project(camera), top = new T.Vector3(c.x, box.max.y, c.z).project(camera);
+    return { x: r.left + (q.x + 1) / 2 * r.width, y: r.top + (1 - q.y) / 2 * r.height, top: r.top + (1 - top.y) / 2 * r.height };
+  }
   function cardWorld(date) {
     const c = month.cards.find((x) => x.userData.date === date);
     return c ? c.position.clone() : null;
@@ -3281,7 +3291,7 @@
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
     init, render, step, parallax, touch, setWeekStart, setDayShape,
-    pick, boardAt, dayAt, slotWorld, toScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    pick, boardAt, dayAt, slotWorld, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
     /* true when nothing on the desk is moving and nothing changed lately: the frame can be skipped.
        lazy: only something slow is moving (steam), so a few frames a second are plenty */
     get idle() { return stillFrames > 12; }, get lazy() { return lazyOnly && !moving && nowMs() >= activeUntil; },

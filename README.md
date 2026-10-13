@@ -58,3 +58,7 @@ Each is the desk board with the desk's own chrome put away and espresso pieces i
 - **Rail** (`v/rail`): Patreon's idea, a slim rail of places down the left.
 - **Library** (`v/library`): time on top, things on the bottom; Block library is a sheet of stacked cards.
 - **Dock** (`v/dock`): nothing on top but the board; one dock at the bottom.
+
+## Corners V2 (Oct 13)
+
+`v/corners2`, https://sunday-reset-corners-v2.vercel.app. Corners with Library's stacks, the 3D Block library beside the board, an account chip for Settings, hours top left and the date in the middle, and a Pomodoro on the desk clock. The list: [docs/CORNERS-V2.md](docs/CORNERS-V2.md). Build only it with `node scripts/make-variants.mjs corners2`; the round three builds stay frozen.

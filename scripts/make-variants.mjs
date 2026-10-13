@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const ids = ['corners', 'rail', 'library', 'dock'];
-const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock' };
+const ids = ['corners', 'rail', 'library', 'dock', 'corners2'];
+const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2' };
+const only = process.argv.slice(2);
 for (const id of ids) {
+  if (only.length && !only.includes(id)) continue;
   if (!existsSync(join(root, 'variants', id, 'variant.js'))) continue;
   const out = join(root, 'v', id);
   rmSync(out, { recursive: true, force: true });
