@@ -1,23 +1,25 @@
-/* Corners V2: hours top left, the date in the middle, zoom and account top right; Sunday Reset bottom
-   left; Add, To-dos, Block library bottom right. Pieces come out beside the board, never on a flat tray. */
-.c-tl { top: 16px; left: 16px; }
+/* Corners V2: you top left, the date in the middle, the zoom top right; hours yours bottom left; Add,
+   To-dos, Block library, and the Sunday Reset bottom right. Pieces come out beside the board, never on a flat tray. */
+.c-tl { position: absolute; z-index: 30; top: 16px; left: 16px; display: flex; gap: 10px; align-items: stretch; }
+.c-tl .k-chip { position: static; }
+.c-kinds:empty { display: none; }
+.c-kinds #kinds { position: relative; margin: 0 2px; }
 .c-tc { top: 16px; left: 50%; transform: translateX(-50%); }
-.c-tr { position: absolute; z-index: 30; top: 16px; right: 16px; display: flex; gap: 10px; align-items: stretch; }
-.c-tr .k-chip { position: static; }
+.c-tr { top: 16px; right: 16px; }
 .c-bl { bottom: 16px; left: 16px; }
 .c-br { bottom: 16px; right: 16px; }
-.k-chip[hidden], .c-tl > [hidden] { display: none !important; }
-.c-tl .k-kinds #kinds { margin: 0 2px 0 4px; }
+.k-chip[hidden], .c-bl > [hidden] { display: none !important; }
 .c-hours { padding: 6px 14px 6px 12px; }
+.c-br .k-reset { padding: 10px 16px; border-radius: 14px; margin-left: 4px; }
 
-/* your account: the obvious door to Settings */
-.c-me { display: flex; align-items: center; gap: 9px; padding: 6px 14px 6px 6px; border-radius: 18px; color: var(--cream) !important; font-size: 14px; font-weight: 600; cursor: pointer; }
-.c-me:hover { background: rgba(48, 36, 27, 0.94); }
-.c-me[aria-expanded="true"] { background: var(--cream); color: var(--esp) !important; }
+/* your account: the obvious door to Settings, in the same espresso as every other chip */
+.k .c-me { display: flex; align-items: center; gap: 9px; padding: 6px 14px 6px 6px; border-radius: 18px; background: var(--esp-glass); color: var(--cream); font-size: 14px; font-weight: 600; cursor: pointer; }
+.k .c-me:hover { background: rgba(52, 39, 29, 0.95); }
+.k .c-me[aria-expanded="true"] { background: var(--cream); color: var(--esp); }
 .c-me canvas { width: 12px; height: 12px; }
 .c-me-dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--k-gold); color: #2A1D10; font-weight: 700; font-size: 15px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
 .c-me-dot.big { width: 44px; height: 44px; font-size: 19px; }
-.c-menu { position: absolute; z-index: 92; top: 76px; right: 16px; width: 300px; max-height: calc(100vh - 100px); overflow-y: auto; padding: 8px; border-radius: 20px; background: rgba(36, 26, 19, 0.97); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 30px 60px -20px rgba(10, 5, 0, 0.7); animation: cmenu 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.c-menu { position: absolute; z-index: 92; top: 76px; left: 16px; width: 300px; max-height: calc(100vh - 100px); overflow-y: auto; padding: 8px; border-radius: 20px; background: rgba(36, 26, 19, 0.97); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 30px 60px -20px rgba(10, 5, 0, 0.7); animation: cmenu 0.18s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @keyframes cmenu { from { transform: translateY(-6px); opacity: 0; } }
 .c-menu-head { display: flex; align-items: center; gap: 12px; padding: 10px 10px 14px; }
 .c-menu-head b { display: block; font-size: 16px; font-weight: 600; }
@@ -61,7 +63,6 @@
 .c-none { grid-column: 1 / -1; color: var(--cream-2); font-size: 15px; }
 
 /* the Pomodoro, beside the clock */
-.c-tl .c-pomo { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 12px; border-radius: 12px; }
 .c-pomo:hover { background: rgba(255, 240, 220, 0.08); }
 .c-pdot { width: 10px; height: 10px; border-radius: 50%; background: #E0563F; box-shadow: 0 0 0 3px rgba(224, 86, 63, 0.25); animation: cpulse 2s ease-in-out infinite; }
 .c-pomo.rest .c-pdot { background: #7CC6A4; box-shadow: 0 0 0 3px rgba(124, 198, 164, 0.25); }
@@ -101,10 +102,10 @@ body.v-corners2:not(.k-today) .rack:not(.resetting) { display: none !important; 
 .rack { bottom: 80px; left: 16px; right: 16px; }
 body.k-today .rack { bottom: 16px; }
 body.k-today .rack.collapsed { left: 16px; }
-body.k-today .band { top: 16px; left: 16px; transform: none; width: min(860px, calc(100vw - 500px)); }
-@media (max-width: 1180px) { .c-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .c-me-name { display: none; } }
-@media (max-width: 960px) { .c-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .c-tl { display: none; } }
-/* Today: the band owns the top left, so a running timer sits under your account; the corner Add replaces Today's own */
-body.k-today .c-tl { left: auto; right: 16px; top: 76px; }
+/* Today: the band sits beside you on the top; Today's dock sits beside a running timer on the bottom; the corner Add replaces Today's own */
+body.k-today .band { top: 16px; left: calc(var(--c-tl-w, 140px) + 26px); transform: none; width: min(820px, calc(100vw - var(--c-tl-w, 140px) - var(--c-tr-w, 420px) - 72px)); }
+body.k-today.c-pomo-on .rack.collapsed { left: calc(var(--c-bl-w, 180px) + 26px); }
 #fab { display: none !important; }
-body.k-today .rack.collapsed { left: 220px; }
+.c-bl .c-pomo { display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 12px; border-radius: 12px; }
+@media (max-width: 1180px) { .c-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .c-me-name { display: none; } }
+@media (max-width: 960px) { .c-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .c-bl { display: none; } }

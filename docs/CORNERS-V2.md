@@ -7,12 +7,14 @@ Corners (V1) stays as it is, at its own link. V2 is `v/corners2`.
 ## The list
 
 ### The corners
-1. Top left: hours yours this week (or today, in the day view).
-2. Top middle: back, This week (Oct 11 to 17), forward. In the day view the kind of day sits beside it.
-3. Top right: Today, Day, Week, Month, Year, and beside it your account: a circle with your initial and your name, the way most apps tuck settings in.
-4. Bottom left: Sunday Reset, only that. Gold when it's due, quiet the rest of the week.
-5. Bottom right: Add, To-dos (with what's due as a count), Block library.
-6. In Today the band takes the top, and the account stays where it always is.
+1. Top left: your account, a gold circle with your initial and your first name, in the same espresso as every other chip. In the day view the kind of day sits beside it.
+2. Top middle: back, This week (Oct 11 to 17), forward.
+3. Top right: Today, Day, Week, Month, Year.
+4. Bottom left: hours yours this week (or today, in the day view).
+5. Bottom right: Add, To-dos (with what's due as a count), Block library, and the Sunday Reset last, as the call to action. Gold when it's due, quiet the rest of the week.
+6. In Today the band sits beside your account on the top, and Today's dock takes the bottom left.
+
+Russell moved these on Oct 13, after the first V2: the account went from the top right to the top left (and from a tan that was hard to read to espresso), hours went to the bottom left, and the Sunday Reset went to the far right.
 
 ### Block library, on the desk
 7. Block library opens the 3D rack beside the board: in the day view it's the rack beside the day, in the week it's the bench beside the week. Never a flat tray.
@@ -43,7 +45,7 @@ Corners (V1) stays as it is, at its own link. V2 is `v/corners2`.
 24. Presets: 25 and 5, 50 and 10, or your own focus and break lengths, in 5 minute steps.
 25. It counts down in minutes and seconds (it's a timer you watch, so seconds belong here), with four dots for the rounds and a long break after the fourth.
 26. Start, Pause, Skip, Reset. A soft chime at each switch between focus and break.
-27. While it runs, the hours chip on the top left becomes the timer, with a red dot. Tap it to bring the card back. The tab's title shows the time.
+27. While it runs, the hours chip on the bottom left becomes the timer, with a red dot. Tap it to bring the card back. The tab's title shows the time.
 28. It survives a reload.
 29. Closing it lets the camera settle back. Esc closes it too.
 30. Focus (the session for one thing) stays where it was: F, and the account menu.

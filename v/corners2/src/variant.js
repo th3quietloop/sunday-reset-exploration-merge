@@ -1,5 +1,5 @@
-/* Corners V2: hours on the top left, the date in the middle, the zoom and your account on the right.
-   Sunday Reset alone on the bottom left; Add, To-dos, and Block library on the bottom right. Everything
+/* Corners V2: you on the top left (the way to Settings), the date in the middle, the zoom on the right.
+   Hours yours on the bottom left; Add, To-dos, Block library, and the Sunday Reset on the bottom right. Everything
    you can place comes out beside the board, in 3D. And the desk clock is a Pomodoro timer. */
 (function () {
   'use strict';
@@ -9,30 +9,32 @@
     const app = document.getElementById('app');
 
     /* == the corners == */
-    const tl = h('div', 'k k-chip c-tl'); tl.dataset.edge = 'top';
-    const hours = Kit.hoursReadout('c-hours');
-    const pomo = h('button', 'c-pomo'); pomo.type = 'button'; pomo.hidden = true;
-    pomo.addEventListener('click', () => { SR.Snd.init(); openTimer(); });
-    const kinds = h('div', 'k-kinds'); Kit.kindsHome = kinds;
-    tl.append(hours, pomo, kinds);
-    const tc = h('div', 'k k-chip c-tc'); tc.dataset.edge = 'top';
-    tc.appendChild(Kit.dateControl());
-    const tr = h('div', 'k c-tr'); tr.dataset.edge = 'top';
-    const zoom = h('div', 'k-chip c-zoomchip'); zoom.appendChild(Kit.zoomSwitch());
+    /* top left: you, the way to Settings, and in the day view the kind of day beside you */
+    const tl = h('div', 'k c-tl'); tl.dataset.edge = 'top';
     const me = h('button', 'k-chip c-me'); me.type = 'button'; me.setAttribute('aria-haspopup', 'menu'); me.setAttribute('aria-expanded', 'false');
     const meCircle = h('span', 'c-me-dot'), meName = h('span', 'c-me-name');
     me.append(meCircle, meName, SR.icon('down', 7, '#D9CBB6'));
     me.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); toggleMenu(); });
-    tr.append(zoom, me);
+    const kinds = h('div', 'k-chip c-kinds'); Kit.kindsHome = kinds;
+    tl.append(me, kinds);
+    const tc = h('div', 'k k-chip c-tc'); tc.dataset.edge = 'top';
+    tc.appendChild(Kit.dateControl());
+    const tr = h('div', 'k k-chip c-tr'); tr.dataset.edge = 'top';
+    tr.appendChild(Kit.zoomSwitch());
 
+    /* bottom left: hours yours, or the Pomodoro while it runs */
     const bl = h('div', 'k k-chip c-bl'); bl.dataset.edge = 'bottom';
-    bl.appendChild(Kit.resetButton('c-reset'));
+    const hours = Kit.hoursReadout('c-hours');
+    const pomo = h('button', 'c-pomo'); pomo.type = 'button'; pomo.hidden = true;
+    pomo.addEventListener('click', () => { SR.Snd.init(); openTimer(); });
+    bl.append(hours, pomo);
+    /* bottom right: Add, To-dos, Block library, and the Sunday Reset last, where a call to action goes */
     const br = h('div', 'k k-chip c-br'); br.dataset.edge = 'bottom';
     const add = Kit.btn('k-pill', 'Add', Kit.add, 'plus'); add.title = 'Add in plain words (N)';
     const todos = Kit.btn('k-pill', 'To-dos', () => openTodos(), 'flag');
     const due = h('span', 'k-count'); todos.appendChild(due);
     const lib = Kit.btn('k-pill', 'Block library', blockLibrary, 'box');
-    br.append(add, todos, lib);
+    br.append(add, todos, lib, Kit.resetButton('c-reset'));
     app.append(tl, tc, tr, bl, br);
 
     /* == Block library: the rack beside the board, in 3D == */
@@ -283,14 +285,22 @@
       const running = !!pom.endsAt;
       pomo.hidden = !running; hours.hidden = running;
       pomo.classList.toggle('rest', pom.phase !== 'work');
-      tl.hidden = today && !running;
+      bl.hidden = today && !running;
       const n = Kit.dueCount(); due.textContent = n ? String(n) : '';
       lib.setAttribute('aria-pressed', String(libOpen()));
       todos.setAttribute('aria-pressed', String(!today && !!v.bench && v.bench.tab !== 'blocks'));
       const p = SR.who(), name = (p && p.name) || 'You';
       meCircle.textContent = name.slice(0, 1).toUpperCase(); meName.textContent = name.split(' ')[0];
       me.title = 'Settings and everything else';
-      requestAnimationFrame(place);
+      document.body.classList.toggle('c-pomo-on', running);
+      requestAnimationFrame(() => { measure(); place(); });
+    }
+    /* Today's band and dock make room for the corners beside them */
+    function measure() {
+      const s = document.body.style;
+      s.setProperty('--c-tl-w', me.offsetWidth + 'px');
+      s.setProperty('--c-tr-w', tr.offsetWidth + 'px');
+      s.setProperty('--c-bl-w', bl.offsetWidth + 'px');
     }
     Kit.renders.push(sync);
   });
