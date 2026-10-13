@@ -1,11 +1,12 @@
 /* Corners V2: you on the top left (the way to Settings, and whether it's saved), the date in the middle
    (with the kind of day and the seven days in the day view), the zoom on the right.
-   Hours yours on the bottom left; Add, To-dos, Block library, and the Sunday Reset on the bottom right. Everything
+   The Pomodoro on the bottom left while it runs; Add, To-dos, Block library, and the Sunday Reset on the bottom right. Everything
    you can place comes out beside the board, in 3D. And the desk clock is a Pomodoro timer. */
 (function () {
   'use strict';
   const { h } = Kit;
   const ESP = '#252928', CREAM = '#FFFFFF';
+  window.SR_kindYours = true; /* time to yourself shows only as good news, and the reset invites more */
   window.SR_clockFirst = true; /* the clock is the Pomodoro, so it stays on the desk right after the notepad */
   Kit.ink = CREAM; Kit.onGold = ESP; /* charcoal chrome with white type, like the board's own HUD */
   Kit.start(() => {
@@ -35,12 +36,11 @@
     const tr = h('div', 'k k-chip c-tr'); tr.dataset.edge = 'top';
     tr.appendChild(Kit.zoomSwitch());
 
-    /* bottom left: hours yours, or the Pomodoro while it runs */
+    /* bottom left: the Pomodoro, only while it runs (time to yourself lives on the board and in the reset, never as a meter) */
     const bl = h('div', 'k k-chip c-bl'); bl.dataset.edge = 'bottom';
-    const hours = Kit.hoursReadout('c-hours');
     const pomo = h('button', 'c-pomo'); pomo.type = 'button'; pomo.hidden = true;
     pomo.addEventListener('click', () => { SR.Snd.init(); openTimer(); });
-    bl.append(hours, pomo);
+    bl.append(pomo);
     /* bottom right: Add, To-dos, Block library, and the Sunday Reset last, where a call to action goes */
     const br = h('div', 'k k-chip c-br'); br.dataset.edge = 'bottom';
     const add = Kit.btn('k-pill', 'Add', Kit.add, 'plus'); add.title = 'Add in plain words (N)';
@@ -316,9 +316,9 @@
       const today = SR.inToday(), v = SR.view;
       tc.hidden = today;
       const running = !!pom.endsAt;
-      pomo.hidden = !running; hours.hidden = running;
+      pomo.hidden = !running;
       pomo.classList.toggle('rest', pom.phase !== 'work');
-      bl.hidden = today && !running;
+      bl.hidden = !running;
       const n = Kit.dueCount(); due.textContent = n ? String(n) : '';
       lib.setAttribute('aria-pressed', String(libOpen()));
       todos.setAttribute('aria-pressed', String(!today && !!v.bench && v.bench.tab !== 'blocks'));

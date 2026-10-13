@@ -140,6 +140,10 @@
     }
     return palMemo.pal;
   }
+  /* Time to yourself is good news, never a grade (window.SR_kindYours): it reads "to yourself", shows only
+     when there is some, and the reset invites more instead of reporting zero. Without the switch the board says "yours" as always. */
+  const kindYours = () => !!window.SR_kindYours;
+  const yoursWord = () => (kindYours() ? 'to yourself' : 'yours');
   const cat = (c) => (c === 'us' ? Object.assign({}, palette().us, { name: usName() }) : palette()[c] || palette().yours);
   /* the parts of the week the board helps with: dinners and time together can each be left out */
   const modules = () => Object.assign({ dinners: true, together: true }, state && state.settings && state.settings.modules);
@@ -360,7 +364,7 @@
         yours += M.totals(d).yours || 0;
         days.push({ num: k + 1, col: (off + k) % 7, row: Math.floor((off + k) / 7), trip: !!d.trip, marker: d.markers.length > 0, big: M.timedOn(state, date).some((e) => e.big), today: date === today, due: d.due.length > 0 });
       }
-      return { key: mk, name: M.MONTH_LONG[p.m - 1], year: p.y, current: mk === M.monthKey(today), days, list: monthList(ms).map((x) => ({ kind: x.kind, when: x.when, name: x.name })), yours: M.hours(yours) };
+      return { key: mk, name: M.MONTH_LONG[p.m - 1], year: p.y, current: mk === M.monthKey(today), days, list: monthList(ms).map((x) => ({ kind: x.kind, when: x.when, name: x.name })), yours: kindYours() && yours < 60 ? '' : M.hours(yours) };
     });
   }
   function rangeDates() {
@@ -391,7 +395,7 @@
     const bits = [];
     d.markers.forEach((m) => bits.push({ icon: m.icon || 'star', text: m.name, color: '#983A5E' }));
     if (d.trip) bits.push({ icon: 'plane', text: d.trip.name, color: '#2A4B90' });
-    bits.push({ icon: 'star', text: M.hours(t.yours || 0) + ' yours', short: M.hours(t.yours || 0), color: '#6B4F0C' });
+    if (!kindYours() || (t.yours || 0) > 0) bits.push({ icon: 'star', text: M.hours(t.yours || 0) + ' ' + yoursWord(), short: M.hours(t.yours || 0), color: '#6B4F0C' });
     if (d.due.length) bits.push({ icon: 'flag', text: plural(d.due.length, 'thing', 'things') + ' due', short: d.due.length + ' due', color: '#963A28' });
     /* a dinner that's decided reads green; the one still open reads gold, the color of a question */
     const db = d.blocks.find((b) => b.dinner), asks = db && useDinners() && !dinnerOver(db, date);
@@ -687,7 +691,7 @@
     const all = D.PRESETS.concat(state.presets || []);
     const onP = all.find((p) => p.id === cur) || D.PRESETS[0];
     const d0 = day(date), t0 = M.totals(d0);
-    const lineOf = (p) => (p.usual ? (cur === 'usual' ? 'Up at ' + M.clock(d0.wake) + ', bed at ' + M.clock(d0.bed) + ', ' + M.hours(t0.yours || 0) + ' yours' : 'How ' + wdName + ' goes most weeks') : p.line || '');
+    const lineOf = (p) => (p.usual ? (cur === 'usual' ? 'Up at ' + M.clock(d0.wake) + ', bed at ' + M.clock(d0.bed) + (kindYours() && !(t0.yours > 0) ? '' : ', ' + M.hours(t0.yours || 0) + ' ' + yoursWord()) : 'How ' + wdName + ' goes most weeks') : p.line || '');
     let pick = box.querySelector('.kinds-pick');
     if (!pick) {
       pick = el('button', 'kinds-pick');
@@ -1956,7 +1960,8 @@
         body.appendChild(stat(String(done), 'to dos done'));
         body.appendChild(stat(String(open.length), 'still open', open.length ? open.slice(0, 2).map((t) => t.name).join(', ') : ''));
         body.appendChild(stat(c.planned + ' of ' + c.dinners, 'dinners planned'));
-        body.appendChild(stat(String(c.own), c.own === 1 ? 'block of your own' : 'blocks of your own'));
+        if (!kindYours()) body.appendChild(stat(String(c.own), c.own === 1 ? 'block of your own' : 'blocks of your own'));
+        else if (c.yours > 0) body.appendChild(stat(M.hours(c.yours), 'to yourself last week', plural(c.own, 'block of your own', 'blocks of your own')));
         if (lrec && (lrec.keep || lrec.change)) body.appendChild(el('div', 'rack-note', 'Last week you wanted to keep: ' + (lrec.keep || '…') + '. And change: ' + (lrec.change || '…') + '.'));
       }
       const notes = el('div', 'notes');
@@ -2026,8 +2031,10 @@
     }
     if (st.key === 'yours') {
       const c = weekCounts(ws);
-      body.appendChild(stat(M.hours(c.yours), 'yours this week', plural(c.own, 'block of your own', 'blocks of your own') + ' so far'));
       const sug = ownSpot(ws);
+      if (!kindYours()) body.appendChild(stat(M.hours(c.yours), 'yours this week', plural(c.own, 'block of your own', 'blocks of your own') + ' so far'));
+      else if (c.yours > 0) body.appendChild(stat(M.hours(c.yours), 'to yourself this week', 'so far, in ' + plural(c.own, 'block of your own', 'blocks of your own')));
+      else body.appendChild(el('div', 'rack-note', sug ? 'Want some time to yourself this week? There’s room for this:' : 'Want some time to yourself this week? Drag one of your blocks onto a day.'));
       if (sug) {
         const p = sug.block;
         const b = tile({ name: p.name + ' ' + M.DAY_LONG[M.weekday(sug.date)] + ' at ' + M.clock(sug.start), meta: 'There’s room. Tap to add it.', icon: p.icon, cat: p.cat, cls: 'glow', onClick: () => {
@@ -2068,7 +2075,7 @@
       return;
     }
     const c = weekCounts(ws);
-    body.appendChild(stat(M.hours(c.yours), 'yours this week', plural(c.own, 'block of your own', 'blocks of your own')));
+    if (!kindYours() || c.yours > 0) body.appendChild(stat(M.hours(c.yours), yoursWord() + ' this week', plural(c.own, 'block of your own', 'blocks of your own')));
     if (useDinners()) body.appendChild(stat(c.planned + ' of ' + c.dinners, 'dinners decided', c.mine ? 'You cook ' + plural(c.mine, 'night', 'nights') : ''));
     body.appendChild(stat(String(c.todos), c.todos === 1 ? 'to do with a time' : 'to dos with a time'));
     if (useTogether()) body.appendChild(stat(String(c.kim.length), c.kim.length === 1 ? 'thing with ' + (partner() || 'someone') : 'things with ' + (partner() || 'someone'), c.kim.join(', ')));
@@ -2096,7 +2103,7 @@
     g.fillText((who().name ? who().name + '’s week' : 'My week') + ', ' + M.spanText(dates[0], dates[6]), pad, 142, W2 - 2 * pad);
     const yours = M.totals(dates.map(day)).yours || 0;
     g.fillStyle = '#D8D1C4'; g.font = '700 28px "Atkinson Hyperlegible Next", sans-serif';
-    g.fillText(M.hours(yours) + ' of it is mine', pad, 186);
+    if (!kindYours() || yours > 0) g.fillText(M.hours(yours) + (kindYours() ? ' of it to myself' : ' of it is mine'), pad, 186);
     const x0 = pad + labelW, wTrack = W2 - pad - x0;
     dates.forEach((d, i) => {
       const y = top + i * rowH;
