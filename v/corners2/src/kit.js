@@ -11,7 +11,8 @@
   const h = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
   const K = window.Kit = { $, h, renders: [] };
 
-  K.icon = (name, size, color) => SR.icon(name, size || 9, color || '#F6EEE2');
+  K.ink = '#F6EEE2'; K.onGold = '#2A1D10'; /* a version can set its own */
+  K.icon = (name, size, color) => SR.icon(name, size || 9, color || K.ink);
   K.btn = (cls, label, fn, ic, icColor) => {
     const b = h('button', cls); b.type = 'button';
     if (ic) b.appendChild(K.icon(ic, 8, icColor));
@@ -96,7 +97,7 @@
     K.renders.push(() => {
       const r = SR.resetState();
       b.classList.toggle('due', !!r.strong);
-      b.replaceChildren(K.icon('calendar', 8, r.strong ? '#2A1D10' : '#F6EEE2'), h('span', '', r.label));
+      b.replaceChildren(K.icon('calendar', 8, r.strong ? K.onGold : K.ink), h('span', '', r.label));
       b.title = r.label;
     });
     return b;

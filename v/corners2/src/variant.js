@@ -4,7 +4,8 @@
 (function () {
   'use strict';
   const { h } = Kit;
-  const ESP = '#241A13', CREAM = '#F6EEE2';
+  const ESP = '#252928', CREAM = '#FFFFFF';
+  Kit.ink = CREAM; Kit.onGold = ESP; /* charcoal chrome with white type, like the board's own HUD */
   Kit.start(() => {
     const app = document.getElementById('app');
 
@@ -13,7 +14,7 @@
     const tl = h('div', 'k c-tl'); tl.dataset.edge = 'top';
     const me = h('button', 'k-chip c-me'); me.type = 'button'; me.setAttribute('aria-haspopup', 'menu'); me.setAttribute('aria-expanded', 'false');
     const meCircle = h('span', 'c-me-dot'), meName = h('span', 'c-me-name');
-    me.append(meCircle, meName, SR.icon('down', 7, '#D9CBB6'));
+    me.append(meCircle, meName, SR.icon('down', 7, '#B8B0A3'));
     me.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); toggleMenu(); });
     const kinds = h('div', 'k-chip c-kinds'); Kit.kindsHome = kinds;
     tl.append(me, kinds);
