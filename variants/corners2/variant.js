@@ -1,25 +1,37 @@
-/* Corners V2: you on the top left (the way to Settings), the date in the middle, the zoom on the right.
+/* Corners V2: you on the top left (the way to Settings, and whether it's saved), the date in the middle
+   (with the kind of day and the seven days in the day view), the zoom on the right.
    Hours yours on the bottom left; Add, To-dos, Block library, and the Sunday Reset on the bottom right. Everything
    you can place comes out beside the board, in 3D. And the desk clock is a Pomodoro timer. */
 (function () {
   'use strict';
   const { h } = Kit;
   const ESP = '#252928', CREAM = '#FFFFFF';
+  window.SR_clockFirst = true; /* the clock is the Pomodoro, so it stays on the desk right after the notepad */
   Kit.ink = CREAM; Kit.onGold = ESP; /* charcoal chrome with white type, like the board's own HUD */
   Kit.start(() => {
     const app = document.getElementById('app');
 
     /* == the corners == */
-    /* top left: you, the way to Settings, and in the day view the kind of day beside you */
+    /* top left: you, the way to Settings, with a small dot that says the board is saved */
     const tl = h('div', 'k c-tl'); tl.dataset.edge = 'top';
     const me = h('button', 'k-chip c-me'); me.type = 'button'; me.setAttribute('aria-haspopup', 'menu'); me.setAttribute('aria-expanded', 'false');
     const meCircle = h('span', 'c-me-dot'), meName = h('span', 'c-me-name');
-    me.append(meCircle, meName, SR.icon('down', 7, '#B8B0A3'));
+    const saveDot = h('i', 'c-save');
+    me.append(meCircle, saveDot, meName, SR.icon('down', 7, '#B8B0A3'));
     me.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); toggleMenu(); });
-    const kinds = h('div', 'k-chip c-kinds'); Kit.kindsHome = kinds;
-    tl.append(me, kinds);
+    tl.append(me);
+    /* top middle: the date; in the day view the kind of day and the week's seven days sit under it, as on the board's own date card */
     const tc = h('div', 'k k-chip c-tc'); tc.dataset.edge = 'top';
-    tc.appendChild(Kit.dateControl());
+    const kinds = h('div', 'c-kinds'); Kit.kindsHome = kinds;
+    const days = h('div', 'c-days');
+    tc.append(Kit.dateControl(), kinds, days);
+    const pills = document.getElementById('pills'), pillsFrom = pills && pills.parentElement, pillsNext = pills && pills.nextSibling;
+    Kit.renders.push(() => {
+      if (!pills) return;
+      const want = !SR.inToday() && SR.view.zoom === 'day' ? days : pillsFrom;
+      if (pills.parentElement !== want) { if (want === pillsFrom) pillsFrom.insertBefore(pills, pillsNext); else want.appendChild(pills); }
+      tc.classList.toggle('c-dayview', want === days);
+    });
     const tr = h('div', 'k k-chip c-tr'); tr.dataset.edge = 'top';
     tr.appendChild(Kit.zoomSwitch());
 
@@ -144,6 +156,20 @@
       }, 'c-fixed');
     }
 
+    /* == saved: the board's own save words, read from its hidden date card == */
+    const saveSrc = document.querySelector('#hud .save-state');
+    function saved() {
+      const cls = ['error', 'saving', 'offline', 'preview'].find((c) => saveSrc && saveSrc.classList.contains(c)) || 'saved';
+      const long = saveSrc && saveSrc.title ? saveSrc.title.replace(/\. Tap for Your data\.$/, '') : 'Saved in this browser on this device';
+      return { cls, long };
+    }
+    function drawSave() {
+      const st = saved();
+      saveDot.className = 'c-save ' + st.cls;
+      me.setAttribute('aria-label', meName.textContent + '. ' + st.long + '. Settings and everything else');
+    }
+    if (saveSrc) new MutationObserver(drawSave).observe(saveSrc, { attributes: true, attributeFilter: ['class', 'title'] });
+
     /* == your account: the obvious way to Settings == */
     let menu = null;
     function toggleMenu() { if (menu) closeMenu(); else openMenu(); }
@@ -153,7 +179,10 @@
       menu = h('div', 'k c-menu'); menu.setAttribute('role', 'menu');
       const head = h('div', 'c-menu-head');
       const dot = h('span', 'c-me-dot big', ((p && p.name) || 'Y').slice(0, 1).toUpperCase());
-      const who = h('div'); who.append(h('b', '', (p && p.name) || 'You'), h('span', '', p && p.sample ? 'Sample board, on this device' : 'On this device'));
+      const st = saved();
+      const line = Kit.btn('c-saveline', st.long, () => { closeMenu(); Kit.settings('data'); });
+      line.prepend(h('i', 'c-save ' + st.cls)); line.title = 'Your data: backups and where this board is kept';
+      const who = h('div'); who.append(h('b', '', (p && p.name) || 'You'), line);
       head.append(dot, who);
       menu.appendChild(head);
       const item = (label, ic, fn, cls) => { const b = Kit.btn('c-mi ' + (cls || ''), label, () => { closeMenu(); fn(); }, ic, cls && cls.includes('gold') ? ESP : CREAM); b.setAttribute('role', 'menuitem'); return b; };
@@ -296,6 +325,7 @@
       const p = SR.who(), name = (p && p.name) || 'You';
       meCircle.textContent = name.slice(0, 1).toUpperCase(); meName.textContent = name.split(' ')[0];
       me.title = 'Settings and everything else';
+      drawSave();
       document.body.classList.toggle('c-pomo-on', running);
       document.body.classList.toggle('c-resetting', !!v.reset);
       requestAnimationFrame(() => { measure(); place(); });

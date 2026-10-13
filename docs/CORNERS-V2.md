@@ -49,3 +49,10 @@ Russell moved these on Oct 13, after the first V2: the account went from the top
 28. It survives a reload.
 29. Closing it lets the camera settle back. Esc closes it too.
 30. Focus (the session for one thing) stays where it was: F, and the account menu.
+
+## Refined, Oct 13 (after comparing V2 with the 303 board)
+
+31. In the day view the kind of day and the week's seven days sit under the date, as on the board's own date card. A block dropped on a day there moves to it.
+32. Saved: a small dot on your circle (green kept, gold saving, red not saved). The menu says it in words and opens Your data.
+33. The clock is the first thing kept on the desk after the notepad (`window.SR_clockFirst`), so the Pomodoro is there wherever the desk has room for anything. In the week, month, and year on a laptop window the board takes the whole desk and nothing stands beside it; the Pomodoro is in your menu for those.
+34. Hours yours: the wording is open. Five options went to Russell; removing it is on the table.

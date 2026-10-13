@@ -23,8 +23,24 @@
 
 .c-tl { position: absolute; z-index: 30; top: 16px; left: 16px; display: flex; gap: 10px; align-items: stretch; }
 .c-tl .k-chip { position: static; }
-.c-kinds:empty { display: none; }
-.c-kinds #kinds { position: relative; margin: 0 2px; }
+/* the date, and in the day view its kind of day and the week's seven days under it */
+.c-tc.c-dayview { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px 8px; }
+.c-tc .k-date { justify-content: space-between; }
+.c-kinds:empty, .c-days:empty { display: none; }
+.c-kinds { display: flex; justify-content: center; }
+.c-kinds #kinds { position: relative; margin: 0; }
+.c-days .pills { margin: 0; padding: 0; gap: 4px; }
+.c-days .daypill { min-height: 46px; padding: 6px 0 9px; min-width: 40px; }
+/* saved: a small dot on your circle, green when it's kept, gold while saving, red when it isn't */
+.k .c-me { position: relative; }
+.c-me > .c-save { position: absolute; left: 33px; top: 33px; }
+.c-save { width: 11px; height: 11px; border-radius: 50%; background: #5FBF8A; box-shadow: 0 0 0 2px var(--esp); }
+.c-save.saving, .c-save.offline { background: var(--k-gold); }
+.c-save.error { background: #E0563F; }
+.c-save.preview { background: var(--cream-2); }
+.k .c-saveline { display: flex; align-items: center; gap: 7px; padding: 2px 0; font-size: 13px; font-weight: 400; color: var(--cream-2); text-align: left; }
+.k .c-saveline:hover { color: var(--cream); text-decoration: underline; }
+.c-saveline .c-save { flex: none; width: 8px; height: 8px; box-shadow: none; }
 .c-tc { top: 16px; left: 50%; transform: translateX(-50%); }
 .c-tr { top: 16px; right: 16px; }
 .c-bl { bottom: 16px; left: 16px; }
@@ -44,7 +60,6 @@
 @keyframes cmenu { from { transform: translateY(-6px); opacity: 0; } }
 .c-menu-head { display: flex; align-items: center; gap: 12px; padding: 10px 10px 14px; }
 .c-menu-head b { display: block; font-size: 16px; font-weight: 600; }
-.c-menu-head span { font-size: 13px; color: var(--cream-2); }
 .c-mi { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 12px; font-size: 14px; font-weight: 500; text-align: left; }
 .c-mi:hover, .c-mi:focus-visible { background: rgba(255, 255, 255, 0.09); outline: none; }
 .c-mi.first { background: rgba(255, 255, 255, 0.08); font-weight: 600; margin-bottom: 4px; }

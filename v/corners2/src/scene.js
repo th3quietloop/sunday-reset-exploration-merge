@@ -1902,7 +1902,8 @@
     });
   }
   /* what steps out first when the back row runs short */
-  const keepOf = (id, thing) => (id === 'notepad' ? 3 : thing && (thing.light || thing.hands || id === 'clock') ? 2 : thing && (thing.family === 'drinks' || thing.family === 'paper') ? 1 : thing && thing.family === 'plants' ? 0 : 0.5);
+  /* a version of the board can put the clock right after the notepad (window.SR_clockFirst), so it stays on the desk */
+  const keepOf = (id, thing) => (id === 'notepad' ? 3 : window.SR_clockFirst && (id === 'clock' || (thing && thing.hands)) ? 2.5 : thing && (thing.light || thing.hands || id === 'clock') ? 2 : thing && (thing.family === 'drinks' || thing.family === 'paper') ? 1 : thing && thing.family === 'plants' ? 0 : 0.5);
   function placeThings(layoutId, themeId, ways) {
     const K = root.DeskThemes, cat = K ? K.catalog(root.PropData, root.PropKit) : {};
     const L = K && K.LAYOUTS[layoutId];
