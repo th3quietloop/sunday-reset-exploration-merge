@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "merge", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 4353 }
+    { "name": "merge", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 4353 },
+    { "name": "board", "runtimeExecutable": "npx", "runtimeArgs": ["--yes", "serve@14.2.4", "board", "-l", "4354"], "port": 4354 }
   ]
 }

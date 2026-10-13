@@ -1,5 +1,11 @@
 # Sunday Reset, exploration merge (353)
 
+Two rounds live side by side, so you can flip between them:
+
+- **Round one** (the repo root, Vite): the flat clean calendar with toy blocks. https://sunday-reset-exploration-merge.vercel.app
+- **Round two** (`board/`): the real Sunday Reset desk (303) under round one's top bar, with Focus rebuilt. See [docs/BOARD-MERGE.md](docs/BOARD-MERGE.md) for the list. Run it with `node scripts/serve-board.mjs` (port 4354).
+
+
 A Frankenstein of the two Sunday Resets: the clean sans serif planner's calm (350) with the desk version's blocks (303). The chrome is black, white, and warm gray. The blocks are the only color on screen, and they're the part you play with.
 
 Vision, goal, and the long list of ways to make the menus get to the point: [docs/VISION.md](docs/VISION.md).
