@@ -1,10 +1,11 @@
 // Serves board/ as a static site, the way Vercel does: node scripts/serve-board.mjs [port]
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(fileURLToPath(new URL('.', import.meta.url)), '..', process.argv[3] || 'board');
+/* the folder to serve: relative to the repo, or an absolute path (a private build) */
+const root = resolve(join(fileURLToPath(new URL('.', import.meta.url)), '..'), process.argv[3] || 'board');
 const port = Number(process.argv[2] || 4354);
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 createServer(async (req, res) => {

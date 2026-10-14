@@ -56,8 +56,7 @@
     const keep = (k, v) => { if (SR.view.preview) return; try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch (e) { /* storage off */ } };
     const stored = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? fb : v; } catch (e) { return fb; } };
     /* Calendar, the menu, and the keys move the zoom from code; the switch shows it at once */
-    /* one spelling: the reset's step says To-dos, like the button that opens them */
-    { const st = (SR.D.STEPS || []).find((x) => x.key === 'todo'); if (st) st.title = 'To-dos'; }
+    /* V11: the steps' names (Look ahead, Your time, To-dos, Meals, Moving, People, Your week) are the board's own now (data.js STEPS) */
     const zoom0 = Kit.zoom; Kit.zoom = (z) => { zoom0(z); Kit.sync(); };
     /* V11: every kind of day laid out on the desk in place of the day (docs/V11-ON-SCREEN.md) */
     const spreadOn = () => !!SR.view.kindSpread && !SR.inToday() && SR.view.zoom === 'day';
@@ -209,8 +208,12 @@
       /* V11: the week's plan is always here, set or not yet (it says which) */
       menu.appendChild(h('div', 'c-mlabel', 'Plan'));
       menu.appendChild(item(planTitle(planWeek()), 'calendar', () => openPlan(planWeek())));
-      if (SR.useDinners()) menu.append(item('Meal board', 'pot', () => openMealBoard()), item('Dinners and groceries', 'cart', () => layOut('dinners')));
-      if (SR.useTogether()) menu.appendChild(item(partnerName() ? 'Time with ' + partnerName() : SR.withName(), 'heart', () => layOut('kim')));
+      /* V11: the groceries live on the meal board now, so both lead there (the list opens in view) */
+      if (SR.useDinners()) menu.append(item('Meal board', 'pot', () => openMealBoard()), item('Groceries', 'cart', () => openMealBoard(null, { shop: true })));
+      /* V11: time with whoever is in your week, not one partner */
+      if (SR.useTogether()) menu.appendChild(item('People', 'heart', () => layOut('kim')));
+      /* V11: Moving has a home outside the reset: its goal, this week's moves, and moves to drag */
+      if (SR.useMove && SR.useMove()) menu.appendChild(item('Moving', 'runner', () => { if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'moving' }); }));
       menu.appendChild(h('div', 'c-mlabel', 'On the desk'));
       menu.append(item('Focus on one thing', 'star', Kit.focus), item('Pomodoro timer', 'bell', openTimer));
       app.appendChild(menu);
@@ -341,15 +344,76 @@
        no counters, no overdue: skipping a Sunday is fine. */
     const M = SR.M;
     /* minutes per step, so the chip and the intro can say how long it takes, and mean it */
-    const STEP_MIN = { back: 2, ahead: 3, shape: 2, yours: 3, todo: 4, dinners: 5, kim: 2, done: 1 };
+    const STEP_MIN = { back: 2, ahead: 3, shape: 2, yours: 3, todo: 4, dinners: 5, move: 2, kim: 2, done: 1 };
     const CATCH_MIN = { todo: 4, dinners: 3, done: 1 };
     const partnerName = () => (SR.who() && SR.who().partner) || '';
-    const stepName = (k) => ({ back: 'Look back', ahead: 'Look ahead', shape: 'Set the week', yours: 'Your time', todo: 'To-dos', dinners: 'Dinners', kim: partnerName() ? 'You and ' + partnerName() : 'Together', done: 'Your week' }[k] || k);
+    /* V11: who's cooking, by name: your own name for 'me', then the first partner ('kim') or anyone else who
+       lives with you ('p:' ids, SR.cookWho); '' when it's Anyone or not cooking */
+    /* V11: every place says a cook the way the dinner panel's chips do: You, then each name, and two people
+       with one name say which (Sam, Sam (family)). The second argument is kept for old callers */
+    const cookNamed = (id) => {
+      if (!id || id === 'home') return '';
+      const c = cookList(id).find((x) => x.id === id);
+      return c ? c.name : SR.cookWho ? SR.cookWho(id) : id === 'kim' ? partnerName() : '';
+    };
+    /* V11: the short form for a small tag: the first name, unless another cook shares it */
+    const cookShort = (id) => {
+      const full = cookNamed(id), first = full.split(/\s+/)[0] || full;
+      if (first === full) return full;
+      return cookList(id).some((x) => x.id !== id && (x.name.split(/\s+/)[0] || x.name) === first) ? full : first;
+    };
+    /* V11: everyone who can cook, as { id, name }, keeping the one cooking now even if they moved out */
+    const cookList = (keep) => (SR.cookChoices ? SR.cookChoices(keep) : [{ id: 'me', name: 'You' }].concat(partnerName() ? [{ id: 'kim', name: partnerName() }] : []));
+    /* V11: one way to say who's cooking a dinner, for This week's plan, the finish, the picture, and the
+       shared text. t is the tag: an initial, with more letters where two cooks share one (Alex and Ana are
+       Al and An), the whole first name where one begins another (Dan and Daniel), You for you when the
+       profile has no name or another cook has yours, or a word for how it's happening (Anyone, Order in). name is what this screen says (You
+       cook, Ana cooks, Anyone cooks), say is the name for someone else reading the picture (Alex, Ana,
+       Anyone), and plain names a night with no dish yet (Cooking). quiet: you're the only one who can cook,
+       so the tag says nothing new (the meal board and the dinner panel leave it out then too). */
+    function cookTag(x) {
+      if (!x || !x.cook) return null;
+      const list = cookList(x.cook), solo = list.length < 2;
+      if (x.cook === 'home') return { t: 'Anyone', cls: 'word', name: 'Anyone cooks', say: 'Anyone', plain: 'Cooking', quiet: solo };
+      const how = { order: 'Order in', out: 'Eat out', leftovers: 'Leftovers', skip: 'Skip' }[x.cook];
+      if (how) return { t: how, cls: 'word', name: how, say: how, plain: how, quiet: false };
+      const own = (SR.who() && SR.who().name) || '';
+      const first = (s) => String(s || '').trim().split(/\s+/)[0] || '', lc = (s) => s.toLowerCase();
+      const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+      /* V11: each cook by the first name their tag starts from: yours for you (You when the profile has no
+         name), then the names the dinner panel uses */
+      const named = list.map((c) => ({ id: c.id, c, n: c.id === 'me' ? first(own) || 'You' : first(c.name) }));
+      const cook = named.find((c) => c.id === x.cook);
+      const full = x.cook === 'me' ? own : cookNamed(x.cook);
+      if (!cook || (!full && x.cook !== 'me')) return null;
+      const others = named.filter((c) => c.id !== x.cook && c.n);
+      /* V11: two cooks with one first name (you and a family Alex, Sam and Sam (family)) */
+      const twin = others.some((o) => lc(o.n) === lc(cook.n));
+      const grp = (c) => (c.id === 'kim' || c.c.group === 'partner' ? 'partner' : 'family');
+      let t = '';
+      if (x.cook === 'me' && (!own || twin)) t = 'You';
+      else if (twin) t = cook.c.name;
+      else {
+        /* the fewest letters (up to three) no other cook's first name begins with the same way: Al and An */
+        for (let k = 1; k <= 3 && !t; k++) { const p = cook.n.slice(0, k); if (!others.some((o) => lc(o.n.slice(0, k)) === lc(p))) t = cap(lc(p)); }
+        /* one name begins another (Dan and Daniel, Chris and Christine): the whole first name tells them apart */
+        if (!t) t = cap(cook.n);
+      }
+      if (x.cook === 'me') return { t, cls: 'me', name: 'You cook', say: first(own) || 'Me', full: own, plain: 'Cooking', quiet: solo };
+      /* for someone reading the picture: the first name, and which one when it's also yours */
+      let say = cookShort(x.cook) || full;
+      if (!/\(/.test(say) && own && lc(first(own)) === lc(first(say))) say = first(say) + ' (' + grp(cook) + ')';
+      return { t, cls: 'them', name: full + ' cooks', say, full, plain: 'Cooking', quiet: solo };
+    }
+    /* V11: one name per step everywhere it shows: the steps across the top, the intro, Next, and the panel */
+    const stepName = (k) => ({ back: 'Look back', ahead: 'Look ahead', shape: 'Set the week', yours: 'Your time', todo: 'To-dos', dinners: 'Meals', move: 'Moving', kim: 'People', done: 'Your week' }[k] || k);
     /* what each step is for, in a few words, under its name in the intro */
-    const stepLine = (k) => ({ back: 'What to keep, what to change', ahead: 'Dates coming up', shape: 'Which kind of week', yours: 'Blocks of your own', todo: 'Give them a time', dinners: 'Pick them, and who cooks', kim: 'One thing together', done: '' }[k] || '');
-    const stepCat = (k) => ({ back: 'home', ahead: 'work', shape: 'work', yours: 'yours', todo: 'family', dinners: 'meals', kim: 'us', done: 'open' }[k] || 'yours');
+    const stepLine = (k) => ({ back: 'What to keep, what to change', ahead: 'Dates coming up', shape: 'Which kind of week', yours: 'Blocks of your own', todo: 'Give them a time', dinners: 'Plan the week’s meals', move: 'Workouts, runs, and walks', kim: 'Time with the people in your week', done: '' }[k] || '');
+    const stepCat = (k) => ({ back: 'home', ahead: 'work', shape: 'work', yours: 'yours', todo: 'family', dinners: 'meals', move: 'yours', kim: 'us', done: 'open' }[k] || 'yours');
     /* the steps a run would have, before it starts (the board decides the same way once it does) */
     function runSteps(ws, catchup) {
+      /* V11: the board's own list, the one the run and Settings use (SR.stepsFor) */
+      if (SR.stepsFor) return SR.stepsFor(ws, !!catchup).map((s) => s.key);
       if (catchup) return ['todo'].concat(SR.useDinners() ? ['dinners'] : [], ['done']);
       const off = (SR.state.settings && SR.state.settings.resetOff) || [];
       const fresh = SR.state.created && SR.state.created > M.addDays(ws, -7) && SR.firstReset(ws);
@@ -358,6 +422,7 @@
         if ((window.SR_resetSkip || []).includes(k) || off.includes(k)) return false;
         if (k === 'dinners' && !SR.useDinners()) return false;
         if (k === 'kim' && !SR.useTogether()) return false;
+        if (k === 'move' && !(SR.useMove && SR.useMove())) return false;
         if (k === 'back' && fresh) return false;
         return true;
       });
@@ -377,21 +442,30 @@
       const t = SR.today, wd = M.weekday(t), now = SR.nowMin;
       const full = SR.resetWeek(), fr = rec(full);
       const fullSteps = runSteps(full, false), counted = fullSteps.length - 1;
+      /* V11: a reset put away with Finish later this visit comes back first, on the step it was on (a catch up
+         too); then one for next week, then one for the week you're in, put away midweek (after a reload too) */
+      const cw = M.weekStart(t), cwr = cw !== full ? rec(cw) : null, pk = SR.parked;
+      /* (a week whose reset was done and opened again counts too: parked lasts only until it's resumed or done) */
+      if (pk && (pk.ws === full || pk.ws === cw)) {
+        const n = runSteps(pk.ws, pk.catchup).length - 1;
+        return { kind: 'progress', label: 'Finish your reset', meta: Math.min(pk.step + 1, n) + ' of ' + n, title: 'Picks up where you stopped', go: () => SR.startReset(pk.ws, pk.catchup) };
+      }
       if (fr && fr.step > 0 && !fr.done) return { kind: 'progress', label: 'Finish your reset', meta: Math.min(fr.step + 1, counted) + ' of ' + counted, title: 'Picks up where you stopped', go: () => SR.startReset(full) };
+      if (cwr && cwr.step > 0 && !cwr.done && !cwr.caught) { const n = runSteps(cw, false).length - 1; return { kind: 'progress', label: 'Finish your reset', meta: Math.min(cwr.step + 1, n) + ' of ' + n, title: 'Picks up where you stopped', go: () => SR.startReset(cw) }; }
       const sundayish = wd === 0 || (wd === 6 && now >= 17 * 60);
       if (sundayish) {
-        if (fr && fr.done) return { kind: 'plan', label: wd === 0 ? 'This week’s plan' : 'Next week’s plan', title: 'Dinners, to-dos, and time for you', go: () => openPlan(full) };
+        if (fr && fr.done) return { kind: 'plan', label: planTitle(full), title: 'Meals, to-dos, and time for you', go: () => openPlan(full) };
         if (snooze && snooze.ws === full && snooze.at > Date.now()) return { kind: 'snoozed', label: 'Sunday Reset at ' + snooze.label, title: 'Reminds you once, if this tab is open', go: () => openIntro(full, false) };
         return { kind: 'sunday', label: 'Start Sunday Reset', meta: minutesOf(fullSteps) + ' min', title: 'Set up your week', go: () => openIntro(full, false) };
       }
       const cur = M.weekStart(t), cr = rec(cur);
-      if (cr && (cr.done || cr.caught || cr.setup)) return { kind: 'plan', label: 'This week’s plan', title: 'Dinners, to-dos, and time for you', go: () => openPlan(cur) };
+      if (cr && (cr.done || cr.caught || cr.setup)) return { kind: 'plan', label: 'This week’s plan', title: 'Meals, to-dos, and time for you', go: () => openPlan(cur) };
       if (wd === 6) return { kind: 'quiet', label: 'Sunday Reset', meta: 'tomorrow', title: 'Start early if you like', go: () => openIntro(full, false) };
       /* Monday and Tuesday: the whole reset still fits the week, so it says so, in gold */
       if (wd === 1 || wd === 2) return { kind: 'sunday', label: 'Set up this week', meta: minutesOf(runSteps(cur, false)) + ' min', title: 'The Sunday Reset, for the week you’re in', go: () => openIntro(cur, false) };
       const quick = runSteps(cur, true);
       if (hiddenMid() === cur) return { kind: 'none', label: '' };
-      return { kind: 'midweek', label: 'Plan the rest of the week', meta: minutesOf(quick, true) + ' min', title: 'To-dos and dinners for the days left', go: () => openIntro(cur, true) };
+      return { kind: 'midweek', label: 'Plan the rest of the week', meta: minutesOf(quick, true) + ' min', title: 'To-dos and meals for the days left', go: () => openIntro(cur, true) };
     }
     const rchip = h('button', 'c-rchip'); rchip.type = 'button';
     rchip.addEventListener('click', () => { SR.Snd.init(); const s = chipState(); if (s.go) s.go(); });
@@ -427,6 +501,9 @@
       const r = rec(ws);
       /* a reset already under way picks up where it stopped, no intro */
       if (!catchup && r && r.step > 0 && !r.done) { SR.startReset(ws); return; }
+      /* V11: so does a catch up put away with Finish later, on the step it was on */
+      const pk = SR.parked;
+      if (catchup && pk && pk.catchup && pk.ws === ws) { SR.startReset(ws, true); return; }
       const keys = runSteps(ws, catchup), steps = keys.filter((k) => k !== 'done');
       const mins = minutesOf(keys, catchup);
       const counts = SR.weekCounts(ws);
@@ -442,12 +519,19 @@
         const bits = [];
         /* V11: the to-dos the To-dos count counts, due this week, said the same way: how many need a time,
            how many have one after they're due, and (calmly) how many are from before this week */
-        const dueList = dueWeek(), need = dueList.filter((x) => x.status !== 'planned').length, late = dueList.length - need, carried = dueList.filter((x) => x.task.due && x.task.due < SR.today).length;
-        if (need) bits.push(need + (need === 1 ? ' to-do due this week needs a time' : ' to-dos due this week need a time'));
-        if (late) bits.push(late + (late === 1 ? ' has a time after it’s due' : ' have times after they’re due'));
-        if (carried) bits.push(carried === 1 ? 'One of them is from before this week' : numWord(carried) + ' of them are from before this week');
-        if (nights && SR.useDinners()) bits.push(nights + (nights === 1 ? ' dinner not picked' : ' dinners not picked'));
-        if (bits.length) { const note = h('div', 'c-intro-note'); note.appendChild(h('div', 'c-kick gold', 'This week')); bits.forEach((b) => note.appendChild(h('p', '', b))); left.appendChild(note); }
+        /* (the same count as the To-dos step and the finish: due by the week's last day, SR.weekCounts) */
+        /* V11: said by SR.dueWords, the one phrase the To-dos step, the plan, and the finish use too; one
+           from before is "due before today", which is true midweek as well as on Sunday */
+        const dueList = counts.unplaced.concat(counts.lateTimes), dw = SR.dueWords(counts, ws), carried = dueList.filter((x) => x.task.due && x.task.due < SR.today).length;
+        if (dw.need) bits.push(dw.need);
+        if (dw.late) bits.push(dw.late);
+        /* (when every one was due before today, the line before already says so) */
+        if (carried && !(dw.n && dw.before === dw.n)) bits.push(carried === 1 ? (dueList.length === 1 ? 'It was due before today' : 'One of them was due before today') : numWord(carried) + ' of them were due before today');
+        /* V11: the week's meals as the meal board counts them, breakfast and lunch too, said only once some are
+           planned ("2 meals planned"): no zero count, and no total that assumes how many meals a day you eat */
+        /* (in figures, as the to-do line is: "2 meals planned") */
+        if (SR.useDinners()) { const mc = mealCount(M.range(ws, 7), mealRows()); if (mc.n) bits.push(mc.n + (mc.n === 1 ? ' meal' : ' meals') + ' planned' + (mc.span ? ', ' + mc.span : '')); }
+        if (bits.length) { const note = h('div', 'c-intro-note'); note.appendChild(h('div', 'c-kick', dw.week.charAt(0).toUpperCase() + dw.week.slice(1))); bits.forEach((b) => note.appendChild(h('p', '', b + '.'))); left.appendChild(note); }
         const acts = h('div', 'c-intro-acts');
         const go = Kit.btn('c-go', catchup ? 'Start' : 'Start the reset', () => { Kit.closeSheet(); if (snooze && snooze.ws === ws) { snooze = null; saveSnooze(); } SR.startReset(ws, catchup); });
         acts.appendChild(go);
@@ -476,7 +560,8 @@
           const li = h('li');
           const c = SR.cat(stepCat(k));
           const num = h('span', 'c-snum', String(i + 1)); num.style.background = c.base; num.style.color = c.ink || '#FFFFFF';
-          const words = h('span', 'c-sname'); words.append(h('b', '', stepName(k)), h('small', '', stepLine(k)));
+          /* V11: a catch up plans meals for the days that are left, as its Meals step says */
+          const words = h('span', 'c-sname'); words.append(h('b', '', stepName(k)), h('small', '', catchup && k === 'dinners' ? 'Plan meals for the days left' : stepLine(k)));
           li.append(num, words, h('span', 'c-smin', ((catchup ? CATCH_MIN : STEP_MIN)[k] || 2) + ' min'));
           list.appendChild(li);
         });
@@ -494,49 +579,114 @@
       stepsBar.hidden = !r;
       if (r) { const at = r.week + ':' + r.step; if (drawSteps.at !== at) { drawSteps.at = at; const rb = document.getElementById('rack-body'); if (rb) rb.scrollTop = 0; } }
       const rack = document.getElementById('rack');
-      /* the panel stands on the left while it runs; the board measures its room again as soon as it moves */
-      const side = window.innerWidth < 760 ? 'bottom' : 'left';
-      if (rack && (rack.dataset.edge || '') !== (r ? side : '')) {
+      /* the panel stands on the left while it runs; the board measures its room again as soon as it moves.
+         V11: on a phone (under 760 wide) and a window under 980 wide that stands upright (a tablet) it's a sheet
+         along the bottom, so the week keeps the whole width (sheetMode, frame.css, body.c-rsheet); from 760 to
+         1079 wide otherwise it's a narrower panel (frame.css) */
+      document.body.classList.toggle('c-rsheet', sheetMode());
+      const side = sheetMode() ? 'bottom' : 'left';
+      if (rack && !(r && document.body.classList.contains('c-panel-off')) && (rack.dataset.edge || '') !== (r ? side : '')) {
         if (r) rack.dataset.edge = side; else delete rack.dataset.edge;
         requestAnimationFrame(() => requestAnimationFrame(() => SR.layoutInsets()));
         /* and once more after the panel and the board have settled */
         setTimeout(() => SR.layoutInsets(), 450); setTimeout(() => SR.layoutInsets(), 1100);
       }
-      if (!r) return;
-      const steps = SR.stepsNow(), seen = r.catchup ? r.step : ((rec(r.week) || {}).step || 0);
+      if (!r) { forgetMarks(); return; }
+      const steps = SR.stepsNow();
+      /* V11: a check only for a step that's done (left with Next); a step you've opened but not finished wears
+         a ring; one not reached yet, or jumped past, is its number. The marks last the run (marksFor), so
+         Finish later, Resume, or a reload never turn a step you only opened into a check */
+      if (!r.passed) { const m = marksFor(r, steps); r.passed = m.passed; r.visited = m.visited; r.lastAt = r.step; }
+      if (r.step === r.lastAt + 1 && steps[r.lastAt]) r.passed.add(steps[r.lastAt].key);
+      r.lastAt = r.step;
+      r.visited.add(steps[r.step].key);
+      keepMarks(r);
       const kids = [];
+      const stateOf = (s, i) => (i === r.step ? 'on' : r.passed.has(s.key) ? 'did' : r.visited.has(s.key) ? 'seen' : '');
       steps.forEach((s, i) => {
         if (s.key === 'done') return;
-        if (kids.length) kids.push(h('i', 'c-sline' + (i <= seen ? ' did' : '')));
-        const b = h('button', 'c-sbtn' + (i === r.step ? ' on' : i < r.step || i <= seen ? ' did' : ''));
+        const st = stateOf(s, i);
+        if (kids.length) kids.push(h('i', 'c-sline' + (i > 0 && stateOf(steps[i - 1], i - 1) === 'did' ? ' did' : '')));
+        const b = h('button', 'c-sbtn' + (st ? ' ' + st : ''));
         b.type = 'button';
         const mark = h('span', 'c-sdot');
-        if (i !== r.step && (i < r.step || i <= seen)) mark.appendChild(SR.icon('check', 7, '#252928')); else mark.textContent = String(i + 1);
-        b.append(mark, h('span', '', stepName(s.key)));
+        if (st === 'did') mark.appendChild(SR.icon('check', 7, '#252928')); else mark.textContent = String(i + 1);
+        b.append(mark, h('span', 'c-sname', stepName(s.key)));
+        b.setAttribute('aria-label', 'Step ' + (i + 1) + ', ' + stepName(s.key) + (st === 'did' ? ', done' : st === 'seen' ? ', opened' : ''));
         if (i === r.step) b.setAttribute('aria-current', 'step');
         b.addEventListener('click', () => { SR.Snd.init(); SR.goStep(i); });
         kids.push(b);
       });
+      /* V11: the finish is the bar's quiet last stop, Your week, so the whole way is in view */
+      const fin = steps.findIndex((s) => s.key === 'done');
+      if (fin >= 0) {
+        const on = r.step === fin;
+        kids.push(h('i', 'c-sline end'));
+        const b = h('button', 'c-sbtn c-sfin' + (on ? ' on' : ''));
+        b.type = 'button';
+        const mark = h('span', 'c-sdot');
+        if (on) mark.appendChild(SR.icon('check', 7, '#252928'));
+        b.append(mark, h('span', 'c-sname', stepName('done')));
+        b.setAttribute('aria-label', 'The finish, ' + stepName('done'));
+        if (on) b.setAttribute('aria-current', 'step');
+        b.addEventListener('click', () => { SR.Snd.init(); SR.goStep(fin); });
+        kids.push(b);
+      }
       stepsBar.replaceChildren(...kids);
+      fitSteps(); requestAnimationFrame(fitSteps);
     }
-
-    /* == Repeat last week, in the dinner step: most weeks are mostly the same dinners == */
-    window.SR_dinnerExtras = (body, dates) => {
-      const st = SR.state, decided = (x) => x && (x.name || x.cook);
-      const fill = dates.filter((d) => d >= SR.today && SR.day(d).blocks.some((b) => b.dinner) && !decided(st.dinners[d]) && decided(st.dinners[M.addDays(d, -7)]));
-      if (!fill.length) return;
-      const b = h('button', 'cta c-repeat'); b.type = 'button';
-      const words = h('span', 'grow'); words.append(h('b', '', 'Repeat last week'), h('small', '', 'Fills ' + fill.length + (fill.length === 1 ? ' open night' : ' open nights')));
-      b.append(SR.icon('pot', 10, '#F2CF7A'), words);
-      b.addEventListener('click', () => {
-        SR.Snd.init();
-        SR.commit(() => { fill.forEach((d) => { st.dinners[d] = JSON.parse(JSON.stringify(st.dinners[M.addDays(d, -7)])); }); });
-        if (SR.Snd.clack) SR.Snd.clack(0.8);
-        SR.toast('Added last week’s dinners to ' + fill.length + (fill.length === 1 ? ' night.' : ' nights.'), 'good', { label: 'Undo', fn: SR.undo });
-        SR.render();
-      });
-      body.appendChild(b);
+    /* V11: the names fold to the step you're on whenever the whole bar doesn't fit its room (seven stops on a
+       board with Look back, the finish's wider panel, a tablet), measured rather than guessed from the width */
+    function fitSteps() {
+      if (stepsBar.hidden) return;
+      stepsBar.classList.remove('fold');
+      if (stepsBar.scrollWidth > stepsBar.clientWidth + 1) stepsBar.classList.add('fold');
+    }
+    window.addEventListener('resize', () => requestAnimationFrame(fitSteps));
+    /* V11: the step bar's marks for a run, by week (and catch up): kept for this visit, and on this device outside
+       a preview, until the reset is done. With nothing kept, the steps behind where it picks up count as done */
+    const MARKS = 'sundayreset.v11.resetMarks', marksMem = {};
+    let marksRun = null;
+    /* V11: in a preview the key names the board and which time it was opened (app.js showPreview), so a Dev
+       scenario never wears the marks of another, or of the last time it was open; the old ones are let go */
+    const markKey = (r) => {
+      const pv = SR.view.preview, p = pv ? 'p:' + (pv.id || '') + ':' + (pv.open || 0) + ':' : '';
+      if (pv) Object.keys(marksMem).forEach((k) => { if (k.slice(0, 2) === 'p:' && k.slice(0, p.length) !== p) delete marksMem[k]; });
+      return p + r.week + (r.catchup ? ':c' : '');
     };
+    function marksFor(r, steps) {
+      const k = markKey(r), wr = rec(r.week), finished = !!(wr && (r.catchup ? wr.caught : wr.done));
+      const m = marksMem[k] || (!SR.view.preview && !finished ? stored(MARKS, {})[k] : null);
+      if (m) return { passed: new Set(m.passed || []), visited: new Set(m.visited || []) };
+      return { passed: new Set(steps.slice(0, r.step).map((s) => s.key)), visited: new Set() };
+    }
+    function keepMarks(r) {
+      const k = markKey(r), m = { passed: [...r.passed], visited: [...r.visited] };
+      marksRun = { k, week: r.week, catchup: r.catchup };
+      if (JSON.stringify(marksMem[k]) === JSON.stringify(m)) return;
+      marksMem[k] = m;
+      keep(MARKS, { [k]: m });
+    }
+    /* a run that ended with Done forgets its marks, so opening the week again starts fresh; one put away with
+       Finish later (SR.parked) keeps them, even for a week that was done before */
+    function forgetMarks() {
+      const f = marksRun; if (!f) return;
+      marksRun = null;
+      const wr = rec(f.week), pk = SR.parked;
+      if (pk && pk.ws === f.week && !!pk.catchup === !!f.catchup) return;
+      if (!(wr && (f.catchup ? wr.caught : wr.done))) return;
+      delete marksMem[f.k];
+      if (stored(MARKS, {})[f.k]) keep(MARKS, {});
+    }
+    /* V11: the reset's panel is a sheet along the bottom on a phone, and on a window under 980 wide that stands
+       taller than it's wide (a tablet held upright), where a panel on the left left the week about 320 wide
+       (drawSteps, panelTools; frame.css uses the same sizes) */
+    function sheetMode() { const w = window.innerWidth; return w < 760 || (w < 980 && window.innerHeight >= w); }
+    /* app.js layoutInsets asks the same question, so a sheet put away with Hide the steps still counts */
+    window.SR_sheetMode = sheetMode;
+
+    /* V11: Repeat last week left the Meals step for its quiet Same as last week (window.SR_mealStep), which
+       brings over breakfast and lunch too */
 
     /* == This week's plan: what the chip opens once the week is set ==
        V11 (docs/V11-TODOS.md): its to-dos are a list you can act on (check, add, give a time, change, take
@@ -555,9 +705,9 @@
         const cur = SR.today >= ws && SR.today <= last, future = ws > SR.today;
         /* a to-do added here is due the week's last day, unless you say a day */
         const defDue = () => (last < SR.today ? SR.today : last);
-        const adder = todoAdder({ placeholder: 'Add a to-do', label: 'Add a to-do for this week', due: defDue, idle: () => 'Due ' + dayWord(defDue()) + ' unless you say a day, like “Call the bank Friday”.', onAdd: (t) => { fresh.add(t.id); draw(); } });
+        const adder = todoAdder({ placeholder: 'Add a to-do', label: 'Add a to-do for ' + SR.weekWords(ws), due: defDue, idle: () => 'Due ' + dayWord(defDue()) + ' unless you say a day, like “Call the bank Friday”.', onAdd: (t) => { fresh.add(t.id); draw(); } });
         const draw = () => {
-          const st = SR.state, me = (SR.who() && SR.who().name) || 'You';
+          const st = SR.state;
           const y = card.scrollTop, typing = document.activeElement === adder.inp, caret = typing ? [adder.inp.selectionStart, adder.inp.selectionEnd] : null;
           [...card.children].forEach((c) => { if (!c.classList.contains('k-x')) c.remove(); });
           const set = weekSet(ws) || (!cur && !future);
@@ -579,28 +729,33 @@
 
           /* dinners, and who's cooking */
           if (SR.useDinners()) {
-            const box = h('section', 'c-pcard'); box.appendChild(h('h3', '', 'Dinners'));
-            const cookWord = (x) => {
-              if (!x) return null;
-              if (x.cook === 'me') return { t: me.slice(0, 1).toUpperCase(), cls: 'me', name: me };
-              if (x.cook === 'kim') return { t: (partnerName() || 'P').slice(0, 1).toUpperCase(), cls: 'them', name: partnerName() };
-              const w = { home: 'Home', order: 'Order in', out: 'Eat out', leftovers: 'Leftovers', skip: 'Skip' }[x.cook];
-              return w ? { t: w, cls: 'word', name: w } : null;
-            };
+            /* V11: Meals, since the meal board plans breakfast and lunch too: each night here, the rest in a line */
+            const box = h('section', 'c-pcard'); box.appendChild(h('h3', '', 'Meals'));
+            /* V11: who cooks, said the way the finish, the picture, and the shared text say it (cookTag) */
             dates.forEach((d) => {
               if (!SR.day(d).blocks.some((b) => b.dinner)) return;
               const x = st.dinners[d];
-              let who = cookWord(x);
+              let who = cookTag(x);
               /* a night decided only by how (leftovers, eating out) says the how as its name */
-              const name = x && x.name ? x.name : who && who.cls === 'word' ? who.name : x && x.cook ? 'Dinner' : d < SR.today ? 'Not planned' : 'Not picked';
-              if (x && !x.name && who && who.cls === 'word') who = null;
+              /* V11: a night still to decide is Open, the word the finish and the picture use */
+              const name = x && x.name ? x.name : who && who.cls === 'word' ? who.plain : x && x.cook ? 'Dinner' : d < SR.today ? 'Not planned' : 'Open';
+              if ((x && !x.name && who && who.cls === 'word') || (who && who.quiet)) who = null;
               const row = h('button', 'c-prow'); row.type = 'button';
               row.append(h('span', 'c-pday', M.DAY_SHORT[M.weekday(d)]), h('span', 'c-pname' + (x && (x.name || x.cook) ? '' : ' quiet'), name));
-              if (who) { const tag = h('span', 'c-who ' + who.cls, who.t); tag.title = who.cls === 'word' ? who.name : who.name + ' cooks'; row.appendChild(tag); }
+              if (who) { const tag = h('span', 'c-who ' + who.cls, who.t); tag.title = who.name; row.appendChild(tag); }
               row.title = 'Dinner on ' + M.DAY_LONG[M.weekday(d)];
+              /* (a screen reader hears who, not an initial) */
+              row.setAttribute('aria-label', 'Dinner on ' + M.DAY_LONG[M.weekday(d)] + ': ' + name + (who ? ', ' + who.name : ''));
               row.addEventListener('click', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'dinner', date: d }); });
               box.appendChild(row);
             });
+            /* V11: breakfasts and lunches planned on the meal board, said in one line under the nights */
+            /* (a meal skipped isn't one planned, as the meal board counts) */
+            const more = [['breakfast', 'breakfast', 'breakfasts'], ['lunch', 'lunch', 'lunches']].map(([k, one, many]) => { const n = dates.filter((d) => { const m = mealAt(d, k); return m && m.how !== 'skip'; }).length; return n ? n + ' ' + (n === 1 ? one : many) : ''; }).filter(Boolean);
+            if (more.length) box.appendChild(h('p', 'c-pmore', 'Also ' + more.join(' and ') + '.'));
+            /* V11: the whole week's meals, and the groceries, are on the meal board */
+            /* V11: Done on the meal board brings this plan back */
+            box.appendChild(Kit.btn('c-pmeals', 'Open the meal board', () => { Kit.closeSheet(); openMealBoard(ws, { back: () => openPlan(ws) }); }, 'pot'));
             grid.appendChild(box);
           }
 
@@ -608,7 +763,9 @@
              what has a time this week; each row checks off, opens to change, takes a time, and comes off */
           const tbox = h('section', 'c-pcard c-ptodos');
           const pl = M.placements(st), inWeek = (p) => p.date >= ws && p.date <= last;
-          const dueList = cur ? dueWeek() : future ? M.dueSoon(st, SR.today, M.diffDays(SR.today, last), SR.nowMin) : [];
+          /* V11: the week this plan is for, Sunday to Saturday, the same window as the reset (SR.weekCounts),
+             never the rolling seven days of To-dos' Next 7 days */
+          const dueList = cur || future ? M.dueSoon(st, SR.today, M.diffDays(SR.today, last), SR.nowMin) : [];
           const needIds = dueList.filter((x) => x.status !== 'planned' || x.plan.after).map((x) => x.task.id);
           kept.forEach((sec, id) => { if (sec === 'needs' && !needIds.includes(id) && SR.taskById(id)) needIds.push(id); });
           const needs = steady(needIds).map((id) => SR.taskById(id)).filter(Boolean);
@@ -630,7 +787,7 @@
             g.appendChild(h('div', 'c-tdgh ask', 'Needs a time'));
             needs.forEach((t) => g.appendChild(todoRow(t, Object.assign({}, ctx, { section: 'needs' }))));
             tbox.appendChild(g);
-          } else if (cur || future) tbox.appendChild(h('p', 'c-pgood', all ? 'Everything due this week has a time.' : 'Nothing due this week, and nothing with a time yet.'));
+          } else if (cur || future) { const dw = SR.dueWords(SR.weekCounts(ws), ws); tbox.appendChild(h('p', 'c-pgood', all ? dw.all + '.' : dw.none + ', and nothing with a time yet.')); }
           if (timed.length) {
             const g = h('div', 'c-tdgroup');
             g.appendChild(h('div', 'c-tdgh', 'Has a time'));
@@ -643,7 +800,8 @@
           /* kept for you: good news only */
           const col = h('div', 'c-pcol');
           const evenings = dates.filter((d) => SR.day(d).blocks.some((b) => b.free && b.start >= 16 * 60));
-          const yours = (SR.weekCounts(ws).yours || 0);
+          /* V11: less the moves the Moving card lists (yoursWeek), as the finish counts it */
+          const yours = yoursWeek(ws);
           if (evenings.length || yours > 0) {
             const kept = h('section', 'c-pcard kept');
             kept.appendChild(h('div', 'c-kick', 'Kept for you'));
@@ -653,12 +811,29 @@
               const list = names.join(', ');
               kept.append(h('div', 'c-kbig', evenings.length + (evenings.length === 1 ? ' free evening' : ' free evenings')), h('p', '', list + ', from ' + M.clock(first) + '.'));
               if (yours > 0) kept.appendChild(h('p', '', 'Plus ' + M.hours(yours) + ' to yourself.'));
-            } else kept.append(h('div', 'c-kbig', M.hours(yours)), h('p', '', 'to yourself this week'));
+            } else kept.append(h('div', 'c-kbig', M.hours(yours)), h('p', '', 'to yourself ' + SR.weekWords(ws)));
             col.appendChild(kept);
           }
           if (SR.useTogether()) {
             const c = SR.weekCounts(ws);
-            if (c.kim.length) { const us = h('section', 'c-pcard'); us.append(h('div', 'c-kick', 'With ' + (partnerName() || 'someone')), h('p', 'c-pbody', c.kim.join(', ') + '.')); col.appendChild(us); }
+            /* V11: time with people, as what it is and when, never a count of things with one partner */
+            const rows = SR.peopleWeek ? SR.peopleWeek(ws) : [];
+            if (rows.length) { const us = h('section', 'c-pcard'); us.append(h('div', 'c-kick', 'People'), h('p', 'c-pbody', rows.slice(0, 4).map((r) => r.name + ', ' + r.when.replace(/^Every/, 'every')).join('. ') + '.')); col.appendChild(us); }
+            else if (c.kim.length) { const us = h('section', 'c-pcard'); us.append(h('div', 'c-kick', 'People'), h('p', 'c-pbody', c.kim.join(', ') + '.')); col.appendChild(us); }
+          }
+          /* V11: Moving, when it's on: the week's workouts, runs, and walks, and the goal they count toward */
+          if (SR.useMove && SR.useMove()) {
+            const mv = SR.weekMoves(ws), g = SR.state.settings.move || {};
+            /* V11: with a goal it shows even before the first move, and it opens Moving (its goal and moves to drag) */
+            if (mv.length || g.n) {
+              const box = h('section', 'c-pcard'); box.appendChild(h('div', 'c-kick', 'Moving'));
+              if (mv.length) box.appendChild(h('p', 'c-pbody', mv.slice(0, 5).map((x) => x.name + ', ' + M.DAY_SHORT[M.weekday(x.date)]).join('. ') + '.'));
+              /* V11: how it stands, said as the Moving step says it (SR.moveWords: "2 of 3 times this week.") */
+              if (g.n && SR.moveWords && mv.length) box.appendChild(h('p', 'c-pbody', SR.moveWords(ws).text));
+              else if (g.n) box.appendChild(h('p', 'c-pbody', 'Nothing on the week yet.'));
+              box.appendChild(Kit.btn('c-pmeals', 'Open Moving', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'moving', date: ws }); }, 'runner'));
+              col.appendChild(box);
+            }
           }
           grid.appendChild(col);
           card.appendChild(grid);
@@ -669,14 +844,15 @@
             ch.append(h('h3', '', 'Something changed?'), h('p', '', 'Change one thing. No need to redo the reset.'));
             const row = h('div', 'c-fixes');
             const fix = (name, line, fn) => { const b = Kit.btn('c-fix', '', () => { Kit.closeSheet(); fn(); }); b.replaceChildren(h('b', '', name), h('span', '', line)); return b; };
-            if (SR.useDinners()) row.appendChild(fix('Move a dinner', 'Swap nights or change who cooks', () => layOut('dinners')));
-            if (cur && dueWeek().length) row.appendChild(fix('Place what’s due', 'Drag this week’s to-dos onto days', () => layOut('todo', 'soon')));
+            if (SR.useDinners()) row.appendChild(fix('Change a meal', 'Swap days or change who cooks, on the meal board', () => openMealBoard(ws)));
+            /* V11: it lays out To-dos' Next 7 days, so it says that window */
+            if (cur && dueWeek().length) row.appendChild(fix('Place what’s due', 'Drag what’s due in the next 7 days onto the week', () => layOut('todo', 'soon')));
             row.appendChild(fix('Lighter day', 'Pick an easier kind of day', () => {
               Kit.zoom('day'); SR.view.focus = SR.today >= ws && SR.today <= dates[6] ? SR.today : ws; SR.render();
               setTimeout(() => { const k = document.querySelector('#kinds button'); if (k) k.click(); }, 350);
             }));
             const doneToday = planned[ws] && new Date(planned[ws]).toDateString() === new Date().toDateString();
-            if (ws === M.weekStart(SR.today) && M.weekday(SR.today) !== 0 && !doneToday) row.appendChild(fix('Plan the rest of the week', 'To-dos and dinners, ' + minutesOf(runSteps(ws, true), true) + ' min', () => openIntro(ws, true)));
+            if (ws === M.weekStart(SR.today) && M.weekday(SR.today) !== 0 && !doneToday) row.appendChild(fix('Plan the rest of the week', 'To-dos and meals, ' + minutesOf(runSteps(ws, true), true) + ' min', () => openIntro(ws, true)));
             ch.appendChild(row);
             /* the whole reset again is there, quietly, for the week that went sideways */
             ch.appendChild(Kit.btn('c-predo', 'Or redo the whole reset', () => { Kit.closeSheet(); SR.startReset(ws); }));
@@ -698,14 +874,18 @@
        on the bench, in the panel, in the plan, and in the reset. One row for a to-do wherever it shows: it
        checks off, opens to be changed, takes a time, and comes off the list, each with Undo. The panel is where
        the lists are kept; the desk is where their pieces are picked up and dragged onto days. */
-    const dueWeek = () => M.dueSoon(SR.state, SR.today, 7, SR.nowMin);
+    /* (today and the six days after it: dueSoon counts days after today) */
+    const dueWeek = () => M.dueSoon(SR.state, SR.today, 6, SR.nowMin);
     const capN = (n) => (n > 99 ? '99+' : String(n));
     const inboxGroup = () => SR.state.groups.find((g) => g.id === 'inbox') || SR.state.groups.find((g) => /^inbox$/i.test(g.name)) || SR.state.groups[0] || null;
     const byDue = (a, b) => ((a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0);
     /* a day the short way: today, tomorrow, Thursday, or Oct 24 */
     const dayWord = (d) => { const n = M.diffDays(SR.today, d); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n > 1 && n < 7 ? M.DAY_LONG[M.weekday(d)] : M.MONTH_SHORT[M.parts(d).m - 1] + ' ' + M.parts(d).d; };
     const planWeek = () => { const wd = M.weekday(SR.today); return wd === 0 || (wd === 6 && SR.nowMin >= 17 * 60) ? SR.resetWeek() : M.weekStart(SR.today); };
-    const planTitle = (ws) => (ws === M.weekStart(SR.today) || ws > SR.today ? (ws > SR.today && M.weekday(SR.today) === 6 ? 'Next week’s plan' : 'This week’s plan') : 'That week’s plan');
+    /* V11: a week named by the reset's one rule (SR.weekWords): This week's plan, Next week's plan, That week's
+       plan, Plan for the week of Oct 25 */
+    const weekTitle = (ws, noun) => { const w = SR.weekWords(ws); return /^the week of/.test(w) ? noun.charAt(0).toUpperCase() + noun.slice(1) + ' for ' + w : w.charAt(0).toUpperCase() + w.slice(1) + '’s ' + noun; };
+    const planTitle = (ws) => weekTitle(ws, 'plan');
     const weekSet = (ws) => { const r = rec(ws); return !!(r && (r.done || r.caught || r.setup)); };
     /* the reset that fits a week that isn't planned yet, said the way the chip says it */
     function resetFor(ws) {
@@ -766,8 +946,8 @@
       } else {
         if (dw) bits.push(dw);
         if (plan.status === 'partial') bits.push({ text: plan.timed + ' of ' + plan.open + ' steps ' + (plan.timed === 1 ? 'has' : 'have') + ' a time' });
-        else if (plan.status === 'missed') bits.push({ text: (at ? whenText(at) + ' went by' : 'Its time went by'), ask: true });
-        else bits.push({ text: t.steps && t.steps.length ? t.steps.length + ' steps, no time yet' : 'No time yet' });
+        else if (plan.status === 'missed') bits.push({ text: (at ? 'Was set for ' + whenText(at) : 'Time passed'), ask: true });
+        else bits.push({ text: 'No time yet' });
       }
       const main = h('button', 'c-td-main'); main.type = 'button';
       main.title = 'Change it: its name, the day it’s due, its steps';
@@ -782,7 +962,8 @@
         const tm = h('button', 'c-td-time'); tm.type = 'button';
         const what = plan.after ? 'Move it before it’s due' : plan.status === 'partial' ? 'Give the rest a time' : 'Give it a time';
         tm.setAttribute('aria-label', what + ': ' + t.name); tm.title = what;
-        tm.appendChild(SR.icon('calendar', 8, '#F2CF7A'));
+        /* V11: a quiet raised button in white; gold is the surface's one call to action */
+        tm.appendChild(SR.icon('calendar', 8, '#FFFFFF'));
         tm.addEventListener('click', () => { SR.Snd.init(); if (plan.status === 'partial' || plan.after) openTodo(t, ctx); else giveTime(t, ctx); });
         row.appendChild(tm);
       }
@@ -874,7 +1055,8 @@
       const t = { id: M.newId('t'), name: p.name.slice(0, 80), group: p.group ? p.group.id : null, icon: (p.group && p.group.icon) || 'check', cat: p.cat || 'yours', dur: null, due: p.due || null, repeat: null, done: false, steps: [] };
       SR.commit(() => { SR.state.tasks.push(t); });
       snd('good');
-      SR.toast('Added to ' + (p.group ? p.group.name : 'your list') + (t.due ? ', due ' + dayWord(t.due) : '') + '.', 'good', { label: 'Undo', fn: SR.undo });
+      /* V11: the toast names the to-do, so its Undo can too */
+      SR.toast(t.name + ' is in ' + (p.group ? p.group.name : 'your list') + (t.due ? ', due ' + dayWord(t.due) : '') + '.', 'good', SR.undoAct ? SR.undoAct(t.name + ' is off your list.') : { label: 'Undo', fn: SR.undo });
       return t;
     }
     /* a box to add a to-do: Enter or Add puts it on the list and keeps the box for the next one. o: placeholder,
@@ -925,7 +1107,7 @@
     }, true);
 
     /* == the To-dos panel: where the lists are kept ==
-       Due this week leads, in gold, with the same to-dos the To-dos button counts; then each list in its own
+       Next 7 days leads, on a raised card, with the same to-dos the To-dos button counts; then each list in its own
        color, its to-dos as rows that act in place; then what's done, folded. Lay out puts a list's pieces on
        the desk beside the week, to drag onto days, and the list says it's on the desk. The panel never draws
        pieces and the desk never draws check boxes. Dinners and ideas aren't to-dos: they're a tap away at the
@@ -977,7 +1159,7 @@
           if (folded) return box;
           const list = h('div', 'c-tdrows');
           const ctx = { from: 'dock', keep: kept, fresh, where: o.pl, section: o.id, root: scroll };
-          /* a long list shows its first five; what's due this week always shows whole */
+          /* a long list shows its first five; what's due in the next 7 days always shows whole */
           const many = o.rows.length > 6 && !tdMore.has(o.id) && !q && o.id !== 'soon';
           (many ? o.rows.slice(0, 5) : o.rows).forEach((t) => list.appendChild(todoRow(t, ctx)));
           if (o.empty && !o.rows.length) list.appendChild(h('p', 'c-tdempty', o.empty));
@@ -1006,12 +1188,13 @@
           const pick = (key, ids) => { kept.forEach((sec, id) => { if (sec === key && !ids.includes(id) && SR.taskById(id)) ids.push(id); }); return steady(key, ids).map((id) => SR.taskById(id)).filter((t) => t && match(t)); };
           const frag = document.createDocumentFragment();
           let shown = 0;
-          /* due this week leads */
+          /* the next 7 days lead (V11: a rolling window, named for what it is, so it never reads as the week
+             the reset plans) */
           const dw = dueWeek(), dueRows = pick('soon', dw.map((x) => x.task.id));
           shown += dueRows.length;
           if (!q || dueRows.length) {
             const later = st.tasks.filter((t) => !t.done && !t.archived && t.due && t.due > M.addDays(SR.today, 7)).sort(byDue)[0];
-            frag.appendChild(section({ id: 'soon', name: 'Due this week', icon: 'flag', cat: 'yours', n: dw.length, rows: dueRows, cls: 'due', lay: true, out, pl, empty: 'Nothing due this week.' + (later ? ' Next: ' + later.name + ', ' + dayWord(later.due) + '.' : '') }));
+            frag.appendChild(section({ id: 'soon', name: 'Next 7 days', icon: 'flag', cat: 'yours', n: dw.length, rows: dueRows, cls: 'due', lay: true, out, pl, empty: 'Nothing due in the next 7 days.' + (later ? ' Next: ' + later.name + ', ' + dayWord(later.due) + '.' : '') }));
           }
           /* each list, in its own color */
           const colors = listColors();
@@ -1028,8 +1211,9 @@
           if (q && !shown && !done.length) frag.appendChild(h('p', 'c-tdempty', 'Nothing called that. Enter adds it.'));
           const foot = h('div', 'c-tdfoot');
           foot.appendChild(Kit.btn('c-tdlink', 'New list', () => SR.openSel({ type: 'newGroup' }), 'plus'));
-          if (SR.useDinners()) foot.appendChild(Kit.btn('c-tdlink', 'Dinners', () => layOut('dinners'), 'pot'));
-          if (SR.useTogether()) foot.appendChild(Kit.btn('c-tdlink', partnerName() ? 'Ideas with ' + partnerName() : SR.withName(), () => layOut('kim'), 'heart'));
+          /* V11: the week's meals are on the meal board, breakfast and lunch too */
+          if (SR.useDinners()) foot.appendChild(Kit.btn('c-tdlink', 'Meals', () => { closeDock(); openMealBoard(); }, 'pot'));
+          if (SR.useTogether()) foot.appendChild(Kit.btn('c-tdlink', 'People', () => layOut('kim'), 'heart'));
           frag.appendChild(foot);
           scroll.replaceChildren(frag);
           scroll.scrollTop = y;
@@ -1080,7 +1264,7 @@
         tip = h('div', 'k c-planhint'); tip.setAttribute('role', 'note');
         const acts = h('div', 'c-planhint-acts');
         acts.append(Kit.btn('c-go', 'See the plan', () => { const s = chipState(); hide(); if (s.go) s.go(); }), Kit.btn('c-planhint-x', 'Got it', hide));
-        tip.append(h('b', '', 'Your plan for the week is here'), h('p', '', 'Dinners, to-dos, and time for you. Tap it any time this week.'), acts);
+        tip.append(h('b', '', 'Your plan for the week is here'), h('p', '', 'Meals, to-dos, and time for you. Tap it any time this week.'), acts);
         app.appendChild(tip);
         place();
       };
@@ -1097,10 +1281,12 @@
     Kit.v7 = { openDeskSetup: (o) => openDeskSetup(o), openSetupIntro: (o) => openSetupIntro(o), coachTour: (a) => coachTour(a), trySetup: (k) => trySetup(k), startHello, showRack, scatter: (w) => scatter(w.split('')), openIntro, openPlan, chipState, runSteps, openMealBoard, openDetail, openTodos, closeMat, openMenu: () => openMenu(), closeMenu: () => closeMenu() };
     /* V11: the phone's way to the meal board: Plan meals on the phone list's dinner question, its groceries,
        a small Meals card when neither is there, and any dinner's panel (app.js asks for window.SR_planMeals) */
-    window.SR_planMeals = () => {
+    /* V11: o.week, o.cell ([date, meal]) and o.shop open the board on that week, that day's card, or its groceries */
+    window.SR_planMeals = (o) => {
+      o = o || {};
       /* the meal board opens over the phone's list; from the phone's desk it goes back to the list first */
-      if (SR.phoneDay && SR.phoneDay()) { SR.closePhoneDesk(); setTimeout(() => Kit.v7.openMealBoard(), 80); return; }
-      Kit.v7.openMealBoard();
+      if (SR.phoneDay && SR.phoneDay()) { SR.closePhoneDesk(); setTimeout(() => Kit.v7.openMealBoard(o.week, o), 80); return; }
+      Kit.v7.openMealBoard(o.week, o);
     };
 
     /* the time a reset was finished, for the plan's kicker */
@@ -1115,16 +1301,35 @@
        A soft fade at its foot and a "More below" button while there's more under the fold; the button scrolls
        most of a screen. It lives in `host`, outside the scroller, so the fade never dims it. Returns the
        check, for after the contents change. */
-    function scrollHint(box, host) {
+    /* V11: with room (the meal board's columns), a region that scrolls keeps a strip under it for the
+       button (.c-more-room, 44 px: the button and 8 px), so the button never sits on a row. The strip stays
+       while the region scrolls at all, so reaching the end never makes the rows jump */
+    function scrollHint(box, host, room) {
       const btn = Kit.btn('c-more', 'More below', () => box.scrollBy({ top: box.clientHeight * 0.7, behavior: feelOn() ? 'smooth' : 'auto' }), 'down');
       btn.tabIndex = -1; btn.setAttribute('aria-hidden', 'true');
       host.appendChild(btn);
+      let roomAt = 0;
       const check = () => {
         if (!box.isConnected) return;
-        const more = box.scrollHeight - box.scrollTop - box.clientHeight > 12 && box.clientHeight > 0 && getComputedStyle(box).overflowY !== 'visible';
+        const scrolls = box.clientHeight > 0 && getComputedStyle(box).overflowY !== 'visible';
+        /* (the strip changes the region's size, so it changes on the next frame, never inside the resize
+           observer's own call, which the browser reports as a loop) */
+        if (room) {
+          const has = box.classList.contains('c-more-room'), want = scrolls && box.scrollHeight - box.clientHeight > (has ? 4 : 12);
+          if (want !== has && !roomAt) roomAt = requestAnimationFrame(() => { roomAt = 0; box.classList.toggle('c-more-room', want); check(); });
+        }
+        const more = box.scrollHeight - box.scrollTop - box.clientHeight > 12 && scrolls;
         box.classList.toggle('c-more-below', more);
         btn.classList.toggle('on', more);
-        if (more) { const r = box.getBoundingClientRect(), hr = host.getBoundingClientRect(); btn.style.left = (r.left - hr.left + r.width / 2) + 'px'; btn.style.top = (r.bottom - hr.top - 52) + 'px'; }
+        /* (measured in the host's own pixels: while the meal board scales in, screen pixels are 4 percent short) */
+        /* (in the strip once it's there, until then over the foot. Held from the host's bottom edge, which
+           moves with the region's, so a window resized before the next check never leaves the button
+           hanging past the host, where it would make the page around it scroll) */
+        if (more) {
+          const r = box.getBoundingClientRect(), hr = host.getBoundingClientRect(), k = host.offsetWidth ? hr.width / host.offsetWidth || 1 : 1;
+          btn.style.left = ((r.left - hr.left + r.width / 2) / k) + 'px';
+          btn.style.top = 'auto'; btn.style.bottom = ((hr.bottom - r.bottom) / k + (room && box.classList.contains('c-more-room') ? -40 : 16)) + 'px';
+        }
       };
       box.addEventListener('scroll', check, { passive: true });
       if (window.ResizeObserver) new ResizeObserver(check).observe(box);
@@ -1267,10 +1472,30 @@
       const onPhone = !!(SR.view.phone && !SR.view.phoneDesk);
       mat.classList.toggle('c-onphone', onPhone);
       (onPhone ? document.body : app).appendChild(mat);
+      toastsUp(onPhone);
       build(inner);
       matClose = onClose || null;
       requestAnimationFrame(() => mat && mat.classList.add('in'));
       return inner;
+    }
+    /* V11: toasts come up over a mat while it's open and until it has gone (they sat under it, so what the
+       meal board did, and its Meals saved, were never seen). On a phone the mat covers the whole app, so the
+       toasts step out beside it, and go home once it's gone */
+    let toastHome = null;
+    function toastsUp(onPhone) {
+      document.body.classList.add('c-toasts-up');
+      const t = document.getElementById('toasts');
+      if (!onPhone || !t || toastHome) return;
+      toastHome = { parent: t.parentElement, next: t.nextSibling };
+      document.body.appendChild(t);
+    }
+    function toastsBack() {
+      if (mat) return;
+      document.body.classList.remove('c-toasts-up');
+      const t = document.getElementById('toasts');
+      if (!t || !toastHome) return;
+      toastHome.parent.insertBefore(t, toastHome.next && toastHome.next.parentElement === toastHome.parent ? toastHome.next : null);
+      toastHome = null;
     }
     /* the second mat wears the desk's own wood, groove, and leather, read from the 3D desk once */
     let surfaces = false;
@@ -1285,7 +1510,7 @@
       const m = mat, done = matClose;
       mat = null; matClose = null;
       m.classList.remove('in'); m.classList.add('out');
-      setTimeout(() => m.remove(), 260);
+      setTimeout(() => { m.remove(); toastsBack(); }, 260);
       document.body.classList.remove('c-away');
       World.setAway(0);
       World.setPropsAway(!!SR.view.reset);
@@ -1334,19 +1559,29 @@
     ].map(([id, name, t, parts]) => ({ id, name, t: { breakfast: +t.includes('b'), lunch: +t.includes('l'), dinner: +t.includes('d') }, parts: parts ? parts.split(', ') : [] }));
     /* what a home leaves out, read from a meal's name and parts. `not` is the exception
        (peanut butter isn't dairy, beef sausage isn't pork, eggplant isn't an egg) */
+    /* V11: a word like vegan or gluten free names its own part of a meal, up to a comma or the next "and"
+       or "with": vegan cheese pizza is no dairy, and vegan pancakes, scrambled eggs still has eggs. A meat
+       named for what it's made of instead (a veggie burger, black bean burgers, cauliflower steaks, veggie
+       hot dogs) is none of the meats (tests/meals-diet.test.mjs) */
+    const QUAL = (w) => '\\b(?:' + w + ')\\b(?:(?! and | with |&|\\+)[^,;])*';
+    const NOT_MEAT = '\\b(?:veggie|vegan|vegetarian|plant[ -]?based|meatless|impossible|beyond|tofu|tempeh|seitan|soy|jackfruit) (?:(?!and |with |or )[a-z]+ )?(?:burgers?|meatballs?|steaks?|sausages?|hot ?dogs?|nuggets?|bacon|chicken|crumbles|chorizo|pepperoni|patt(?:y|ies)|meat|jerky|wings?|tenders|ham|shrimp|tuna|fish)\\b'
+      + '|\\b(?:(?:black )?beans?|lentils?|mushrooms?|portobellos?|cauliflower|chickpeas?|quinoa|falafel|eggplants?|veggie) (?:burgers?|meatballs?|steaks?|patt(?:y|ies))\\b';
+    const notRx = (...more) => new RegExp([NOT_MEAT].concat(more).join('|'), 'g');
     const LEAVE = [
-      { id: 'chicken', name: 'Chicken', re: /\bchicken|\bwings?\b|\bdrumsticks?\b/ },
-      { id: 'turkey', name: 'Turkey', re: /\bturkey/ },
-      { id: 'beef', name: 'Beef', re: /\bbeef|\bsteaks?\b|\bburgers?\b|\bbrisket|\bmeatballs?/ },
-      { id: 'pork', name: 'Pork', re: /\bpork|\bbacon|\bhams?\b|\bprosciutto|\bpepperoni|\bchorizo|\bsalami|\bsausages?\b|\bcarnitas/, not: /\b(beef|chicken|turkey|veggie|vegan|plant|tofu) sausages?/g },
-      { id: 'fish', name: 'Fish', re: /\bfish|\bsalmon|\btuna\b|\bcod\b|\btilapia|\btrout|\bhalibut|\bsardines?|\banchov|\bsushi|\blox\b/ },
-      { id: 'shellfish', name: 'Shellfish', re: /\bshrimp|\bprawns?|\bcrabs?\b|\blobsters?|\bscallops?|\bclams?\b|\bmussels?|\boysters?/ },
-      { id: 'eggs', name: 'Eggs', re: /\beggs?\b|\bomelets?|\bomelettes?|\bfrittatas?|\bquiche/, not: /\beggplants?/g },
-      { id: 'dairy', name: 'Dairy', re: /\bmilk|\bcheese|\byogh?urt|\bbutter\b|\bcream\b|\bqueso|\bparmesan|\bmozzarella|\bcheddar|\bfeta\b|\bricotta|\bquesadillas?|\bpizza|\blasagna|\bmac\b/, not: /\b(peanut|almond|nut|cashew|seed|apple|sunflower) butter|\b(almond|oat|soy|coconut|rice|cashew) milk|\bvegan (cheese|cream)|\bdairy free/g },
-      { id: 'gluten', name: 'Gluten', re: /\bbread|\btoast|\bpasta|\bspaghetti|\bnoodles?|\bwraps?\b|\btortillas?|\bsandwich|\bpancakes?|\bwaffles?|\bbagels?|\bpizza|\bcouscous|\bflour|\bbuns?\b|\bpitas?\b|\bcrackers?|\bcereal|\bburritos?|\bquesadillas?|\bmac\b|\blasagna|\bdough|\bpb and j/, not: /\bcorn tortillas?|\bgluten free|\brice noodles?/g },
-      { id: 'nuts', name: 'Nuts', re: /\bnuts?\b|\bpeanuts?|\balmonds?|\bwalnuts?|\bcashews?|\bpecans?|\bpistachios?|\bhazelnuts?|\bpb\b/ }
+      { id: 'chicken', name: 'Chicken', re: /\bchicken|\bwings?\b|\bdrumsticks?\b/, not: notRx() },
+      { id: 'turkey', name: 'Turkey', re: /\bturkey/, not: notRx() },
+      { id: 'beef', name: 'Beef', re: /\bbeef|\bsteaks?\b|\b(?:ham|cheese)?burgers?\b|\bbrisket|\bmeatballs?/, not: notRx('\\bbeefsteak tomato(?:es)?', '\\b(?:turkey|chicken|salmon|tuna|fish|lamb|bison|pork|ham|swordfish|venison) (?:burgers?|meatballs?|steaks?)\\b') },
+      { id: 'pork', name: 'Pork', re: /\bpork|\bbacon|\bhams?\b|\bprosciutto|\bpepperoni|\bchorizo|\bsalami|\bsausages?\b|\bcarnitas/, not: notRx('\\b(?:beef|chicken|turkey) (?:sausages?|bacon|hot ?dogs?|pepperoni|hams?|chorizo|salami)\\b') },
+      { id: 'fish', name: 'Fish', re: /\bfish|\bsalmon|\btuna\b|\bcod\b|\btilapia|\btrout|\bhalibut|\bsardines?|\banchov|\bsushi|\blox\b/, not: notRx() },
+      { id: 'shellfish', name: 'Shellfish', re: /\bshrimp|\bprawns?|\bcrabs?\b|\blobsters?|\bscallops?|\bclams?\b|\bmussels?|\boysters?/, not: notRx() },
+      { id: 'eggs', name: 'Eggs', re: /\beggs?\b|\bomelets?|\bomelettes?|\bfrittatas?|\bquiche/, not: new RegExp('\\beggplants?|' + QUAL('vegan|egg[ -]?free|plant[ -]?based'), 'g') },
+      { id: 'dairy', name: 'Dairy', re: /\bmilk|\bcheese|\byogh?urt|\bbutter\b|\bcream\b|\bqueso|\bparmesan|\bmozzarella|\bcheddar|\bfeta\b|\bricotta|\bquesadillas?|\bpizza|\blasagna|\bmac\b|\bbuttermilk|\bpaneer|\bghee\b|\balfredo|\bkefir|\bcustard|\bmascarpone|\bhalloumi|\bburrata|\bbrie\b|\bgouda|\bgelato|\bwhey\b/, not: new RegExp('\\b(?:peanut|almond|nut|cashew|seed|apple|sunflower|pumpkin|cocoa) butter|\\b(?:almond|oat|soy|coconut|rice|cashew|hemp) milk|\\bcoconut (?:cream|yogh?urt)|' + QUAL('vegan|dairy[ -]?free|non[ -]?dairy|plant[ -]?based') + '(?: and cheese\\b)?', 'g') },
+      { id: 'gluten', name: 'Gluten', re: /\bbread|\btoast|\bpasta|\bspaghetti|\bnoodles?|\bwraps?\b|\btortillas?|\bsandwich|\bpancakes?|\bwaffles?|\bbagels?|\bpizza|\bcouscous|\bflour|\bbuns?\b|\bpitas?\b|\bcrackers?|\bcereal|\bburritos?|\bquesadillas?|\bmac\b|\blasagna|\bdough|\bpb and j/, not: new RegExp('\\bcorn tortillas?|\\brice noodles?|' + QUAL('gluten[ -]?free'), 'g') },
+      { id: 'nuts', name: 'Nuts', re: /\bnuts?\b|\bpeanuts?|\balmonds?|\bwalnuts?|\bcashews?|\bpecans?|\bpistachios?|\bhazelnuts?|\bpb\b/, not: new RegExp(QUAL('nut[ -]?free'), 'g') }
     ];
-    const MEAT = /\bmeat|\blamb\b|\bduck\b|\bvenison|\bjerky|\bhot dogs?|\bdeli\b|\bgyros?\b/;
+    /* V11: meat by any other name; "meatless" isn't, and neither is a veggie hot dog (MEAT_NOT) */
+    const MEAT = /\bmeat(?:s|y|balls?|loaf)?\b|\blamb\b|\bduck\b|\bvenison|\bjerky|\bhot ?dogs?|\bdeli\b|\bgyros?\b|\bbison\b|\bveal\b/;
+    const MEAT_NOT = notRx();
     const DIET_IDS = ['chicken', 'turkey', 'beef', 'pork', 'fish', 'shellfish', 'eggs', 'dairy'];
     const DIETS = [
       { id: 'all', name: 'Everything', out: [] },
@@ -1366,8 +1601,9 @@
         if (L && L.re.test(L.not ? s.replace(L.not, ' ') : s)) return L.name;
       }
       const dt = DIETS.find((x) => x.id === b.diet);
-      if (dt && dt.meat && MEAT.test(s)) return dt.name;
-      if (dt && dt.honey && /\bhoney/.test(s)) return dt.name;
+      if (dt && dt.meat && MEAT.test(s.replace(MEAT_NOT, ' '))) return dt.name;
+      /* honey, never honeydew or honeycrisp */
+      if (dt && dt.honey && /\bhoney\b/.test(s)) return dt.name;
       for (const w of b.words) { const stem = norm(w).replace(/(es|s)$/, ''); if (stem && new RegExp('\\b' + esc(stem)).test(s)) return w; }
       return null;
     }
@@ -1375,27 +1611,49 @@
     /* every meal change goes through the board's commit, so one Undo takes it back. The meal board
        redraws itself after its own changes, and after anyone else's (an Undo from the keyboard) */
     let mealBusy = false, mealLive = null, mealSigWas = '';
-    const mealSig = () => JSON.stringify([SR.state.meals || null, SR.state.dinners || null, SR.state.mealbook || null, (SR.state.recipes || []).length, SR.today]);
+    /* V11: the grocery checks too, since the list lives on the board */
+    const mealSig = () => JSON.stringify([SR.state.meals || null, SR.state.dinners || null, SR.state.mealbook || null, (SR.state.recipes || []).length, SR.state.shopping || null, SR.today]);
     Kit.renders.push(() => { if (mealLive && !mealBusy && mealSig() !== mealSigWas) mealLive(); });
-    /* breakfasts and lunches this device kept before V11 move onto the board with the first meal change */
-    const OLD_MEALS = 'sundayreset.v7.meals';
-    let oldMeals = null, oldMoved = false;
-    try { const o = JSON.parse(localStorage.getItem(OLD_MEALS) || 'null'); if (o && Object.keys(o).length) oldMeals = o; } catch (e) { /* storage off */ }
+    /* breakfasts and lunches this device kept before V11 move onto the board with the first meal change.
+       V11: the move is the board catching up, not part of that change, so its Undo never takes them back.
+       The device keeps its copy (V7 to V10 read only that) and a note of what moved, so only what an older
+       build adds or changes later moves again: into an empty meal, or one V11 hasn't changed since */
+    const OLD_MEALS = 'sundayreset.v7.meals', OLD_MOVED = 'sundayreset.v7.meals.moved';
+    let oldMeals = null, oldWas = {};
+    const cellName = (c) => (typeof c === 'string' ? c : (c && c.name) || '');
+    /* the older build's meal for a cell, when it's new since the last move and the board's is empty or as moved */
+    function oldMeal(st, d, k) {
+      if (!oldMeals || SR.view.preview) return '';
+      const n = oldMeals[d] && oldMeals[d][k], was = oldWas[d] && oldWas[d][k];
+      if (!n || typeof n !== 'string' || n === was) return '';
+      const own = cellName(st.meals && st.meals[d] && st.meals[d][k]);
+      return !own || own === was ? n : '';
+    }
+    /* V11: the reset's first look counts these as planned already (app.js resetSnap) */
+    window.SR_oldMeal = (d, k) => oldMeal(SR.state, d, k);
+    try {
+      const o = JSON.parse(localStorage.getItem(OLD_MEALS) || 'null');
+      oldWas = JSON.parse(localStorage.getItem(OLD_MOVED) || 'null') || {};
+      if (o && typeof o === 'object' && Object.keys(o).some((d) => o[d] && ['breakfast', 'lunch'].some((k) => o[d][k] && o[d][k] !== (oldWas[d] && oldWas[d][k])))) oldMeals = o;
+    } catch (e) { /* storage off */ }
     function moveOldMeals(st) {
       if (!oldMeals || SR.view.preview) return;
-      st.meals = st.meals || {};
       Object.keys(oldMeals).forEach((d) => ['breakfast', 'lunch'].forEach((k) => {
-        const n = oldMeals[d] && oldMeals[d][k];
-        if (n && !(st.meals[d] && st.meals[d][k])) st.meals[d] = Object.assign({}, st.meals[d], { [k]: { name: n } });
+        const n = oldMeal(st, d, k);
+        if (n) { st.meals = st.meals || {}; st.meals[d] = Object.assign({}, st.meals[d], { [k]: { name: n } }); }
       }));
-      oldMoved = true;
     }
     function commitMeals(fn) {
+      const moving = !!oldMeals && !SR.view.preview;
       mealBusy = true;
       let r;
-      try { r = SR.commit(() => { const st = SR.state; moveOldMeals(st); return fn(st); }); } finally { mealBusy = false; }
-      if (oldMoved && r !== false) { oldMeals = null; try { localStorage.removeItem(OLD_MEALS); } catch (e) { /* fine */ } }
-      oldMoved = false;
+      /* before commit takes its snapshot, so Undo keeps them */
+      try { if (moving) moveOldMeals(SR.state); r = SR.commit(() => fn(SR.state)); } finally { mealBusy = false; }
+      /* commit saves the board only when the change goes through; until then they move again next time */
+      if (moving && r !== false && !(r && r.ok === false)) {
+        oldWas = JSON.parse(JSON.stringify(oldMeals)); oldMeals = null;
+        try { localStorage.setItem(OLD_MOVED, JSON.stringify(oldWas)); } catch (e) { /* fine */ }
+      }
       if (mealLive) mealSigWas = mealSig();
       return r;
     }
@@ -1411,7 +1669,9 @@
         const how = notCooking(x.cook) ? x.cook : 'home';
         return { name: x.name || '', parts: x.parts || [], items: x.items || [], how, cook: how === 'home' ? x.cook || 'home' : '', recipe: x.recipe || null };
       }
-      const m = (SR.state.meals && SR.state.meals[d] && SR.state.meals[d][k]) || (!SR.view.preview && oldMeals && oldMeals[d] && oldMeals[d][k]) || null;
+      /* V11: a meal an older build kept on this device shows as it will be once it moves (moveOldMeals) */
+      const old = oldMeals && oldMeal(SR.state, d, k);
+      const m = old || (SR.state.meals && SR.state.meals[d] && SR.state.meals[d][k]) || null;
       if (!m) return null;
       if (typeof m === 'string') return { name: m, parts: [], items: [], how: 'home', cook: '', recipe: null };
       return { name: m.name || '', parts: m.parts || [], items: m.items || [], how: m.how || 'home', cook: m.cook || '', recipe: m.recipe || null };
@@ -1462,20 +1722,27 @@
       const s = String(text || '').replace(/\s+/g, ' ').trim();
       if (!s) return [];
       const bits = s.split(/\s*(?:[,;\n]|\s\+\s)\s*/).map((x) => x.replace(/^(and|&)\s+/i, '').trim()).filter(Boolean);
+      /* V11: each part splits on its own "and" (sausage and eggs, toast is three), unless it's a dish named with one */
       if (bits.length > 1) {
-        const last = bits[bits.length - 1], m = /^(.*?)\s+(?:and|&)\s+(.+)$/i.exec(last);
-        if (m && !PAIRS.test(last)) bits.splice(bits.length - 1, 1, m[1], m[2]);
+        for (let i = bits.length - 1; i >= 0; i--) {
+          const m = /^(.*?)\s+(?:and|&)\s+(.+)$/i.exec(bits[i]);
+          if (m && !PAIRS.test(bits[i].replace(/\s*&\s*/g, ' and '))) bits.splice(i, 1, m[1], m[2]);
+        }
       }
       return bits.length > 1 ? bits.map(cap) : [];
     }
     /* a part as it goes on a list: "scrambled eggs" is Eggs, toast is Bread */
     const COOKED = /\b(scrambled|fried|boiled|poached|baked|roasted|grilled|steamed|mashed|toasted|sliced|diced|chopped|sauteed|sautéed|homemade|fresh|hot|cold|warm|plain|some|a|an|the)\b/g;
+    /* V11: a count or a measure isn't part of what you buy: 2 eggs, a cup of berries, half an avocado.
+       A number before a word that isn't a plural stays (7 layer dip) */
+    const QTY = /^(?:(?:\d+(?:[.\/]\d+)?|an?|one|two|three|four|five|six|a few|a couple(?: of)?|half(?: an?)?)\s+(?:cups?|tbsps?|tsps?|tablespoons?|teaspoons?|slices?|pieces?|cans?|lbs?|pounds?|oz|ounces?|grams?|handfuls?|scoops?|bowls?|glass(?:es)?|cloves?|servings?)\s+(?:of\s+)?|(?:1|one|an?|half(?: an?)?)\s+(?=\S)|(?:\d+|two|three|four|five|six|a few|a couple(?: of)?)\s+(?=\S+s\b))/;
     function groceryName(part) {
       /* what's left over from another meal isn't something to buy */
       if (/\bleftovers?\b/.test(norm(part))) return '';
-      let s = norm(part).replace(/^(and|&)\s+/, '').replace(COOKED, ' ').replace(/\s+/g, ' ').trim();
+      let s = norm(part).replace(/^(and|&)\s+/, '').replace(QTY, '').replace(COOKED, ' ').replace(/\s+/g, ' ').trim();
       if (s === 'toast') s = 'bread';
-      if (!s || /^(leftovers?|nothing|skip|takeout|take out)$/.test(s)) return '';
+      /* V11: nor is water from the tap */
+      if (!s || /^(leftovers?|nothing|skip|takeout|take out|water|tap water|ice water|ice)$/.test(s)) return '';
       return cap(s);
     }
     const singular = (s) => norm(s).replace(/oes$/, 'o').replace(/ies$/, 'y').replace(/([^s])s$/, '$1');
@@ -1552,13 +1819,136 @@
       const items = p.items ? p.items.slice() : pantryIds(st, p.parts);
       return { name: p.name, parts: p.parts || [], items, how: 'home', recipe: p.recipe || null, cook: p.cook || undefined };
     }
+    /* V11: which meals the board shows (the meal board's Show toggles, kept on this device) */
+    const MEAL_ROWS = 'sundayreset.v7.mealRows';
+    const mealRows = () => { try { const r = JSON.parse(localStorage.getItem(MEAL_ROWS) || 'null'); if (Array.isArray(r) && r.length) return MEAL_KINDS.map(([k]) => k).filter((k) => r.includes(k)); } catch (e) { /* storage off */ } return ['breakfast', 'lunch', 'dinner']; };
+    const mealDayWords = (d, k) => M.DAY_LONG[M.weekday(d)] + ' ' + kindName(k).toLowerCase();
+    /* V11: last week's meals for the open days of this one, in the rows shown */
+    function lastWeekMeals(dates, rows) {
+      const todo = [];
+      dates.forEach((d) => {
+        if (d < SR.today || SR.day(d).trip) return;
+        rows.forEach((k) => { if (mealAt(d, k)) return; const was = mealAt(M.addDays(d, -7), k); if (was && (k !== 'dinner' || canDinner(d))) todo.push([d, k, was]); });
+      });
+      return todo;
+    }
+    function bringLastWeek(dates, rows) {
+      const todo = lastWeekMeals(dates, rows);
+      if (!todo.length) { SR.toast('Nothing from last week to bring over.', ''); return 0; }
+      commitMeals((st) => todo.forEach(([d, k, m]) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, m); }));
+      mealToast(todo.length + (todo.length === 1 ? ' meal' : ' meals') + ' from last week', true);
+      snd('clack', 0.8);
+      return todo.length;
+    }
+    /* V11: how many of a week's meals are planned, counting the rows shown and not the days away. Midweek it
+       counts from today on, since nobody plans a meal that's over (a week already over counts whole); `span`
+       names the days counted when that isn't the whole week ("Wed to Sat") */
+    /* (all: count every day given, as the meal board's corner does for the days its grid shows) */
+    function mealCount(dates, rows, all) {
+      let n = 0, of = 0;
+      const left = dates.filter((d) => d >= SR.today), counted = all || !left.length ? dates : left;
+      /* V11: a meal skipped is decided, but it isn't a meal planned, so it isn't counted as one */
+      counted.forEach((d) => { if (SR.day(d).trip) return; rows.forEach((k) => { of++; const m = mealAt(d, k); if (m && m.how !== 'skip') n++; }); });
+      const span = counted.length < dates.length ? M.DAY_SHORT[M.weekday(counted[0])] + (counted.length > 1 ? ' to ' + M.DAY_SHORT[M.weekday(counted[counted.length - 1])] : '') : '';
+      return { n, of, span };
+    }
+    /* V11: every meal on the board, as a fingerprint, so closing the meal board can say what changed */
+    function mealSnap() {
+      const out = new Map(), st = SR.state;
+      const dates = new Set(Object.keys(st.dinners || {}).concat(Object.keys(st.meals || {})));
+      dates.forEach((d) => MEAL_KINDS.forEach(([k]) => { const m = mealAt(d, k); if (m) out.set(d + '|' + k, [mealLabel(m), m.how, m.cook, (m.items || []).join()].join('|')); }));
+      return out;
+    }
+    /* V11: one meal toast at a time. A new one takes the last one's place, so planning a week isn't a pile of them */
+    let mealToastEl = null;
+    /* V11: a meal toast's Undo takes back its own change and nothing else. It keeps the board as that change
+       left it; once anything else changes the board (a grocery check, the day's card, an Undo from the keys),
+       the toast goes, so its Undo can never reach a different change */
+    const boardKey = () => JSON.stringify(SR.state);
+    /* V11 (consistency): its Undo is the app's (SR.undoAct), so it says what it took back the way every Undo
+       does ("Tuesday dinner is as it was.", or what: a line of its own) and a late tap gets the app's
+       one sentence; the button comes off the toast once something newer changes */
+    function mealToast(text, undo, then, what) {
+      retireMealToast();
+      const after = undo ? boardKey() : '';
+      /* (and Redo says the toast's own words again) */
+      const act = undo && SR.undoAct ? SR.undoAct(what || SR.undoWords(text), /[.!?…]$/.test(text) ? text : text + '.') : null;
+      SR.toast(text, 'good', act ? { label: 'Undo', live: () => act.live() && boardKey() === after, fn: () => { const was = act.live(); act.fn(); if (was && then) then(); } }
+        : undo ? { label: 'Undo', fn: () => {
+          if (boardKey() !== after) { SR.toast('Something changed since, so there’s nothing here to take back.', ''); return; }
+          SR.undo(); if (then) then();
+        } } : null);
+      const box = document.getElementById('toasts');
+      mealToastEl = box ? box.lastElementChild : null;
+      if (mealToastEl) mealToastEl._after = after;
+    }
+    function retireMealToast() {
+      const t = mealToastEl; mealToastEl = null;
+      if (!t || !t.isConnected || t._gone) return;
+      t._gone = true; t.style.pointerEvents = 'none';
+      if (!feelOn()) { t.remove(); return; }
+      const a = t.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'ease-in', fill: 'forwards' });
+      a.onfinish = () => t.remove();
+    }
+    Kit.renders.push(() => { if (mealToastEl && mealToastEl._after && boardKey() !== mealToastEl._after) retireMealToast(); });
+    /* V11: the week's grocery list, with the meals and days each thing is for */
+    function shopList(dates) {
+      const prog = M.groceryProgress(SR.state, dates);
+      const got = (SR.state.shopping && SR.state.shopping[M.weekStart(dates[0])]) || {};
+      const list = prog.list.map((x) => {
+        /* V11: each meal with its own days, so the line says which day goes with which meal */
+        const meals = [], uses = [];
+        x.days.forEach((d) => MEAL_KINDS.forEach(([k]) => {
+          const m = mealAt(d, k);
+          if (!m || notCooking(m.how) || !(m.items || []).includes(x.id)) return;
+          const nm = mealLabel(m), day = M.DAY_SHORT[M.weekday(d)];
+          let u = uses.find((y) => y.meal === nm);
+          if (!u) { u = { meal: nm, days: [] }; uses.push(u); meals.push(nm); }
+          if (!u.days.includes(day)) u.days.push(day);
+        }));
+        return Object.assign({}, x, { meals, uses, got: !!got[x.id] });
+      });
+      return { prog, list };
+    }
+    function setGot(dates, id, on) {
+      const ws = M.weekStart(dates[0]);
+      return commitMeals((st) => {
+        st.shopping = st.shopping || {};
+        const wk = Object.assign({}, st.shopping[ws]);
+        if (on) wk[id] = 1; else delete wk[id];
+        if (Object.keys(wk).length) st.shopping[ws] = wk; else delete st.shopping[ws];
+      });
+    }
+    /* copies with the clipboard, or the older way when the clipboard isn't allowed here */
+    async function copyText(text) {
+      try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; } } catch (e) { /* try the older way */ }
+      try {
+        const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+        document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+      } catch (e) { return false; }
+    }
 
-    function openMealBoard(ws) {
+    /* opts.cell: [date, meal] opens that day's card; opts.shop: opens at the grocery list */
+    function openMealBoard(ws, opts) {
+      opts = opts || {};
+      /* V11: opened from a dinner's own mat (its panel's grocery line), the board takes that mat's place, so
+         the mat's closing never closes the board */
+      if (detail) { detail = null; document.body.classList.remove('c-detail'); }
       ws = ws || (SR.view.reset ? SR.view.reset.week : M.weekStart(SR.view.focus || SR.today));
       let dates = M.range(ws, 7);
-      let showRows = (() => { try { return JSON.parse(localStorage.getItem('sundayreset.v7.mealRows') || 'null'); } catch (e) { return null; } })() || ['breakfast', 'lunch', 'dinner'];
+      let showRows = mealRows();
+      /* V11: what the board held when it opened, so closing it can say what was saved: the meals, the
+         grocery checks, and the meal list (hidden, added, left out) */
+      const before = mealSnap();
+      const shopBefore = JSON.parse(JSON.stringify(SR.state.shopping || {})), bookBefore = JSON.stringify(SR.state.mealbook || null);
+      /* V11: focus goes back to what opened the board when it closes (or the same control drawn again) */
+      const opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+      const openerKey = opener ? [opener.tagName, opener.className, opener.getAttribute('aria-label') || opener.textContent].join('|') : '';
+      /* V11: the grocery list under the board: open on a computer, folded on a phone, as this device left it */
+      const SHOP_KEY = 'sundayreset.v11.mealShop';
+      let shopOpen = opts.shop ? true : (() => { try { const v = localStorage.getItem(SHOP_KEY); return v == null ? null : v === '1'; } catch (e) { return null; } })();
       /* V11: ideas for the open meals (props), what you have at home to use up, and earlier days folded on a phone */
-      let props = new Map(), have = new Set(), seed = 1, showPast = false, landSet = new Set(), shopWas = '';
+      let props = new Map(), have = new Set(), seed = 1, showPast = !!(opts.cell && opts.cell[0] < SR.today && opts.cell[0] >= ws), landSet = new Set(), shopWas = '';
       /* the library sorts for one meal of the day, finds by words, and can hide or leave things out */
       let forT = '', find = '', editing = false, leaving = false, showHidden = false, held = null, justSet = '', fresh = '', landKey = '', pop = null;
       const inner = openMat('c-meals', (inner) => {
@@ -1588,10 +1978,13 @@
         const acts = h('div', 'c-meal-acts'); acts.append(sugBtn, again);
         const top = h('div', 'c-meal-top'); top.append(rows, acts);
         const sugBar = h('div', 'c-sugbar'); sugBar.hidden = true;
-        /* under the board, the week's groceries in one line, and the way to the list */
-        const shop = h('button', 'c-shopline'); shop.type = 'button';
-        shop.addEventListener('click', () => { SR.Snd.init(); closeMat(); SR.openSel({ type: 'groceries' }); });
-        main.append(top, sugBar, board, shop);
+        /* V11: under the board, the week's groceries themselves, checked off here (Russell, Oct 14: "I wanted
+           to see those on this actual board"). On a phone they wait after the meals, and a line under the
+           board goes to them */
+        const shop = h('section', 'c-shop'); shop.setAttribute('aria-label', 'Groceries');
+        const shopJump = h('button', 'c-shopjump'); shopJump.type = 'button';
+        shopJump.addEventListener('click', () => { shopOpen = true; drawShop(); toShop(); snd('detent'); });
+        main.append(top, sugBar, board, shopJump, shop);
         /* the library: find or add, sort for a meal, what you leave out, then yours, not cooking, and ideas */
         const libHead = h('div', 'c-libhead');
         const findForm = h('form', 'c-libfind');
@@ -1610,24 +2003,129 @@
         body.append(main, side);
         inner.appendChild(body);
         inner.classList.add('c-autoscroll');
-        const sideHint = scrollHint(sideScroll, side), innerHint = scrollHint(inner, inner.parentElement || inner);
-        const me0 = () => (SR.who() && SR.who().name) || 'You';
+        /* (each keeps a strip of its own for the button, so it never covers a meal, a chip, or the groceries) */
+        const sideHint = scrollHint(sideScroll, side, true), innerHint = scrollHint(inner, inner.parentElement || inner, true);
+        /* V11: on a computer the board's column scrolls too (the groceries are under it), and says so */
+        const mainHint = scrollHint(main, body, true);
         const dayWords = (d, k) => M.DAY_LONG[M.weekday(d)] + ' ' + kindName(k).toLowerCase();
 
         function draw() {
           mealSigWas = mealSig();
+          /* V11: a redraw never moves what you're looking at (the grocery list under the board stays put) */
+          const y = [main.scrollTop, inner.scrollTop, sideScroll.scrollTop];
+          toastSpot();
           weekWords.textContent = weekLabel();
-          drawRows(); drawSug(); drawBoard(); drawSide();
-          shop.hidden = !SR.useDinners();
-          if (!shop.hidden) {
-            const gs = SR.grocerySub(dates), n = h('span', '', gs);
-            shop.replaceChildren(SR.icon('cart', 9, CREAM), h('b', '', 'Grocery list'), n, SR.icon('right', 7, '#C6BEB2'));
-            /* the count says it changed */
-            if (shopWas && gs !== shopWas && feelOn()) n.animate([{ color: '#F2CF7A', transform: 'scale(1.1)' }, { color: '#F2CF7A', transform: 'scale(1)', offset: 0.4 }, { transform: 'none' }], { duration: 520, easing: FOUT });
-            shopWas = gs;
-          }
+          /* V11: Same as last week shows only when last week has something to bring */
+          again.hidden = !lastWeekMeals(dates, showRows).length;
+          drawRows(); drawSug(); drawBoard(); drawSide(); drawShop();
+          [main, inner, sideScroll].forEach((el, i) => { if (el.scrollTop !== y[i]) el.scrollTop = y[i]; });
           if (pop) placePop();
-          requestAnimationFrame(() => { sideHint(); innerHint(); });
+          requestAnimationFrame(() => { sideHint(); innerHint(); mainHint(); });
+        }
+
+        /* == V11: the grocery list, on the board ==
+           The week's list as the groceries panel has it (proteins, vegetables, bases, other), on a sheet of
+           paper under the board. Each thing says which meals it's for; a check saves to the board, so it's on
+           the phone too. Copy and Share send what's left. It changes as the meals do. */
+        function drawShop() { keepFocus(shop, drawShop0); }
+        function drawShop0() {
+          const on = SR.useDinners();
+          shop.hidden = !on; shopJump.hidden = true;
+          if (!on) return;
+          /* on a phone the list waits after the meals; on a computer it sits under the board. V11: "after" is
+             whenever the board and the meals stack (the same width the stylesheet stacks them at), so the
+             meals you drag from always sit right under the board */
+          const tall = stacked();
+          if (tall && shop.parentElement !== body) body.appendChild(shop);
+          else if (!tall && shop.parentElement !== main) main.appendChild(shop);
+          const { prog, list } = shopList(dates);
+          const gs = SR.grocerySub(dates), open = shopOpen !== false;
+          shopJump.hidden = !tall;
+          if (tall) shopJump.replaceChildren(SR.icon('cart', 9, CREAM), h('b', '', 'Groceries'), h('span', '', gs), SR.icon('down', 7, '#C6BEB2'));
+          const head = h('div', 'c-shop-head');
+          const tog = h('button', 'c-shop-tog'); tog.type = 'button'; tog.setAttribute('aria-expanded', String(open));
+          const n = h('span', 'c-shop-n', gs);
+          tog.append(SR.icon('cart', 9, CREAM), h('b', '', 'Groceries'), n, SR.icon(open ? 'up' : 'down', 7, '#C6BEB2'));
+          tog.setAttribute('aria-label', 'Groceries, ' + gs + (open ? '. Fold the list' : '. Show the list'));
+          tog.addEventListener('click', () => { shopOpen = !open; keep(SHOP_KEY, shopOpen ? '1' : '0'); drawShop(); snd('detent'); });
+          /* the count says it changed */
+          if (shopWas && gs !== shopWas && feelOn()) n.animate([{ color: '#F2CF7A', transform: 'scale(1.08)' }, { color: '#F2CF7A', transform: 'none', offset: 0.5 }, { transform: 'none' }], { duration: 240, easing: FOUT });
+          shopWas = gs;
+          head.appendChild(tog);
+          const left = list.filter((x) => !x.got), text = (left.length ? left : list).map((x) => x.name).join('\n');
+          if (list.length && open) {
+            const acts = h('div', 'c-shop-acts');
+            const word = left.length && prog.got ? ' what’s left' : '';
+            if (typeof navigator.share === 'function') {
+              const sh = Kit.btn('c-again c-shop-act', 'Share' + word, async () => { try { await navigator.share({ title: 'Groceries', text }); } catch (e) { /* closed, or not allowed here */ } });
+              acts.appendChild(sh);
+            }
+            const cp = Kit.btn('c-again c-shop-act', 'Copy' + word, async () => {
+              const n2 = left.length || list.length;
+              /* V11: with everything in the cart, what's copied is the whole list, and the toast says so */
+              if (await copyText(text)) SR.toast(left.length ? 'Copied ' + n2 + (n2 === 1 ? ' thing' : ' things') + ' to get' : 'Copied the whole list, ' + n2 + (n2 === 1 ? ' thing' : ' things'), 'good');
+              else {
+                /* the browser said no: the list as plain text, picked out, to copy by hand */
+                const plain = h('textarea', 'c-find c-shop-plain'); plain.readOnly = true; plain.value = text; plain.rows = Math.min(8, n2);
+                plain.setAttribute('aria-label', 'Grocery list');
+                shop.querySelectorAll('.c-shop-plain').forEach((x) => x.remove());
+                head.after(plain); plain.focus(); plain.select();
+                SR.toast('Select the list and copy it', '');
+              }
+            });
+            acts.appendChild(cp);
+            if (prog.got) acts.appendChild(Kit.btn('c-again c-shop-act', 'Clear the checks', () => {
+              commitMeals((st) => { delete st.shopping[M.weekStart(dates[0])]; });
+              drawShop(); mealToast('Checks cleared', true);
+              /* the button leaves with the checks, so focus goes to the list's own heading */
+              const t = shop.querySelector('.c-shop-tog'); if (t) t.focus({ preventScroll: true });
+            }));
+            head.appendChild(acts);
+          }
+          const kids = [head];
+          if (open) {
+            const paper = h('div', 'c-shop-paper');
+            if (!list.length) {
+              const cooking = dates.some((d) => MEAL_KINDS.some(([k]) => { const m = mealAt(d, k); return m && !notCooking(m.how); }));
+              paper.appendChild(h('p', 'c-shop-none', cooking ? 'Nothing to get yet. A meal typed with its parts (chicken, rice, peppers) puts them here.' : 'Plan a meal you’re cooking and what it needs lands here.'));
+            } else {
+              const cols = h('div', 'c-shop-cols');
+              SR.D.PANTRY_KINDS.concat([{ id: '', name: 'Other' }]).forEach((kd) => {
+                const items = list.filter((x) => (kd.id ? x.kind === kd.id : !SR.D.PANTRY_KINDS.some((y) => y.id === x.kind)));
+                if (!items.length) return;
+                const g = h('div', 'c-shop-group');
+                g.appendChild(h('h4', '', kd.name));
+                items.forEach((x) => {
+                  const row = h('label', 'c-shop-row' + (x.got ? ' got' : ''));
+                  const tk = h('input', 'c-shop-tick'); tk.type = 'checkbox'; tk.checked = x.got;
+                  tk.setAttribute('aria-label', x.name);
+                  tk.addEventListener('change', () => { SR.Snd.init(); snd(tk.checked ? 'pick' : 'detent'); setGot(dates, x.id, tk.checked); drawShop(); });
+                  const words = h('span', 'c-shop-words');
+                  words.appendChild(h('span', 'c-shop-name', x.name));
+                  /* V11: each meal with its days: "Tacos, Mon and Fri · Turkey chili, Sat" */
+                  const days = (ds) => (ds.length > 1 ? ds.slice(0, -1).join(', ') + ' and ' + ds[ds.length - 1] : ds[0]);
+                  const why = x.uses.length ? x.uses.map((u) => u.meal + ', ' + days(u.days)).join(' · ') : days(x.days.map((d) => M.DAY_SHORT[M.weekday(d)]));
+                  words.appendChild(h('small', '', why));
+                  row.title = x.name + ', for ' + why;
+                  const box = h('span', 'c-shop-box'); box.appendChild(SR.icon('check', 7, '#FFFFFF'));
+                  row.append(tk, box, words);
+                  g.appendChild(row);
+                });
+                cols.appendChild(g);
+              });
+              paper.appendChild(cols);
+            }
+            kids.push(paper);
+          }
+          shop.replaceChildren(...kids);
+        }
+        /* scrolls the grocery list into view, in whichever part of the mat scrolls here */
+        function toShop() {
+          requestAnimationFrame(() => {
+            const sc = main.scrollHeight > main.clientHeight + 4 && getComputedStyle(main).overflowY !== 'visible' ? main : inner;
+            const y = shop.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
+            sc.scrollBy({ top: y, behavior: feelOn() ? 'smooth' : 'auto' });
+          });
         }
         mealLive = draw;
         function drawRows() {
@@ -1659,30 +2157,65 @@
         };
         /* a narrow screen turns the board: the days go down the side and the meals across */
         const tallBoard = () => inner.clientWidth > 0 && inner.clientWidth < 900;
+        /* V11: the board and the meals stack below this width (variant.css stacks .c-meal-body there too) */
+        const stacked = () => window.matchMedia('(max-width: 1099px)').matches;
+        /* V11: where the meal board's toasts show. At the bottom they sat on the grocery list's Share and Copy,
+           and on a phone on the day's own card; at the top they sit over the board's title. On a phone with no
+           card open they stay at the bottom, so Done is never covered */
+        const toastSpot = () => document.body.classList.toggle('c-toasts-top', !!mat && mat.classList.contains('c-meals') && (window.innerWidth >= 600 || !!pop));
         function drawBoard() {
-          board.replaceChildren();
+          /* V11: measured before the board empties, and built off the page, so an empty board never lays out
+             (that clamped the column's scroll to the top on every change) */
           const tall = tallBoard();
-          board.classList.toggle('c-tall', tall);
-          board.style.setProperty('--rows', showRows.length);
-          board.appendChild(h('span'));
+          const live = board;
+          const board0 = document.createDocumentFragment();
+          live.classList.toggle('c-tall', tall);
+          live.style.setProperty('--rows', showRows.length);
+          /* V11: the board's corner keeps count of the meals on the days the grid shows (on a phone the days
+             still to come, unless the earlier ones are open), with no total: how many meals a day is yours to say.
+             With none yet it stays empty; the board's line already says how to start */
+          const shownDays = tall ? dates.filter((d) => showPast || d >= SR.today) : dates;
+          const cnt = mealCount(shownDays, showRows, true), corner = h('div', 'c-mcorner');
+          const cSpan = shownDays.length && shownDays.length < dates.length ? M.DAY_SHORT[M.weekday(shownDays[0])] + (shownDays.length > 1 ? ' to ' + M.DAY_SHORT[M.weekday(shownDays[shownDays.length - 1])] : '') : '';
+          if (cnt.n) {
+            corner.append(h('b', '', cnt.n + (cnt.n === 1 ? ' meal' : ' meals')), h('span', '', 'planned'));
+            corner.setAttribute('aria-label', cnt.n + (cnt.n === 1 ? ' meal' : ' meals') + ' planned' + (cSpan ? ', ' + cSpan : ''));
+            if (cSpan) corner.title = 'Counting ' + cSpan;
+          } else corner.setAttribute('aria-hidden', 'true');
+          board0.appendChild(corner);
           if (tall) {
-            showRows.forEach((k) => board.appendChild(rowLabel(k)));
+            showRows.forEach((k) => board0.appendChild(rowLabel(k)));
             /* on a phone the days already over fold into one line, so the week opens on what's left */
             const past = dates.filter((d) => d < SR.today);
             if (past.length) {
               const span = M.DAY_SHORT[M.weekday(past[0])] + (past.length > 1 ? ' to ' + M.DAY_SHORT[M.weekday(past[past.length - 1])] : '');
               const fold = h('button', 'c-pastfold'); fold.type = 'button'; fold.setAttribute('aria-expanded', String(showPast));
               fold.append(h('span', '', (showPast ? 'Hide ' : 'Earlier this week: ') + span), SR.icon(showPast ? 'up' : 'down', 7, '#4A3418'));
-              fold.addEventListener('click', () => { showPast = !showPast; draw(); });
-              board.appendChild(fold);
+              fold.addEventListener('click', () => { showPast = !showPast; draw(); const f = board.querySelector('.c-pastfold'); if (f) f.focus({ preventScroll: true }); });
+              board0.appendChild(fold);
             }
-            dates.filter((d) => showPast || d >= SR.today).forEach((d) => { board.appendChild(dayHead(d)); showRows.forEach((k) => board.appendChild(cellFor(d, k))); });
+            dates.filter((d) => showPast || d >= SR.today).forEach((d) => { board0.appendChild(dayHead(d)); showRows.forEach((k) => board0.appendChild(cellFor(d, k))); });
           } else {
-            dates.forEach((d) => board.appendChild(dayHead(d)));
-            showRows.forEach((k) => { board.appendChild(rowLabel(k)); dates.forEach((d) => board.appendChild(cellFor(d, k))); });
+            dates.forEach((d) => board0.appendChild(dayHead(d)));
+            showRows.forEach((k) => { board0.appendChild(rowLabel(k)); dates.forEach((d) => board0.appendChild(cellFor(d, k))); });
           }
+          live.replaceChildren(board0);
           board.classList.toggle('c-holding', !!held);
           justSet = ''; landSet = new Set();
+          requestAnimationFrame(fitNames);
+        }
+        /* V11: a name whose longest word is wider than its block steps down to 12 px, the smallest size on the
+           scale, so a narrow window never breaks Leftovers as Leftover and s. Measured, not guessed from length */
+        const fitCtx = document.createElement('canvas').getContext('2d');
+        function fitNames() {
+          board.querySelectorAll('.c-mcell .c-dblock > b').forEach((b) => {
+            b.classList.remove('c-fit12');
+            const w = b.clientWidth;
+            if (!w) return;
+            const s = getComputedStyle(b);
+            fitCtx.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
+            if (Math.max(...b.textContent.split(/\s+/).map((x) => fitCtx.measureText(x).width)) > w + 0.5) b.classList.add('c-fit12');
+          });
         }
         function cellFor(d, k) {
           const cell = h('div', 'c-mcell' + (d === SR.today ? ' today' : '') + (d < SR.today ? ' past' : ''));
@@ -1709,11 +2242,15 @@
           /* a long word (Sandwiches) steps down a size rather than being cut, and the whole name shows on hover */
           if (mealLabel(m).split(/\s+/).some((w) => w.length >= 10)) blk.classList.add('c-tight');
           blk.title = mealLabel(m);
-          const who = easy ? '' : m.cook === 'me' ? me0() : m.cook === 'kim' ? partnerName() || 'Partner' : '';
+          /* V11: the tag names whoever is cooking: you, a partner, or family who live with you. With one
+             person who can cook it says nothing new, so it stays away (as on the plan and in the dinner panel) */
+          const who = easy || !m.cook || m.cook === 'home' || cookList(m.cook).length < 2 ? '' : cookNamed(m.cook) || (m.cook === 'kim' ? 'Partner' : '');
           if (who) {
-            const tag = h('span', 'c-cook c-nodrag', who);
-            tag.title = who + ' is making it. Tap to change.'; tag.setAttribute('role', 'button'); tag.tabIndex = 0;
-            tag.setAttribute('aria-label', who + ' is making it. Change who');
+            /* V11: the name sits in its own span, so the tag's 44 px touch area can reach past its edge. The tag
+               shows the first name (the whole name when two cooks share it) and cuts it short if it must */
+            const tag = h('span', 'c-cook c-nodrag'); tag.appendChild(h('span', 'c-cook-name', cookShort(m.cook) || who));
+            tag.title = (who === 'You' ? 'You’re' : who + ' is') + ' making it. Tap to change.'; tag.setAttribute('role', 'button'); tag.tabIndex = 0;
+            tag.setAttribute('aria-label', (who === 'You' ? 'You’re' : who + ' is') + ' making it. Change who');
             tag.addEventListener('click', (e) => { e.stopPropagation(); cycleCook(d, k); });
             tag.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); cycleCook(d, k); } });
             blk.appendChild(tag);
@@ -1778,15 +2315,15 @@
         function dropOn(z, p, o) { if (z.dataset.zone === 'mealrow') fillRow(p, z.dataset.kind); else placeOn(p, z.dataset.date, z.dataset.kind, o && o.copy); }
         /* sets one cell; a night without a Dinner block gets one, and says where it went */
         function setCell(d, k, make) {
-          if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '.', 'bad'); return false; }
+          if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '. Make room on that day, or plan it for another night.', 'bad'); return false; }
           const add = k === 'dinner' && !hasDinnerBlock(d);
           let at = null;
           const r = commitMeals((st) => { if (add) at = ensureDinner(st, d); putMeal(st, d, k, make(st)); });
           if (r === false) return false;
           justSet = d + k; props.delete(d + '|' + k);
           const now = mealAt(d, k);
-          if (now) speak(mealLabel(now) + ' on ' + dayWords(d, k));
-          if (add && at != null) SR.toast('Dinner added to ' + M.DAY_LONG[M.weekday(d)] + (typeof at === 'number' ? ' at ' + M.clock(at) : ''), 'good', { label: 'Undo', fn: () => { SR.undo(); } });
+          /* V11: every meal that lands says so, with Undo (the toast is read out too) */
+          if (now) mealToast(mealLabel(now) + ' for ' + dayWords(d, k) + (add && at != null ? ', with a Dinner block' + (typeof at === 'number' ? ' at ' + M.clock(at) : '') : ''), true);
           return true;
         }
         function placeOn(p, d, k, copy) {
@@ -1794,11 +2331,12 @@
             if (p.from.d === d && p.from.k === k) return;
             const a = mealAt(p.from.d, p.from.k), b = mealAt(d, k);
             if (copy) { setCell(d, k, () => a); draw(); return; }
-            if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '.', 'bad'); draw(); return; }
-            if (p.from.k === 'dinner' && b && !canDinner(p.from.d)) { draw(); return; }
+            if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '. Make room on that day, or plan it for another night.', 'bad'); draw(); return; }
+            /* V11: a swap that can't go back says why, never a quiet nothing */
+            if (p.from.k === 'dinner' && b && !canDinner(p.from.d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(p.from.d)] + ', so ' + mealLabel(b) + ' can’t swap there. Drop it on an open night instead.', 'bad'); draw(); return; }
             commitMeals((st) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, a); putMeal(st, p.from.d, p.from.k, b); });
             justSet = d + k; props.delete(d + '|' + k);
-            speak(mealLabel(a) + (b ? ' and ' + mealLabel(b) + ' swapped' : ' moved to ' + dayWords(d, k)));
+            mealToast(b ? 'Swapped ' + mealLabel(a) + ' and ' + mealLabel(b) : mealLabel(a) + ' moved to ' + dayWords(d, k), true);
           } else setCell(d, k, (st) => mealFrom(st, p));
           draw();
         }
@@ -1810,36 +2348,35 @@
           commitMeals((st) => days.forEach((d) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, mealFrom(st, p)); }));
           days.forEach((d) => { props.delete(d + '|' + k); landSet.add(d + '|' + k); });
           draw();
-          SR.toast((p.name || howName(p.how)) + ' on ' + days.length + (days.length === 1 ? ' day' : ' days'), 'good', { label: 'Undo', fn: () => { SR.undo(); } });
+          mealToast((p.name || howName(p.how)) + ' for ' + kindName(k).toLowerCase() + ' on ' + days.length + (days.length === 1 ? ' day' : ' days'), true);
         }
         /* last week's meals, on the days of this one that are still open */
         function sameAsLast() {
-          const todo = [];
-          dates.forEach((d) => {
-            if (d < SR.today || SR.day(d).trip) return;
-            showRows.forEach((k) => { if (mealAt(d, k)) return; const was = mealAt(M.addDays(d, -7), k); if (was && (k !== 'dinner' || canDinner(d))) todo.push([d, k, was]); });
-          });
-          if (!todo.length) { SR.toast('Nothing from last week to bring over.', ''); return; }
-          commitMeals((st) => todo.forEach(([d, k, m]) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, m); }));
-          draw();
-          SR.toast(todo.length + (todo.length === 1 ? ' meal' : ' meals') + ' from last week', 'good', { label: 'Undo', fn: () => { SR.undo(); } });
-          snd('clack', 0.8);
+          const todo = lastWeekMeals(dates, showRows);
+          if (bringLastWeek(dates, showRows)) { todo.forEach(([d, k]) => landSet.add(d + '|' + k)); draw(); }
         }
         function clearMeal(d, k, say) {
           const m = mealAt(d, k);
           if (!m) return;
           commitMeals((st) => putMeal(st, d, k, null));
           draw();
-          speak(mealLabel(m) + ' is off ' + dayWords(d, k));
-          if (say) SR.toast(mealLabel(m) + ' is off ' + M.DAY_LONG[M.weekday(d)], '', { label: 'Undo', fn: () => { SR.undo(); } });
+          /* V11: "Took Burrito bowls off Saturday", so a plural name never trips the verb */
+          if (say) mealToast('Took ' + mealLabel(m) + ' off ' + M.DAY_LONG[M.weekday(d)], true);
+          else speak('Took ' + mealLabel(m) + ' off ' + dayWords(d, k));
         }
         function cycleCook(d, k) {
           const m = mealAt(d, k);
           if (!m || notCooking(m.how)) return;
-          const order = ['me'].concat(partnerName() ? ['kim'] : [], ['home']);
+          /* V11: around everyone who can cook (you, each partner, family who live with you), then Anyone;
+             with one cook there's no one to hand it to */
+          if (cookList(m.cook).length < 2) return;
+          const order = cookList(m.cook).map((c) => c.id).concat('home');
           const next = order[(order.indexOf(m.cook || 'home') + 1) % order.length];
           commitMeals((st) => putMeal(st, d, k, Object.assign({}, m, { cook: next })));
           snd('detent'); draw();
+          /* V11: who's making it and on which day, said, with Undo: "Ana is making Turkey chili Friday" */
+          const nm = next === 'home' ? '' : cookNamed(next), on = k === 'dinner' ? ' ' + M.DAY_LONG[M.weekday(d)] : ' for ' + mealDayWords(d, k);
+          mealToast(next === 'me' ? 'You’re making ' + mealLabel(m) + on : nm ? nm + ' is making ' + mealLabel(m) + on : 'Anyone can make ' + mealLabel(m) + on, true);
         }
 
         /* == a day's meal, typed or changed in place ==
@@ -1873,7 +2410,14 @@
             const items = !cooking ? [] : !own && draft.recipe ? draft.items.slice() : own ? pantryIds(st, draft.parts.filter((pt) => !draft.off.has(pt))) : [];
             return { name: cap(draft.name), parts: own ? draft.parts : [], items, how: draft.how, cook: draft.cook || undefined, recipe: own ? null : draft.recipe };
           };
-          const saveNow = () => { commitMeals((st) => putMeal(st, d, k, built(st))); justSet = ''; draw(); };
+          /* V11: a change in the card saves as it's made, and the card says so */
+          const savedMark = h('span', 'c-mpop-saved'); savedMark.setAttribute('role', 'status'); savedMark.hidden = true;
+          const saveNow = () => {
+            commitMeals((st) => putMeal(st, d, k, built(st))); justSet = ''; draw();
+            savedMark.replaceChildren(SR.icon('check', 7, '#8FD3B1'), h('span', '', 'Saved'));
+            savedMark.hidden = false;
+            if (feelOn()) savedMark.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: FOUT });
+          };
           function drawParts() {
             partsBox.replaceChildren();
             const chips = [];
@@ -1909,9 +2453,12 @@
               const howRow = h('div', 'c-opts'); howRow.setAttribute('role', 'group'); howRow.setAttribute('aria-label', 'How it happens');
               [['home', 'Cook']].concat(NOT_COOKING).forEach(([id, n]) => howRow.appendChild(pick(n, '', draft.how === id, () => { draft.how = id; saveNow(); drawParts(); drawMore(); snd('detent'); })));
               more.append(h('div', 'c-kick', 'How'), howRow);
-              if (!notCooking(draft.how)) {
+              /* V11: with nobody else at home there's no one to ask about, so the question stays away */
+              const cooks = cookList(draft.cook);
+              if (!notCooking(draft.how) && cooks.length > 1) {
                 const whoRow = h('div', 'c-opts'); whoRow.setAttribute('role', 'group'); whoRow.setAttribute('aria-label', 'Who’s making it');
-                [['me', me0()]].concat(partnerName() ? [['kim', partnerName()]] : [], [['home', 'Anyone']]).forEach(([id, n]) => whoRow.appendChild(pick(n, '', (draft.cook || 'home') === id, () => { draft.cook = id; saveNow(); drawMore(); snd('detent'); })));
+                /* V11: everyone at home who can cook, by name (You, as the dinner panel says it), then Anyone */
+                cooks.map((c) => [c.id, c.name]).concat([['home', 'Anyone']]).forEach(([id, n]) => whoRow.appendChild(pick(n, '', (draft.cook || 'home') === id, () => { draft.cook = id; saveNow(); drawMore(); snd('detent'); })));
                 more.append(h('div', 'c-kick', 'Who’s making it'), whoRow);
               }
               /* the same meal on other days: tap a day to add it there, tap it again to take it off */
@@ -1920,7 +2467,7 @@
               dates.forEach((dd) => {
                 const there = mealAt(dd, k), same = !!there && norm(mealLabel(there)) === mine;
                 const b = pick(M.DAY_SHORT[M.weekday(dd)].slice(0, 1), 'c-dayopt', same || dd === d, () => {
-                  if (same) { commitMeals((st) => putMeal(st, dd, k, null)); draw(); speak(mealLabel(m) + ' is off ' + dayWords(dd, k)); }
+                  if (same) { commitMeals((st) => putMeal(st, dd, k, null)); draw(); mealToast('Took ' + mealLabel(m) + ' off ' + dayWords(dd, k), true); }
                   else if (setCell(dd, k, (st) => built(st))) draw();
                   drawMore(); snd('detent');
                 });
@@ -1931,7 +2478,10 @@
               });
               more.append(h('div', 'c-kick', 'Also on'), also);
               const off = Kit.btn('c-mpop-off', 'Take it off', () => { closePop(); clearMeal(d, k, true); }, 'x');
-              foot.append(off, Kit.btn('c-go', 'Done', () => closePop(true)));
+              foot.append(off, savedMark, Kit.btn('c-go', 'Done', () => closePop(true)));
+              /* V11: the card grows when a row comes in (Cook adds Who's making it), so it finds its place
+                 again and never covers the day it's about */
+              if (pop && pop.box === box) placePop();
               return;
             }
             /* empty: the meals that fit first, matching what's typed, then the ways that aren't cooking */
@@ -1951,6 +2501,7 @@
             const go = Kit.btn('c-go', 'Add to ' + M.DAY_LONG[M.weekday(d)], () => form.requestSubmit());
             go.disabled = !q;
             foot.appendChild(go);
+            if (pop && pop.box === box) placePop();
           }
           inp.addEventListener('input', () => {
             draft.name = inp.value;
@@ -1991,7 +2542,7 @@
           (mat || inner).appendChild(box);
           cell.classList.add('c-popped');
           drawParts(); drawMore();
-          placePop();
+          placePop(); toastSpot();
           requestAnimationFrame(() => { box.classList.add('in'); if (!m || window.innerWidth >= 600) inp.focus({ preventScroll: true }); });
           snd('pick');
         }
@@ -2018,6 +2569,7 @@
         function closePop(back) {
           if (!pop) return;
           const p = pop; pop = null;
+          toastSpot();
           if (p.box.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
           p.box.classList.remove('in'); p.box.classList.add('out');
           setTimeout(() => p.box.remove(), feelOn() ? 160 : 0);
@@ -2027,8 +2579,17 @@
         /* a tap outside the card closes it; a tap on another day opens that one */
         const outside = (e) => { if (pop && !pop.box.contains(e.target) && !e.target.closest('[data-zone="meal"]')) closePop(); };
         document.addEventListener('pointerdown', outside, true);
-        inner.addEventListener('scroll', () => { if (pop) placePop(); }, { passive: true });
-        const onResize = () => { if (tallBoard() !== board.classList.contains('c-tall')) draw(); else if (pop) placePop(); };
+        /* V11: where the head stays in view (the board and the meals stacked), it casts a shadow once there's
+           something under it */
+        const headEl = inner.querySelector('.c-mat-head');
+        inner.addEventListener('scroll', () => { if (pop) placePop(); if (headEl) headEl.classList.toggle('c-scrolled', inner.scrollTop > 4); }, { passive: true });
+        const onResize = () => {
+          toastSpot();
+          /* the More below hints check again once the new size has laid out (one could stay on, stale) */
+          requestAnimationFrame(() => requestAnimationFrame(() => { sideHint(); innerHint(); mainHint(); fitNames(); }));
+          if (tallBoard() !== board.classList.contains('c-tall') || (SR.useDinners() && stacked() !== (shop.parentElement === body))) draw();
+          else if (pop) placePop();
+        };
         window.addEventListener('resize', onResize);
         /* the slash key goes to Find, as in most apps */
         const slash = (e) => { if (e.key === '/' && !e.metaKey && !e.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) { e.preventDefault(); findIn.focus(); } };
@@ -2038,9 +2599,13 @@
           if (pop) { closePop(true); return true; }
           if (held) { letGoHeld(); return true; }
           if (find) { find = ''; findIn.value = ''; drawSide(); return true; }
+          /* V11: Escape while editing the list ends editing, and Escape in Leave out folds it, before it ever
+             closes the board */
+          if (editing) { endEditing(); return true; }
+          if (leaving) { leaving = false; drawSide(); leaveBtn.focus({ preventScroll: true }); return true; }
           return false;
         };
-        matGone = () => { mealLive = null; matEsc = null; document.removeEventListener('keydown', slash); document.removeEventListener('pointerdown', outside, true); window.removeEventListener('resize', onResize); if (pop) { pop.box.remove(); pop = null; } };
+        matGone = () => { mealLive = null; matEsc = null; document.body.classList.remove('c-toasts-top'); document.removeEventListener('keydown', slash); document.removeEventListener('pointerdown', outside, true); window.removeEventListener('resize', onResize); if (pop) { pop.box.remove(); pop = null; } };
 
         /* == suggest: an idea for every open meal, kept one at a time or all at once ==
            Yours come first, nothing repeats two days running, the week leans on variety (breakfast may
@@ -2095,7 +2660,7 @@
           commitMeals((st) => list.forEach(([key, p]) => { const [d, k] = key.split('|'); if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, mealFrom(st, p)); }));
           props = new Map(); landSet = new Set(list.map(([key]) => key));
           draw(); snd('clack', 0.9);
-          SR.toast(list.length + (list.length === 1 ? ' meal' : ' meals') + ' planned', 'good', { label: 'Undo', fn: () => { SR.undo(); } });
+          mealToast(list.length + (list.length === 1 ? ' meal' : ' meals') + ' planned', true);
           speak(list.length + ' meals planned');
         }
         /* the ingredients that show up most in the meals you'd pick, for "We have" */
@@ -2142,6 +2707,15 @@
 
         /* == the library == */
         function setFor(k) { if (forT === k) return; forT = k; drawSide(); snd('detent'); }
+        /* V11: editing the list is a state you can see (the library wears a ring and says Editing), and the
+           Edit button keeps focus as its words change */
+        function setEditing(on) {
+          editing = on; letGoHeld(); drawSide(); snd('detent');
+          side.classList.toggle('c-lib-editing', editing);
+          speak(editing ? 'Editing your meals. Hide the ones you don’t make.' : 'Done editing');
+          const e = lib.querySelector('.c-libedit'); if (e) e.focus({ preventScroll: true });
+        }
+        const endEditing = () => setEditing(false);
         function drawSide() { keepFocus(side, drawSide0); landKey = ''; }
         function drawSide0() {
           forRow.replaceChildren();
@@ -2157,6 +2731,7 @@
         }
         function drawLib() {
           lib.replaceChildren();
+          lib.classList.toggle('c-editing', editing);
           const L = library(), all = L.yours.concat(L.ideas), q = find.trim();
           const vis = (y) => !y.hidden && !y.out && (!q || matches(y, q));
           let Y = sorted(L.yours.filter(vis), forT), I = sorted(L.ideas.filter(vis), forT);
@@ -2169,9 +2744,9 @@
           const section = (title, list, divide) => {
             const g = h('div', 'c-tgroup');
             const head = h('div', 'c-libsec'); head.appendChild(h('div', 'c-kick', title));
-            if (first) { const e = Kit.btn('c-libedit', editing ? 'Done' : 'Edit', () => { editing = !editing; letGoHeld(); drawSide(); }); e.setAttribute('aria-pressed', String(editing)); head.appendChild(e); }
+            if (first) { const e = Kit.btn('c-libedit', editing ? 'Done editing' : 'Edit', () => setEditing(!editing)); e.setAttribute('aria-pressed', String(editing)); head.appendChild(e); }
             g.appendChild(head);
-            if (first && editing) g.appendChild(h('p', 'c-libsay', 'Tap a meal to hide it. Meals you added come off for good.'));
+            if (first && editing) g.appendChild(h('p', 'c-libsay', 'Hide the meals you don’t make. Ones you added come off for good.'));
             first = false;
             let row = h('div', 'c-trow2'); g.appendChild(row);
             list.forEach((y, i) => {
@@ -2214,7 +2789,7 @@
               all.filter((y) => y.hidden).forEach((y) => {
                 const b = domBlock(y.name, '', MEAL_COLOR[tileColor(y)], MEAL_INK[tileColor(y)], 'c-piece c-gone');
                 b.tabIndex = 0; b.setAttribute('role', 'button'); b.setAttribute('aria-label', 'Bring back ' + y.name);
-                const back = () => { editBook((bk) => { bk.hide = bk.hide.filter((key) => key !== y.key); }); drawSide(); snd('clack', 0.6); };
+                const back = () => { editBook((bk) => { bk.hide = bk.hide.filter((key) => key !== y.key); }); drawSide(); snd('clack', 0.6); mealToast('Brought back ' + y.name, true); };
                 b.addEventListener('click', back);
                 b.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); back(); } });
                 const wrap = h('div', 'c-pwrap'); wrap.dataset.k = 'hidden:' + y.key; wrap.appendChild(b); row.appendChild(wrap);
@@ -2228,24 +2803,37 @@
           const wrap = h('div', 'c-pwrap' + (editing ? ' editing' : '')); wrap.dataset.k = y.key;
           const col = tileColor(y, forT);
           const b = domBlock(y.name, y.dur ? M.dur(y.dur) : y.how ? howName(y.how) : '', MEAL_COLOR[col], MEAL_INK[col], 'c-piece' + (y.key === landKey ? ' c-land' : ''));
-          b.tabIndex = 0; b.setAttribute('role', 'button');
-          b.setAttribute('aria-label', editing ? (y.kind === 'own' ? 'Remove ' : 'Hide ') + y.name : y.name + '. Tap, then tap a day');
           const pay = payloadOf(y);
           const whole = (y.parts && y.parts.length ? y.parts : y.itemNames || []).join(', ');
           if (whole) b.title = whole;
           if (have.size && usesHave(y)) b.appendChild(h('small', 'c-uses', 'Uses ' + usesHave(y) + ' you have'));
+          /* V11: while editing, a tile holds still (no grip, no lift, no drag) and its one action is the button
+             beside it, big enough to find and never on the grip (Russell, Oct 14: "the X is a little hard to
+             find... colliding with where the X is") */
+          if (editing) {
+            b.classList.add('c-nodrag');
+            const x0 = h('button', 'c-phide'); x0.type = 'button';
+            const word = y.kind === 'own' ? 'Remove' : 'Hide';
+            x0.setAttribute('aria-label', word + ' ' + y.name); x0.title = word + ' ' + y.name;
+            x0.append(SR.icon('x', 7, '#FFFFFF'), h('span', '', word));
+            x0.addEventListener('click', (e) => { e.stopPropagation(); hideMeal(y); });
+            /* a tap or a drag on the tile itself says how to plan with it again, never a quiet nothing */
+            let said = 0;
+            const why = () => { if (Date.now() - said < 2500) return; said = Date.now(); SR.toast('You’re editing the list. Tap Done editing, then drag ' + y.name + ' onto a day.', ''); snd('tap'); };
+            b.addEventListener('click', why);
+            b.addEventListener('pointerdown', (e) => { const x1 = e.clientX, y1 = e.clientY; const mv = (ev) => { if (Math.abs(ev.clientX - x1) + Math.abs(ev.clientY - y1) > 12) { off(); why(); } }; const off = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', off); }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', off); });
+            wrap.append(b, x0);
+            return wrap;
+          }
+          b.tabIndex = 0; b.setAttribute('role', 'button');
+          b.setAttribute('aria-label', y.name + '. Tap, then tap a day. Delete hides it');
           b.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (editing) hideMeal(y); else hold(pay, b); }
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hold(pay, b); }
             else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); hideMeal(y); }
           });
-          draggable(b, pay, { accept, why: refusal, onDrop: (z, p) => dropOn(z, p), onTap: (p, el) => { if (editing) hideMeal(y); else hold(p, el); }, onLift: () => { board.dataset.drag = 'replace'; }, onEnd: () => { delete board.dataset.drag; } });
+          draggable(b, pay, { accept, why: refusal, onDrop: (z, p) => dropOn(z, p), onTap: (p, el) => hold(p, el), onLift: () => { board.dataset.drag = 'replace'; }, onEnd: () => { delete board.dataset.drag; } });
           if (held && held.p.key === y.key) b.classList.add('c-held');
-          /* hide sits beside the tile, never inside it */
-          const x0 = h('button', 'c-phide'); x0.type = 'button';
-          x0.setAttribute('aria-label', (y.kind === 'own' ? 'Remove ' : 'Hide ') + y.name); x0.title = y.kind === 'own' ? 'Remove' : 'Hide';
-          x0.appendChild(SR.icon('x', 6, '#252928'));
-          x0.addEventListener('click', (e) => { e.stopPropagation(); hideMeal(y); });
-          wrap.append(b, x0);
+          wrap.appendChild(b);
           return wrap;
         }
         function addRow(q) {
@@ -2266,14 +2854,20 @@
           drawSide();
           const el = lib.querySelector('[data-k="o:' + id + '"] .c-piece');
           if (el) { held = null; hold({ key: 'o:' + id, name, parts: partsOf(name), items: null }, el); el.scrollIntoView({ block: 'nearest' }); }
-          SR.toast('Added ' + name + ' to your meals', 'good', { label: 'Undo', fn: () => { SR.undo(); fresh = ''; letGoHeld(); } });
+          mealToast('Added ' + name + ' to your meals', true, () => { fresh = ''; letGoHeld(); });
         }
         function hideMeal(y) {
           if (y.kind === 'own') editBook((bk) => { bk.own = bk.own.filter((o) => 'o:' + o.id !== y.key); });
           else editBook((bk) => { if (!bk.hide.includes(y.key)) bk.hide = bk.hide.concat(y.key); });
           if (held && held.p.key === y.key) letGoHeld();
+          /* a keyboard stays in the list: focus moves to the next meal's button (V11: or the next meal, when
+             Delete hid one outside editing) */
+          const at = [...lib.querySelectorAll('.c-phide')].indexOf(document.activeElement);
+          const atPiece = [...lib.querySelectorAll('.c-piece[role="button"]')].indexOf(document.activeElement);
           drawSide(); snd('slide');
-          SR.toast((y.kind === 'own' ? 'Removed ' : 'Hid ') + y.name, '', { label: 'Undo', fn: () => { SR.undo(); } });
+          if (at >= 0) { const xs = lib.querySelectorAll('.c-phide'), t = xs[Math.min(at, xs.length - 1)]; if (t) t.focus({ preventScroll: true }); }
+          else if (atPiece >= 0) { const xs = lib.querySelectorAll('.c-piece[role="button"]'), t = xs[Math.min(atPiece, xs.length - 1)]; if (t) t.focus({ preventScroll: true }); }
+          mealToast((y.kind === 'own' ? 'Removed ' : 'Hid ') + y.name, true);
         }
         function drawLeave() {
           const bk = book();
@@ -2282,19 +2876,27 @@
           DIETS.forEach((dt) => { const b = Kit.btn('c-opt', dt.name, () => setDiet(dt.id)); b.setAttribute('aria-pressed', String(bk.diet === dt.id)); dRow.appendChild(b); });
           const oRow = h('div', 'c-opts'); oRow.setAttribute('role', 'group'); oRow.setAttribute('aria-label', 'Leave out');
           LEAVE.forEach((L) => { const b = Kit.btn('c-opt', L.name, () => toggleOut(L.id)); b.setAttribute('aria-pressed', String(bk.out.includes(L.id))); oRow.appendChild(b); });
-          bk.words.forEach((w) => { const b = Kit.btn('c-opt c-word', w, () => editBook((x) => { x.words = x.words.filter((y) => y !== w); }), 'x'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', 'Stop leaving out ' + w); oRow.appendChild(b); });
+          bk.words.forEach((w) => { const b = Kit.btn('c-opt c-word', w, () => { const was = outCount(); editBook((x) => { x.words = x.words.filter((y) => y !== w); }); drawSide(); leaveSay('No longer leaving out ' + w + '.', was); }, 'x'); b.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-label', 'Stop leaving out ' + w); oRow.appendChild(b); });
           const f = h('form', 'c-leaveform'), inp = h('input', 'c-find'); inp.placeholder = 'Something else, like mushrooms'; inp.setAttribute('aria-label', 'Something else to leave out'); inp.autocomplete = 'off';
           f.appendChild(inp);
-          f.addEventListener('submit', (e) => { e.preventDefault(); const w = norm(inp.value); if (!w) return; editBook((x) => { if (!x.words.includes(w)) x.words = x.words.concat(w); }); drawSide(); const again = leave.querySelector('input'); if (again) again.focus(); });
+          f.addEventListener('submit', (e) => { e.preventDefault(); const w = norm(inp.value); if (!w) return; const was = outCount(); editBook((x) => { if (!x.words.includes(w)) x.words = x.words.concat(w); }); drawSide(); leaveSay('Leaving out ' + w + '.', was); const again = leave.querySelector('input'); if (again) again.focus(); });
           leave.append(h('div', 'c-kick', 'We eat'), dRow, h('div', 'c-kick', 'Leave out'), oRow, f, h('p', 'c-libsay', 'This only hides meals here. Your days stay as they are.'));
         }
+        /* V11: what leaving something out did, said: how many meals it hid here, or brought back */
+        const outCount = () => { const L = library(); return L.yours.concat(L.ideas).filter((y) => !y.hidden && y.out).length; };
+        const leaveSay = (words, was) => {
+          const n = Math.abs(outCount() - was), more = outCount() > was;
+          mealToast(words + (n ? ' ' + n + (n === 1 ? ' meal' : ' meals') + (more ? ' hidden here.' : ' show again.') : ''), true);
+        };
         /* a diet sets its own things to leave out and keeps the rest (gluten, nuts, your own words) */
         function setDiet(id) {
-          const dt = DIETS.find((x) => x.id === id);
+          const dt = DIETS.find((x) => x.id === id), was = outCount();
           editBook((bk) => { bk.diet = id; bk.out = bk.out.filter((o) => !DIET_IDS.includes(o)).concat(dt.out); });
           drawSide(); snd('detent');
+          leaveSay(id === 'all' ? 'We eat everything.' : 'We eat ' + dt.name.toLowerCase() + '.', was);
         }
         function toggleOut(id) {
+          const was = outCount(), L = LEAVE.find((x) => x.id === id), on = !book().out.includes(id);
           editBook((bk) => {
             bk.out = bk.out.includes(id) ? bk.out.filter((o) => o !== id) : bk.out.concat(id);
             const mine = bk.out.filter((o) => DIET_IDS.includes(o)).sort().join();
@@ -2302,6 +2904,7 @@
             bk.diet = fits ? fits.id : 'all';
           });
           drawSide(); snd('detent');
+          leaveSay((on ? 'Leaving out ' : 'No longer leaving out ') + L.name.toLowerCase() + '.', was);
         }
         findIn.addEventListener('input', () => { find = findIn.value; fresh = ''; drawSide(); });
         findForm.addEventListener('submit', (e) => {
@@ -2317,9 +2920,67 @@
           if (el) { held = null; hold(payloadOf(hit), el); el.scrollIntoView({ block: 'nearest' }); }
         });
         draw();
-      }, () => { if (matGone) matGone(); matGone = null; SR.render(); });
+        /* V11: opened from a meal somewhere else (the reset's week, say), that day's card opens; opened for
+           the groceries, the list comes into view */
+        if (opts.cell) {
+          const [cd, ck] = opts.cell;
+          if (!showRows.includes(ck)) { showRows = MEAL_KINDS.map(([x]) => x).filter((x) => x === ck || showRows.includes(x)); draw(); }
+          setTimeout(() => { const c = board.querySelector('[data-zone="meal"][data-date="' + cd + '"][data-kind="' + ck + '"]'); if (c && !c.dataset.away && mat) { c.scrollIntoView({ block: 'nearest' }); openPop(c, cd, ck); } }, feelOn() ? 420 : 60);
+        } else if (opts.shop) setTimeout(() => { toShop(); const t = shop.querySelector('.c-shop-tog'); if (t) t.focus({ preventScroll: true }); }, feelOn() ? 420 : 60);
+        /* V11: focus moves into the board when it opens (to its title; a day's card or the list take it
+           when the board opens on them) */
+        const title = inner.querySelector('.c-mat-head h2');
+        if (title) { title.tabIndex = -1; if (!opts.cell && !opts.shop) setTimeout(() => { if (mat && !mat.contains(document.activeElement)) title.focus({ preventScroll: true }); }, 60); }
+        closeWords = () => {
+          const now = mealSnap();
+          let add = 0, change = 0, off = 0;
+          now.forEach((v, key) => { if (!before.has(key)) add++; else if (before.get(key) !== v) change++; });
+          before.forEach((v, key) => { if (!now.has(key)) off++; });
+          /* V11: the grocery checks and the meal list are saved too, and say so when they're all that changed */
+          const shopNow = SR.state.shopping || {};
+          let got = 0, ungot = 0;
+          new Set(Object.keys(shopBefore).concat(Object.keys(shopNow))).forEach((w) => {
+            const a = shopBefore[w] || {}, b = shopNow[w] || {};
+            Object.keys(b).forEach((id) => { if (!a[id]) got++; });
+            Object.keys(a).forEach((id) => { if (!b[id]) ungot++; });
+          });
+          const bookNow = JSON.stringify(SR.state.mealbook || null), listChanged = bookNow !== bookBefore;
+          const out = [];
+          const checks = [got ? got + ' checked off' : '', ungot ? ungot + ' unchecked' : ''].filter(Boolean).join(', ');
+          if (add || change || off) {
+            const bits = [];
+            if (add) bits.push(add + ' added');
+            if (change) bits.push(change + ' changed');
+            if (off) bits.push(off + ' taken off');
+            out.push('Meals saved: ' + bits.join(', ') + '.');
+            if (checks) out.push(cap(checks) + ' on the list.');
+          } else if (checks) out.push('Groceries saved: ' + checks + '.');
+          else if (listChanged) out.push('Your meal list is saved.');
+          if (!out.length) return '';
+          const g = M.groceryProgress(SR.state, dates);
+          if (SR.useDinners() && g.total && (add || change || off || checks)) out.push(cap(SR.grocerySub(dates)) + '.');
+          return out.join(' ');
+        };
+      }, () => {
+        /* V11: closing after changes says they're saved, and what changed (Russell, Oct 14: "I need to know
+           that it's a success, that it's saved"). The last meal toast stays, with its Undo */
+        const words = closeWords ? closeWords() : '';
+        closeWords = null;
+        if (matGone) matGone(); matGone = null; SR.render();
+        if (words) { SR.toast(words, 'good'); snd('clack', 0.7); }
+        /* V11: focus goes back to what opened the board, or the same control drawn again (the reset's step
+           draws its card anew), and a board opened from the week's plan brings the plan back */
+        setTimeout(() => {
+          if (mat) return;
+          const fk = opener && opener.dataset && opener.dataset.mfk;
+          const again = opener && opener.isConnected ? opener : fk ? document.querySelector('[data-mfk="' + fk + '"]') : openerKey ? [...document.querySelectorAll(opener.tagName)].find((x) => [x.tagName, x.className, x.getAttribute('aria-label') || x.textContent].join('|') === openerKey) : null;
+          if (opts.back) { opts.back(); return; }
+          if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
+        }, feelOn() ? 300 : 40);
+      });
       return inner;
     }
+    let closeWords = null;
     /* a redraw keeps focus on the same control, so a keyboard never gets thrown back to the page */
     function keepFocus(root, run) {
       const a = document.activeElement;
@@ -2367,7 +3028,7 @@
       const before = JSON.stringify(SR.state);
       const a = World.blockAnchor(sel.date, b.key) || World.blockAnchor(sel.date, sel.key);
       const look = (World.look ? World.look(b) : null) || catColor(b.cat);
-      detail = { sel: Object.assign({}, sel), key: b.key, name: b.name, before };
+      detail = { sel: Object.assign({}, sel), key: b.key, name: b.name, before, dinner: !!b.dinner || sel.type === 'dinner' };
       /* the block lifts off the board where it sits */
       const lift = domBlock(b.label || b.name, M.clock(b.start) + ' to ' + M.clock((b.start + b.dur) % 1440), look.base, look.ink, 'c-liftblock');
       if (a) { lift.style.left = a.x + 'px'; lift.style.top = (a.bottom || a.y) + 'px'; }
@@ -2390,8 +3051,14 @@
             setTimeout(() => { lift.remove(); const big = domBlock(b.label || b.name, M.clock(b.start) + ' to ' + M.clock((b.start + b.dur) % 1440), look.base, look.ink, 'c-bigblock c-land'); slot.replaceChildren(big); snd('clack', 0.9); }, 560);
           });
           if (b.dinner) {
-            const go = Kit.btn('cta c-mealcta', '', () => { closeMat(true); detail = null; SR.view.sel = null; SR.render(); openMealBoard(M.weekStart(sel.date)); });
-            go.append(SR.icon('pot', 10, '#F2CF7A'), h('span', 'grow', 'Open the meal board'));
+            /* V11: the board opens on this night's dinner. It's a raised button, not gold: Done is this mat's
+               one gold call. A dinner opened from the week's plan brings the plan back after the board */
+            const go = Kit.btn('c-mealgo', '', () => {
+              const pb = planBack; planBack = null;
+              closeMat(true); detail = null; SR.view.sel = null; SR.render();
+              openMealBoard(M.weekStart(sel.date), { cell: [sel.date, 'dinner'], back: pb && Date.now() - pb.at < 10 * 60000 ? () => openPlan(pb.ws, pb.id) : null });
+            });
+            go.append(SR.icon('pot', 10, '#FFFFFF'), h('span', 'grow', 'Open the meal board'), SR.icon('right', 7, '#AFAFAF'));
             left.appendChild(go);
           }
           if (isMove(b)) left.appendChild(routineBoard(b));
@@ -2463,7 +3130,8 @@
       closeMat();
       SR.render();
       setTimeout(() => { try { World.squash(d.sel.date, d.key); } catch (e) { /* fine */ } snd('clack', 0.7); }, 700);
-      if (changed) SR.toast('Saved changes to ' + d.name + '.', 'good', { label: 'Undo', fn: SR.undo });
+      /* V11: the dinner panel says each change as it happens, with its own Undo, so closing it says nothing more */
+      if (changed && !d.dinner) SR.toast('Saved changes to ' + d.name + '.', 'good', { label: 'Undo', fn: SR.undo });
     }
 
     /* == V4: To-dos in a panel beside the board, not over it. Pick a stack: its pieces come out on the desk while the panel stays == */
@@ -2486,7 +3154,9 @@
     /* == V4: the reset, step by step == */
     const focusFor = (k) => ({
       dinners: (b) => !!(b.dinner || b.cat === 'meals'),
-      kim: (b) => b.cat === 'us',
+      /* V11: People lights up time with anyone; Moving lights up the workouts, runs, and walks */
+      kim: (b) => (SR.withPeople ? SR.withPeople(b) : b.cat === 'us'),
+      move: (b) => !!(SR.isMoving && SR.isMoving(b)),
       yours: (b) => b.cat === 'yours',
       todo: (b) => !!(b.src && (b.src.type === 'task' || b.src.type === 'step'))
     }[k] || null);
@@ -2507,13 +3177,21 @@
     let panelOff = false;
     const peek = Kit.btn('k k-chip c-peek', '', () => { panelOff = false; sync(); requestAnimationFrame(() => SR.layoutInsets()); });
     peek.hidden = true; app.appendChild(peek);
+    /* the panels that fold the steps while they're open: a tap's place panel, and a to-do's own panel */
+    function foldFor(sel) { return !!sel && (sel.type === 'place' || sel.type === 'task'); }
     function panelTools() {
       const rack = document.getElementById('rack');
-      if (!rack || !SR.view.reset) { peek.hidden = true; document.body.classList.remove('c-panel-off'); return; }
+      if (!rack || !SR.view.reset) { peek.hidden = true; document.body.classList.remove('c-panel-off', 'c-panel-fold'); panelTools.fold = false; return; }
       const st = SR.stepsNow()[SR.view.reset.step];
-      document.body.classList.toggle('c-panel-off', panelOff);
-      if (panelOff) delete rack.dataset.edge; else rack.dataset.edge = window.innerWidth < 760 ? 'bottom' : 'left';
-      peek.hidden = !panelOff;
+      /* V11: while a tap's place panel (or a to-do's panel) is open beside the week, the steps fold to their
+         bar at the top, so the week keeps its width between the edge and the panel; closing it brings them back */
+      const sel = SR.view.sel, fold = !sheetMode() && foldFor(sel);
+      const off = panelOff || fold;
+      document.body.classList.toggle('c-panel-off', off);
+      document.body.classList.toggle('c-panel-fold', fold && !panelOff);
+      if (off) delete rack.dataset.edge; else rack.dataset.edge = sheetMode() ? 'bottom' : 'left';
+      if (fold !== panelTools.fold) { panelTools.fold = fold; requestAnimationFrame(() => SR.layoutInsets()); setTimeout(() => SR.layoutInsets(), 300); }
+      peek.hidden = !panelOff || fold;
       peek.replaceChildren(SR.icon('right', 7, Kit.ink), h('b', '', stepName(st.key)), h('span', '', 'Show steps'));
       const top = rack.querySelector('.rack-top');
       if (top && !rack.querySelector('.c-hidepanel')) {
@@ -2522,62 +3200,96 @@
         rack.appendChild(hb);
       }
     }
-    /* the To-dos step, laid out to read at a glance, with what's coming further out under it */
-    const comingOpen = () => { try { return localStorage.getItem('sundayreset.v7.coming') !== '0'; } catch (e) { return true; } };
-    function upcoming(from, days) {
-      const out = [], seenTrip = new Set();
-      M.range(from, days).forEach((d) => {
-        const x = SR.day(d);
-        (x.markers || []).forEach((m) => out.push({ d, name: m.name, icon: m.icon || 'star' }));
-        const tr = x.trip, tid = tr && (tr.id || tr.name || tr);
-        if (tr && !seenTrip.has(tid)) { seenTrip.add(tid); const nm = tr.name || String(tr); out.push({ d, name: tr.end && tr.end !== tr.date ? nm + ', to ' + M.DAY_SHORT[M.weekday(tr.end)] + ' ' + M.MONTH_SHORT[M.parts(tr.end).m - 1] + ' ' + M.parts(tr.end).d : nm, icon: tr.icon || 'plane' }); }
-      });
-      (SR.M.liveEvents ? SR.M.liveEvents(SR.state) : SR.state.events || []).forEach((e) => {
-        if (e.kind === 'timed' && e.date >= from && e.date <= M.addDays(from, days - 1)) out.push({ d: e.date, name: e.name + ', ' + M.clock(e.start), icon: e.icon || 'star' });
-      });
-      return out.sort((a, b) => (a.d < b.d ? -1 : 1));
-    }
+    /* the To-dos step, laid out to read at a glance, with one line to what's coming (Look ahead's) under it */
     function shapeTodo(body) {
+      const r = SR.view.reset;
+      /* V11: the step's own line, said once and plainly (the board's reads "Give the things due soon a time") */
+      const ln = document.querySelector('#rack .reset-line');
+      if (ln) {
+        const pre = /^Picking up where you left off\./.test(ln.textContent) ? 'Picking up where you left off. ' : '';
+        const want = pre + (r.catchup ? 'What’s left this week. Drag one onto a day, or let it wait.' : 'Drag one onto a day, or tap it to see its steps.');
+        if (ln.textContent !== want) ln.textContent = want;
+      }
       if (body.querySelector('.c-sum')) return;
       body.querySelectorAll('.stat').forEach((s) => s.remove());
-      /* V11: one window, the same as the To-dos count: due this week leads, and the rest of the next three
-         weeks (the board lays them all out here, for planning ahead) wait under their own heading */
-      const soon = M.dueSoon(SR.state, SR.today, 21, SR.nowMin), week = dueWeek();
-      const need = week.filter((x) => x.status !== 'planned').length, later = soon.length - week.length;
-      const r = SR.view.reset, from = r.catchup ? SR.today : r.week;
-      const cap = M.capacity ? M.capacity(SR.state, from, M.diffDays(from, M.addDays(r.week, 6)) + 1, SR.today, SR.nowMin) : null;
-      const sum = h('div', 'c-sum');
-      const line = (big, words) => { const p = h('p'); p.append(h('b', '', big), document.createTextNode(' ' + words)); return p; };
-      if (need) sum.appendChild(line(String(need), need === 1 ? 'to-do due this week needs a time' : 'to-dos due this week need a time'));
-      else sum.appendChild(line('All', week.length ? 'to-dos due this week have a time' : 'clear: nothing due this week'));
-      if (cap) sum.appendChild(line(M.hours(cap.room), 'open' + (cap.need ? '; they need about ' + M.hours(cap.need) : ' this week')));
-      body.prepend(sum);
-      /* the board lays the tiles out soonest due first, so this week's are the first ones */
+      /* V11: one window, the week this reset plans. What's due by its last day leads, the rest of the next
+         three weeks waits under its own heading, and the count and the hours read the same window. */
+      /* the window ends on the week's last day. "This week" means that week everywhere in the reset (the
+         rolling list in To-dos is Next 7 days, so the two never collide). Open time counts from now when the
+         week hasn't started, so what's due before it has room too. */
+      const end = M.addDays(r.week, 6), from = SR.today < r.week ? SR.today : r.week;
+      const thisWeek = r.catchup || SR.weekWords(r.week) === 'this week';
+      const endWords = M.MONTH_SHORT[M.parts(end).m - 1] + ' ' + M.parts(end).d;
+      const soon = M.dueSoon(SR.state, SR.today, 21, SR.nowMin);
+      const inWeek = soon.filter((x) => x.task.due <= end), toPlace = inWeek.filter((x) => x.status !== 'planned');
+      const later = soon.length - inWeek.length;
+      /* everything due in the window, timed or not, so a week whose to-dos all have times says so */
+      const dueAll = SR.state.tasks.filter((t) => !t.done && !t.archived && t.due && t.due <= end).length;
+      const need = toPlace.reduce((a, x) => a + (x.plan.left || 0), 0);
+      const cap = M.capacity ? M.capacity(SR.state, from, M.diffDays(from, end) + 1, SR.today, SR.nowMin) : null, room = cap ? cap.room : 0;
+      const fmt = (m) => (m < 60 ? M.dur(m) : M.hours(m));
+      /* the board lays the tiles out soonest due first, the same order as soon, so tile i is soon[i] */
       const all = [...body.querySelectorAll(':scope > .tile, :scope > .tile-wrap, :scope > [class*="add"]')];
       const adds = all.filter((t) => t.classList.contains('add')), tiles = all.filter((t) => !t.classList.contains('add'));
+      const colorOf = (x) => { const t = tiles[soon.indexOf(x)]; return (t && t.style.getPropertyValue('--bg')) || 'rgba(255, 255, 255, 0.6)'; };
+      /* the summary: how many to place, then whether the open time covers them, in words and as a bar made
+         of the to-dos' own colors against the week's open time */
+      const sum = h('div', 'c-sum c-tdsum');
+      const head = h('p', 'c-tdsum-h');
+      /* V11: counted over the week being planned (SR.weekCounts) and said by SR.dueWords, the words the
+         intro, Look ahead, the plan, and the finish use: "4 to-dos due this week need a time" */
+      const dw = SR.dueWords(SR.weekCounts(r.week), r.week);
+      if (dw.n) head.append(h('b', '', String(dw.n)), document.createTextNode(dw.need.replace(/^\d+/, '')));
+      else { const ok = h('span', 'c-tdsum-ok'); ok.appendChild(SR.icon('check', 7, '#17301F')); head.append(ok, document.createTextNode(dueAll ? dw.all : dw.none)); }
+      sum.appendChild(head);
+      if (toPlace.length && need) {
+        const say = need <= room ? 'About ' + fmt(need) + ' of work and ' + fmt(room) + ' open. Room for all of it.'
+          : room > 0 ? 'About ' + fmt(need) + ' of work and ' + fmt(room) + ' open. Some can wait.'
+          : 'About ' + fmt(need) + ' of work and no open time left. Some can wait.';
+        const bar = h('div', 'c-tdbar' + (need > room ? ' over' : ''));
+        bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', say);
+        toPlace.forEach((x) => { const seg = h('i'); seg.style.flexGrow = String(x.plan.left || 0); seg.style.background = colorOf(x); bar.appendChild(seg); });
+        if (room > need) { const open = h('span', 'c-tdbar-open'); open.style.flexGrow = String(room - need); bar.appendChild(open); }
+        else if (room > 0) { const mk = h('span', 'c-tdbar-room'); mk.style.left = (room / need * 100) + '%'; bar.appendChild(mk); }
+        const words = h('p', 'c-tdsum-say', say); words.setAttribute('aria-hidden', 'true');
+        sum.append(bar, words);
+      }
+      if (dw.late) sum.appendChild(h('p', 'c-tdsum-say after', dw.late + '.'));
+      body.prepend(sum);
+      /* the week's tiles, then New to-do with them (a to-do added here is most likely for this week), then
+         what's due later under its own heading */
       const grid = h('div', 'c-tilegrid');
-      tiles.slice(0, week.length).forEach((t) => grid.appendChild(t));
-      sum.after(grid);
-      if (later > 0 && tiles.length > week.length) {
+      if (inWeek.length) tiles.slice(0, inWeek.length).forEach((t) => grid.appendChild(t));
+      adds.forEach((t) => { if (!t.querySelector('canvas')) t.prepend(SR.icon('plus', 8, '#CDCDCD')); grid.appendChild(t); });
+      if (grid.children.length) sum.after(grid);
+      if (later > 0 && tiles.length > inWeek.length) {
         const grid2 = h('div', 'c-tilegrid');
-        tiles.slice(week.length).forEach((t) => grid2.appendChild(t));
-        adds.forEach((t) => grid2.appendChild(t));
-        grid.after(h('div', 'c-sumlater', 'Later, in the next three weeks'), grid2);
-      } else adds.forEach((t) => grid.appendChild(t));
-      /* coming up: not urgent, just worth knowing */
-      const list = upcoming(SR.today, 56);
-      if (list.length) {
-        const box = h('section', 'c-coming' + (comingOpen() ? ' open' : ''));
-        const tog = Kit.btn('c-comhead', '', () => { const o = !box.classList.contains('open'); box.classList.toggle('open', o); try { localStorage.setItem('sundayreset.v7.coming', o ? '1' : '0'); } catch (e) { /* fine */ } });
-        tog.append(h('b', '', 'Coming up'), h('span', '', list.length + (list.length === 1 ? ' thing' : ' things') + ' in the next 8 weeks'), SR.icon('down', 7, '#B8B0A3'));
-        const ul = h('ul');
-        list.slice(0, 10).forEach((x) => { const li = h('li'); li.append(SR.icon(x.icon, 8, '#B8B0A3'), h('span', 'c-cwhen', M.DAY_SHORT[M.weekday(x.d)] + ' ' + M.MONTH_SHORT[M.parts(x.d).m - 1] + ' ' + M.parts(x.d).d), h('span', '', x.name)); ul.appendChild(li); });
-        box.append(tog, ul);
-        body.appendChild(box);
+        tiles.slice(inWeek.length).forEach((t) => grid2.appendChild(t));
+        const lh = h('div', 'c-sumlater', 'Due after ' + (thisWeek ? M.DAY_LONG[M.weekday(end)] : endWords));
+        (grid.children.length ? grid : sum).after(lh, grid2);
+      }
+      /* V11: what's coming is Look ahead's, over Look ahead's five weeks: one line back to that step, the
+         same count it shows, never a second list with its own horizon. A run without Look ahead (a catch up)
+         leaves it out. */
+      const aheadAt = SR.stepsNow().findIndex((s) => s.key === 'ahead');
+      if (aheadAt >= 0 && M.lookAhead) {
+        const af = r.week > SR.today ? r.week : SR.today, al = M.addDays(r.week, 34);
+        const dates = M.lookAhead(SR.state, af, Math.max(1, M.diffDays(af, al) + 1), SR.today, 400, []).filter((x) => !x.far).length;
+        if (dates) {
+          const go = h('button', 'c-tdahead'); go.type = 'button'; go.dataset.mfk = 'td-ahead';
+          const words = (dates === 1 ? '1 date' : dates + ' dates') + ' in the next 5 weeks';
+          go.append(SR.icon('calendar', 9, '#FFFFFF'), h('b', '', 'Coming up'), h('span', 'grow', words), SR.icon('right', 7, '#AFAFAF'));
+          go.setAttribute('aria-label', 'Coming up: ' + words + '. Go to Look ahead');
+          go.title = 'See them in Look ahead';
+          go.addEventListener('click', () => { SR.Snd.init(); SR.goStep(aheadAt); });
+          body.appendChild(go);
+        }
       }
     }
     /* Your time offers your own blocks; work and meetings have their own time */
     function shapeYours(body) {
+      /* V11: the step builds only your own blocks now (yoursBody in app.js), so there's nothing to hide */
+      if (body.querySelector('.yt-sum')) return;
       const notMine = new Set((SR.state.palette || []).filter((b) => b.cat && b.cat !== 'yours').map((b) => b.name));
       body.querySelectorAll('.tile').forEach((t) => { const nm = t.querySelector('.nm'); if (nm && notMine.has(nm.textContent.trim())) t.hidden = true; });
     }
@@ -2592,52 +3304,140 @@
         WORDS.forEach(([re, to]) => { t = t.replace(re, to); });
         if (t !== was) n.nodeValue = t;
       }
+      /* V11: and in what a screen reader reads off a control: its name, its title, the hint in a box */
+      root.querySelectorAll('[aria-label], [title], [placeholder]').forEach((x) => ['aria-label', 'title', 'placeholder'].forEach((a) => {
+        const v = x.getAttribute(a);
+        if (!v || !/\b[Tt]o dos?\b/.test(v)) return;
+        let t = v;
+        WORDS.forEach(([re, to]) => { t = t.replace(re, to); });
+        if (t !== v) x.setAttribute(a, t);
+      }));
     }
     const toasts = document.getElementById('toasts');
     if (toasts) new MutationObserver(() => tidyWords(toasts)).observe(toasts, { childList: true, subtree: true, characterData: true });
     const sidePanel = document.getElementById('side');
     if (sidePanel) new MutationObserver(() => tidyWords(sidePanel)).observe(sidePanel, { childList: true, subtree: true });
+    /* V11: a panel opened or closed without a full redraw (a tap's place panel) folds the reset's steps or
+       brings them back (panelTools) */
+    if (sidePanel) new MutationObserver(() => {
+      const v = SR.view;
+      if (!(v && v.reset && (!sheetMode() && foldFor(v.sel)) !== !!panelTools.fold)) return;
+      const was = panelTools.fold;
+      panelTools();
+      /* the panel gave focus back to the tile it came from while the steps were still folded out of sight,
+         so it landed nowhere; now they're back, the tile takes it */
+      /* (redrawn after a placement: the tile of the same name in its place) */
+      const nmOf = (x) => { const n = x && x.querySelector && x.querySelector('.nm'); return n ? n.textContent.trim() : ''; };
+      const tilesNow = [...document.querySelectorAll('#rack .tile')];
+      const same = rackFocus && !rackFocus.isConnected && nmOf(rackFocus) ? tilesNow.find((x) => nmOf(x) === nmOf(rackFocus)) : null;
+      /* V11: a to-do given a time leaves the list, so its tile is gone: the tile now in its place takes focus,
+         or the step's first control when none is left, never the page */
+      const near = !same && rackFocus && !rackFocus.isConnected ? tilesNow[Math.min(Math.max(0, rackIdx), tilesNow.length - 1)] || document.querySelector('#rack .rack-body button:not([disabled]), #rack .rack-top button:not([disabled])') : null;
+      const back = rackFocus && rackFocus.isConnected ? rackFocus : same || near || null;
+      const a = document.activeElement;
+      if (was && !panelTools.fold && back && (!a || a === document.body || sidePanel.contains(a))) back.focus({ preventScroll: true });
+    }).observe(sidePanel, { attributes: true, attributeFilter: ['hidden'], childList: true, subtree: true });
+    /* the last thing focused in the reset's panel, for the way back from a place panel */
+    let rackFocus = null, rackIdx = 0;
+    document.addEventListener('focusin', (e) => {
+      const r = document.getElementById('rack');
+      if (!r || !r.contains(e.target)) return;
+      rackFocus = e.target;
+      /* (and where its tile stood, for when the tile leaves) */
+      const t = e.target.closest && e.target.closest('.tile');
+      if (t) rackIdx = [...r.querySelectorAll('.tile')].indexOf(t);
+    });
     ['drawer', 'quick', 'kinds-row'].forEach((id) => { const x = document.getElementById(id); if (x) new MutationObserver(() => tidyWords(x)).observe(x, { childList: true, subtree: true }); });
-    /* Look ahead is about dates. What's due waits for To-dos, said in one line instead of the same tiles twice */
+    /* V11: Look ahead lays itself out (aheadBody in app.js): the weeks, what to get ready, holidays, adding
+       a date, and one line about what's due. Pointing at a date rings its day on the month beside it. */
     function shapeAhead(body) {
-      if (body.querySelector('.c-aheadnote')) return;
-      const sec = [...body.querySelectorAll('.rsec')].find((x) => /due soon/i.test(x.textContent.slice(0, 20)));
-      if (!sec) return;
-      const n = sec.querySelectorAll('.tile').length;
-      const later = SR.stepsNow().some((s) => s.key === 'todo');
-      const p = h('p', 'c-aheadnote');
-      p.append(h('b', '', String(n)), document.createTextNode(' ' + (n === 1 ? 'to-do is' : 'to-dos are') + ' due in the next three weeks. ' + (later ? 'You’ll give them a time in To-dos.' : '')));
-      sec.replaceWith(p);
+      const wrap = body.querySelector('.c-ah');
+      if (!wrap || wrap.dataset.shaped) return;
+      wrap.dataset.shaped = '1';
+      const ring = (card) => {
+        document.querySelectorAll('.c-ah-ring').forEach((x) => x.remove());
+        if (!card || !card.dataset.date || SR.view.zoom !== 'month' || !World.debug) return;
+        const m = World.debug.month, tile = m && m.cards && m.cards.find((c) => c.userData.date === card.dataset.date);
+        const b = tile && screenBox(tile);
+        if (!b || b.x1 < 0 || b.x0 > window.innerWidth) return;
+        const r = h('div', 'c-ah-ring' + (SR.view.calm ? ' still' : ''));
+        Object.assign(r.style, { left: (b.x0 - 4) + 'px', top: (b.y0 - 4) + 'px', width: (b.x1 - b.x0 + 8) + 'px', height: (b.y1 - b.y0 + 8) + 'px' });
+        document.body.appendChild(r);
+      };
+      wrap.addEventListener('pointerover', (e) => { const c = e.target.closest('.c-ah-card'); if (c !== wrap._over) { wrap._over = c; ring(c); } });
+      wrap.addEventListener('pointerleave', () => { wrap._over = null; ring(null); });
+      wrap.addEventListener('focusin', (e) => ring(e.target.closest('.c-ah-card')));
+      wrap.addEventListener('focusout', () => ring(null));
     }
-    /* the dinner step: breakfast, lunch, and dinner, and the meal board one tap away */
-    let mealTab = 'dinner';
-    function shapeMeals(body) {
-      const had = body.querySelector('.c-mealtop');
-      if (had && had.dataset.tab === mealTab) return;
-      const r = SR.view.reset, dates = M.range(r.week, 7);
-      const top = h('div', 'c-mealtop');
-      const go = Kit.btn('cta c-mealcta', '', () => openMealBoard(r.week));
-      go.append(SR.icon('pot', 10, '#F2CF7A'), h('span', 'grow', 'Open the meal board'), h('small', '', 'Drag meals onto the week'));
-      const seg = h('div', 'k-seg c-mealseg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Meal');
-      MEAL_KINDS.forEach(([k, name]) => { const b = Kit.btn('', name, () => { mealTab = k; SR.render(); }); b.setAttribute('aria-pressed', String(mealTab === k)); seg.appendChild(b); });
-      top.dataset.tab = mealTab;
-      top.append(go, seg);
-      body.prepend(top);
-      if (mealTab === 'dinner') return;
-      [...body.children].forEach((c) => { if (c !== top) c.remove(); });
-      const list = h('div', 'c-mlist');
-      /* V11: breakfast and lunch live on the board now, typed the same way as on the meal board */
-      const ideas = IDEAS.filter((i) => i.t[mealTab]);
-      dates.forEach((d) => {
-        const row = h('label', 'c-mline');
-        const m = mealAt(d, mealTab);
-        const inp = h('input', 'c-find'); inp.value = m ? mealLabel(m) : ''; inp.placeholder = ideas.length ? ideas[M.weekday(d) % ideas.length].name : '';
-        inp.addEventListener('change', () => { const v = inp.value.trim(); commitMeals((st) => putMeal(st, d, mealTab, v ? { name: cap(v), parts: partsOf(v), how: 'home', items: pantryIds(st, partsOf(v)) } : null)); snd('detent'); });
-        row.append(h('span', 'c-pday', M.DAY_SHORT[M.weekday(d)] + ' ' + M.parts(d).d), inp);
-        list.appendChild(row);
+    /* the ring never outlives Look ahead */
+    Kit.renders.push(() => { if (!document.querySelector('.c-ah')) document.querySelectorAll('.c-ah-ring').forEach((x) => x.remove()); });
+    /* == V11: the reset's Meals step: the week's meals at a glance, the meal board one tap away ==
+       The step is the week as the meal board has it, small: days down, the meals you plan across, each one
+       a tap from its own card on the board. The groceries are one line that opens the board at its list.
+       Pantry and the meal tabs left the step: the meal board does both (recipes are in its library, and a
+       meal typed with its parts puts them on the list). app.js asks for this (window.SR_mealStep), so any
+       redraw of the step builds it again; before, a trip into a pantry stack and Back lost the card. */
+    function shapeMeals() { /* V11: the step builds itself now (window.SR_mealStep) */ }
+    let msPast = false;
+    window.SR_mealStep = (body, dates, ws) => {
+      const rows = mealRows(), cnt = mealCount(dates, rows);
+      /* V11: a big raised card, not gold: Next is the step's one gold call. Midweek the count is from today on */
+      const go = h('button', 'c-mealgo c-ms-go'); go.type = 'button'; go.dataset.mfk = 'ms-go';
+      const words = h('span', 'grow');
+      /* V11: how many are planned, never out of a total that guesses how many meals a day you eat */
+      words.append(h('b', '', 'Open the meal board'), h('small', '', cnt.n ? cnt.n + (cnt.n === 1 ? ' meal' : ' meals') + ' planned' + (cnt.span ? ', ' + cnt.span : '') : 'Drag meals onto the week'));
+      go.append(SR.icon('pot', 10, '#FFFFFF'), words, SR.icon('right', 7, '#AFAFAF'));
+      go.addEventListener('click', () => { SR.Snd.init(); openMealBoard(ws); });
+      body.appendChild(go);
+      /* the week, small: tap a meal (or an open one) to open it on the board */
+      const sec = h('section', 'c-ms');
+      const head = h('div', 'c-ms-head');
+      head.appendChild(h('h3', 'rsec-h', weekTitle(ws, 'meals')));
+      /* V11: the button leaves once last week is brought over, so focus goes to the meal board's card */
+      if (lastWeekMeals(dates, rows).length) head.appendChild(Kit.btn('c-again c-ms-again', 'Same as last week', () => { SR.Snd.init(); if (bringLastWeek(dates, rows)) { SR.render(); const g = document.querySelector('[data-mfk="ms-go"]'); if (g) g.focus({ preventScroll: true }); } }));
+      const grid = h('div', 'c-ms-grid'); grid.style.setProperty('--rows', rows.length);
+      grid.appendChild(h('span'));
+      rows.forEach((k) => grid.appendChild(h('span', 'c-ms-k', kindName(k))));
+      const meName = SR.who() && SR.who().name;
+      /* the days already over fold into one line, so the step opens on what's left (as the board does on a phone) */
+      const past = dates.filter((d) => d < SR.today);
+      if (past.length) {
+        const fold = h('button', 'c-ms-fold'); fold.type = 'button'; fold.setAttribute('aria-expanded', String(msPast)); fold.dataset.mfk = 'ms-fold';
+        const span = M.DAY_SHORT[M.weekday(past[0])] + (past.length > 1 ? ' to ' + M.DAY_SHORT[M.weekday(past[past.length - 1])] : '');
+        fold.append(h('span', '', (msPast ? 'Hide ' : 'Earlier this week: ') + span), SR.icon(msPast ? 'up' : 'down', 7, '#AFAFAF'));
+        fold.addEventListener('click', () => { msPast = !msPast; SR.render(); const f = document.querySelector('[data-mfk="ms-fold"]'); if (f) f.focus({ preventScroll: true }); });
+        grid.appendChild(fold);
+      }
+      dates.filter((d) => msPast || d >= SR.today).forEach((d) => {
+        const day = h('span', 'c-ms-day' + (d === SR.today ? ' today' : '') + (d < SR.today ? ' past' : ''));
+        day.append(h('b', '', M.DAY_SHORT[M.weekday(d)]), h('span', '', String(M.parts(d).d)));
+        grid.appendChild(day);
+        if (SR.day(d).trip) { const a = h('span', 'c-ms-away', 'Away'); a.style.gridColumn = 'span ' + rows.length; grid.appendChild(a); return; }
+        rows.forEach((k) => {
+          const m = mealAt(d, k), easy = m && notCooking(m.how);
+          const b = h('button', 'c-ms-cell' + (m ? ' on' : '') + (d < SR.today ? ' past' : '')); b.type = 'button'; b.dataset.mfk = 'ms-' + d + '-' + k;
+          if (m) {
+            b.style.setProperty('--b', MEAL_COLOR[easy ? 'easy' : k]); b.style.setProperty('--i', MEAL_INK[easy ? 'easy' : k]);
+            b.appendChild(h('b', '', mealLabel(m)));
+            /* V11: with one person who can cook, no line says who */
+            const who = easy || !m.cook || m.cook === 'home' || cookList(m.cook).length < 2 ? '' : cookNamed(m.cook, meName || 'You');
+            if (who && rows.length < 3) b.appendChild(h('small', '', who === 'You' ? 'You cook' : who + ' cooks'));
+          } else if (d >= SR.today) b.appendChild(SR.icon('plus', 7, '#AFAFAF'));
+          b.setAttribute('aria-label', mealDayWords(d, k) + ': ' + (m ? mealLabel(m) : 'nothing yet') + '. Open on the meal board');
+          b.title = m ? mealLabel(m) : 'Add ' + mealDayWords(d, k);
+          b.addEventListener('click', () => { SR.Snd.init(); openMealBoard(ws, { cell: [d, k] }); });
+          grid.appendChild(b);
+        });
       });
-      body.appendChild(list);
-    }
+      sec.append(head, grid);
+      body.appendChild(sec);
+      /* the groceries, on the board: one line, never a second place to keep them */
+      const shop = h('button', 'c-ms-shop'); shop.type = 'button'; shop.dataset.mfk = 'ms-shop';
+      shop.append(SR.icon('cart', 9, '#FFFFFF'), h('b', '', 'Groceries'), h('span', 'grow', SR.grocerySub(dates)), SR.icon('right', 7, '#AFAFAF'));
+      shop.setAttribute('aria-label', 'Groceries, ' + SR.grocerySub(dates) + '. Open them on the meal board');
+      shop.addEventListener('click', () => { SR.Snd.init(); openMealBoard(ws, { shop: true }); });
+      body.appendChild(shop);
+    };
     /* Next with a to-do typed but not added: say so, never lose it quietly */
     document.addEventListener('click', (e) => {
       const b = e.target.closest('.rack.resetting .rack-right button, .c-steps button');
@@ -2663,7 +3463,7 @@
       if (!on) return;
       const level = b.level || 'soon';
       /* V11: the first stack is what the To-dos count counts, said the same way */
-      const stacks = [['soon', 'Due this week', dueWeek().length]].concat((SR.state.groups || []).map((g) => [g.id, g.name, SR.state.tasks.filter((t) => !t.done && !t.archived && t.group === g.id).length]));
+      const stacks = [['soon', 'Next 7 days', dueWeek().length]].concat((SR.state.groups || []).map((g) => [g.id, g.name, SR.state.tasks.filter((t) => !t.done && !t.archived && t.group === g.id).length]));
       const kids = stacks.map(([id, name, n]) => {
         const x = Kit.btn('c-stack' + (id === level ? ' on' : ''), name, () => { layOut('todo', id); });
         if (n) x.appendChild(h('span', 'c-sn', capN(n)));
@@ -2711,35 +3511,493 @@
       }));
     }
 
-    /* == V5: at the end of the reset, the week in words to send == */
-    function weekWords(ws) {
-      const dates = M.range(ws, 7), st = SR.state, me = (SR.who() && SR.who().name) || 'Me', pt = partnerName();
-      const lines = [(pt ? 'Our week, ' : 'My week, ') + M.spanText(ws, M.addDays(ws, 6)) + ':'];
-      const dn = dates.filter((d) => d >= SR.today && st.dinners[d] && (st.dinners[d].name || st.dinners[d].cook)).map((d) => {
-        const x = st.dinners[d], who = x.cook === 'me' ? me : x.cook === 'kim' ? pt : '';
-        const easy = { leftovers: 'leftovers', order: 'ordering in', out: 'eating out', skip: 'no dinner' }[x.cook];
-        return M.DAY_LONG[M.weekday(d)] + ': ' + (x.name || easy || 'dinner') + (who ? ' (' + who + ' cooks)' : easy && x.name ? ' (' + easy + ')' : '');
-      });
-      if (dn.length) lines.push('Dinners. ' + dn.join('. ') + '.');
-      const c = SR.weekCounts(ws);
-      if (c.kim && c.kim.length) lines.push('Together: ' + c.kim.join(', ') + '.');
-      const g = SR.M.groceryProgress ? SR.M.groceryProgress(st, dates) : null;
-      if (g && g.left) lines.push(g.left + (g.left === 1 ? ' thing' : ' things') + ' on the grocery list.');
-      return lines.join('\n');
+    /* == V11 shell: the finish (Russell, Oct 14: "When we click See your week, I do like this ... I want this
+       to be designed way better ... there are a lot of buttons"). The reset's last step is the week's plan at
+       a glance, laid out like This week's plan: time kept for you, dinners, to-dos, people, and what's coming.
+       A row opens what it's about. Done is the one strong button; Share makes a picture of this same plan
+       (not the week's colored bars) and hands it to the share sheet, for anyone. == */
+    const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+    /* V11: time to yourself, less the workouts, runs, and walks that Moving lists on its own card, so a move
+       is never counted twice (the Your time step leaves them out the same way). The plan and the finish both
+       use it */
+    function yoursWeek(ws) {
+      const all = SR.weekCounts(ws).yours || 0;
+      const mv = SR.useMove && SR.useMove() && SR.weekMoves ? SR.weekMoves(ws).filter((x) => x.cat === 'yours') : [];
+      return Math.max(0, all - mv.reduce((a, x) => a + x.dur, 0));
     }
-    function shareBox(body, ws) {
-      if (body.querySelector('.c-share')) return;
-      const pt = partnerName();
-      const b = h('button', 'cta c-share'); b.type = 'button';
-      const words = h('span', 'grow'); words.append(h('b', '', pt ? 'Send the week to ' + pt : 'Share the week'), h('small', '', 'Dinners, time together, and groceries, in a few lines'));
-      b.append(SR.icon('heart', 10, '#F2CF7A'), words);
-      b.addEventListener('click', async () => {
-        const text = weekWords(ws);
-        try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
-        try { await navigator.clipboard.writeText(text); SR.toast('Copied. Paste it ' + (pt ? 'to ' + pt : 'anywhere') + '.', 'good'); }
-        catch (e) { SR.toast('Couldn’t copy here. Try again from the plan.', ''); }
+    /* the week's plan in one object, so the panel and the picture say the same thing */
+    function finishData(ws) {
+      const st = SR.state, dates = M.range(ws, 7), last = dates[6];
+      const me = (SR.who() && SR.who().name) || '', pt = partnerName();
+      const c = SR.weekCounts(ws);
+      const freeAt = (d) => SR.day(d).blocks.filter((b) => b.free && b.start >= 16 * 60);
+      const evenings = dates.filter((d) => freeAt(d).length);
+      const evFrom = evenings.length ? Math.min(...evenings.map((d) => freeAt(d)[0].start)) : 0;
+      /* V11: who cooks is said one way, the plan's (cookTag): Al and An where two names share a letter,
+         Anyone for anyone at home, and no tag when you're the only one who cooks */
+      /* V11: the week's breakfasts and lunches planned on the meal board, counted beside the dinners */
+      const other = { breakfast: 0, lunch: 0 };
+      if (SR.useDinners()) dates.forEach((d) => ['breakfast', 'lunch'].forEach((k) => { const m = mealAt(d, k); if (m && m.how !== 'skip') other[k]++; }));
+      const dinners = !SR.useDinners() ? null : dates.filter((d) => SR.day(d).blocks.some((b) => b.dinner)).map((d) => {
+        const x = st.dinners[d], set = !!(x && (x.name || x.cook));
+        let who = cookTag(x);
+        /* V11: a night still to decide is Open, as in the plan and the picture */
+        const name = x && x.name ? x.name : who && who.cls === 'word' ? who.plain : set ? 'Dinner' : d < SR.today ? 'Not planned' : 'Open';
+        if ((x && !x.name && who && who.cls === 'word') || (who && who.quiet)) who = null;
+        return { d, day: M.DAY_SHORT[M.weekday(d)], name, who, state: set ? 'set' : d < SR.today ? 'past' : 'open' };
+      }).filter((x) => x.state !== 'past'); /* a night already gone with nothing on it isn't part of the plan */
+      /* V11: with a time means what Model.taskPlan says it means: planned (every step still to do has a time
+         that hasn't gone by) or done, and not after its due day. What's due and still needs a time, and what's
+         timed after it's due, are counted on their own (the same to-dos the To-dos step and the plan count),
+         so no to-do shows twice and none is called planned when its time went by. */
+      const pl = M.placements(st), timed = [];
+      const asked = new Set(c.unplaced.concat(c.lateTimes).map((x) => x.task.id));
+      pl.forEach((list, id) => {
+        const t = SR.taskById(id);
+        if (!t || t.archived || asked.has(id)) return;
+        const inWeek = list.filter((x) => x.date >= ws && x.date <= last).sort((a, b) => (a.date === b.date ? a.add.start - b.add.start : a.date < b.date ? -1 : 1));
+        if (!inWeek.length) return;
+        const plan = M.taskPlan(t, list, SR.today, SR.nowMin);
+        if ((plan.status !== 'planned' && plan.status !== 'done') || plan.after) return;
+        const p = plan.next && plan.next.date >= ws && plan.next.date <= last ? plan.next : inWeek[0];
+        timed.push({ id, name: t.name, done: plan.status === 'done', d: p.date, when: M.DAY_SHORT[M.weekday(p.date)] + ' ' + M.clock(p.add.start), sort: p.date + String(p.add.start).padStart(5, '0') });
       });
-      body.prepend(b);
+      timed.sort((a, b) => (a.sort < b.sort ? -1 : 1));
+      /* V11: time with people is everything already with someone this week (an evening together, a regular
+         block, an idea placed), the same rows the People step and the plan show */
+      const together = !SR.useTogether() ? [] : SR.peopleWeek ? SR.peopleWeek(ws).map((r) => ({ name: r.name, when: r.when })) : [];
+      /* V11: Moving, when it's on: each kind of move once, with its days */
+      const moves = [];
+      if (SR.useMove && SR.useMove() && SR.weekMoves) {
+        const by = new Map();
+        SR.weekMoves(ws).forEach((x) => { const i = dates.indexOf(x.date), r = by.get(x.name) || { name: x.name, days: [] }; if (i >= 0 && !r.days.includes(i)) r.days.push(i); by.set(x.name, r); });
+        by.forEach((r) => moves.push({ name: r.name, when: runWords(r.days.sort((a, b) => a - b), dates, 'Every day') }));
+      }
+      const coming = M.upcoming(st, M.addDays(ws, 7), 28).filter((x) => x.kind !== 'due').slice(0, 4)
+        .map((x) => ({ when: x.kind === 'trip' ? M.spanText(x.start0, x.end) : M.dateText(x.date, 'day'), name: x.name }));
+      const g = SR.useDinners() && M.groceryProgress ? M.groceryProgress(st, dates) : null;
+      /* time to yourself beyond the free evenings, so the free evenings aren't counted twice */
+      const freeMin = dates.reduce((a, d) => a + SR.day(d).blocks.filter((b) => b.free && b.cat === 'yours').reduce((s, b) => s + b.dur, 0), 0);
+      const open = M.totals(dates.map((d) => SR.day(d))).free || 0;
+      const yours = yoursWeek(ws);
+      return { ws, last, me, pt, yours, more: Math.max(0, yours - freeMin), evenings: evenings.map((d) => dates.indexOf(d)), dates, evFrom, dinners, other: otherMeals(other, !!(dinners && dinners.length)), timed, need: c.unplaced.length, late: c.lateTimes.length, together, moves, coming, openMin: open, grocery: g && g.total ? SR.grocerySub(dates) : '', open: !!(c.unplaced.length || c.lateTimes.length || (SR.useDinners() && c.openNights.length)) };
+    }
+    /* V11: the breakfasts and lunches in words, after the dinners ("And 3 breakfasts and 2 lunches.") or on
+       their own ("3 breakfasts and 2 lunches planned."); '' when there are none */
+    function otherMeals(o, after) {
+      const bits = [];
+      if (o.breakfast) bits.push(plural(o.breakfast, 'breakfast', 'breakfasts'));
+      if (o.lunch) bits.push(plural(o.lunch, 'lunch', 'lunches'));
+      if (!bits.length) return '';
+      return after ? 'And ' + bits.join(' and ') + '.' : bits.join(' and ') + ' planned.';
+    }
+    /* days of the week said the short way: Every evening, Mon to Fri, or Mon, Wed */
+    function runWords(idx, dates, every) {
+      if (idx.length === 7) return every;
+      const nm = (i) => M.DAY_SHORT[M.weekday(dates[i])], out = [];
+      let k = 0;
+      while (k < idx.length) {
+        let e = k;
+        while (e + 1 < idx.length && idx[e + 1] === idx[e] + 1) e++;
+        if (e - k >= 2) out.push(nm(idx[k]) + ' to ' + nm(idx[e])); else for (let j = k; j <= e; j++) out.push(nm(idx[j]));
+        k = e + 1;
+      }
+      return out.join(', ');
+    }
+    /* what the green card says: free evenings and time to yourself, good news only */
+    const keptWords = (f) => (f.evenings.length
+      ? { big: plural(f.evenings.length, 'free evening', 'free evenings'), lines: [runWords(f.evenings, f.dates, 'Every evening') + ', from ' + M.clock(f.evFrom) + '.'].concat(f.more >= 30 ? ['And ' + M.hours(f.more) + ' more to yourself.'] : []) }
+      : f.yours > 0 ? { big: M.hours(f.yours), lines: ['to yourself ' + SR.weekWords(f.ws)] } : null);
+    /* nothing planned yet and nothing due: the finish says what's open instead of showing empty cards */
+    const finEmpty = (f) => !(f.dinners && f.dinners.length) && !f.other && !keptWords(f) && !f.timed.length && !f.need && !f.late && !f.together.length && !f.moves.length && !f.coming.length;
+    const stepAt = (key) => SR.stepsNow().findIndex((s) => s.key === key);
+    let finishWas = '';
+    /* V11: the finish takes two columns only where its panel is 600 wide (shell.css, the same width) */
+    const FIN_WIDE = '(min-width: 1400px)';
+    const finTwo = () => !SR.view.phone && window.matchMedia(FIN_WIDE).matches;
+    try { window.matchMedia(FIN_WIDE).addEventListener('change', () => { const r = SR.view.reset; if (r && SR.stepsNow()[r.step].key === 'done') SR.render(); }); } catch (e) { /* an older browser keeps one column until the next redraw */ }
+    window.SR_finishBody = (body, ws) => {
+      const f = finishData(ws);
+      /* two columns, and the wider panel (shell.css, body.c-finwide), only when there are cards enough to fill them */
+      const cardsN = ((f.dinners && f.dinners.length) || f.other ? 1 : 0) + (keptWords(f) ? 1 : 0) + 1 + (f.together.length ? 1 : 0) + (f.moves.length ? 1 : 0) + (f.coming.length ? 1 : 0);
+      const twoCol = finTwo() && !finEmpty(f) && cardsN >= 3;
+      document.body.classList.toggle('c-finwide', twoCol);
+      const wrap = h('div', 'c-fin' + (twoCol ? ' two' : ''));
+      const cols = [h('div', 'c-fin-col'), h('div', 'c-fin-col')], tall = [0, 0], one = [];
+      /* two columns: each card goes in the shorter one, so the reading order follows each column down.
+         One column: the cards go in their own order, good news first, the same for the eye and the keyboard. */
+      const put = (card, px, order) => { if (!twoCol) { one.push([order, card]); return; } const i = tall[0] <= tall[1] ? 0 : 1; cols[i].appendChild(card); tall[i] += px + 12; };
+      /* a name with its time under it */
+      const two = (a, b) => { const s = h('span', 'c-fin-two'); s.append(h('span', 'c-fin-name', a), h('small', 'c-fin-sub', b)); return s; };
+      const card = (cls, title, aside) => {
+        const s = h('section', 'c-fin-card' + (cls ? ' ' + cls : ''));
+        const hd = h('div', 'c-fin-h'); hd.appendChild(h('h3', '', title));
+        if (aside) hd.appendChild(h('span', 'c-fin-aside', aside));
+        s.appendChild(hd);
+        return s;
+      };
+      const row = (cls, kids, fn, label) => {
+        const r = h(fn ? 'button' : 'div', 'c-fin-row' + (cls ? ' ' + cls : ''));
+        if (fn) { r.type = 'button'; r.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); fn(); }); if (label) r.setAttribute('aria-label', label); }
+        r.append(...kids);
+        return r;
+      };
+      /* dinners first, the spine of the week; then what's kept for you, the to-dos, people, and what's coming */
+      /* V11: Meals: each night's dinner, then the breakfasts and lunches in one line that opens the meal board */
+      const nights = f.dinners || [];
+      if (nights.length || f.other) {
+        const dc = card('', 'Meals');
+        nights.forEach((x) => {
+          const kids = [h('span', 'c-fin-day', x.day), h('span', 'c-fin-name ' + x.state, x.name)];
+          if (x.who) { const tag = h('span', 'c-who ' + x.who.cls, x.who.t); tag.title = x.who.name; kids.push(tag); }
+          dc.appendChild(row('', kids, () => SR.openSel({ type: 'dinner', date: x.d }), 'Dinner on ' + M.DAY_LONG[M.weekday(x.d)] + ': ' + x.name + (x.who ? ', ' + x.who.name : '')));
+        });
+        if (f.other) dc.appendChild(row('c-fin-more', [SR.icon('pot', 8, '#CDCDCD'), h('span', 'c-fin-name', f.other)], () => openMealBoard(ws), f.other + ' Opens the meal board'));
+        if (f.grocery) dc.appendChild(row('c-fin-more', [SR.icon('cart', 8, '#CDCDCD'), h('span', 'c-fin-name', 'Grocery list'), h('span', 'c-fin-when', f.grocery)], () => SR.openSel({ type: 'groceries' })));
+        put(dc, 48 + (nights.length + (f.other ? 1 : 0) + (f.grocery ? 1 : 0)) * 44, 2);
+      }
+      const kept = keptWords(f);
+      if (kept) {
+        const k = h('section', 'c-fin-card kept');
+        k.append(h('div', 'c-kick', 'Kept for you'), h('div', 'c-fin-big', kept.big));
+        kept.lines.forEach((l) => k.appendChild(h('p', '', l)));
+        put(k, 76 + kept.lines.length * 22, 1);
+      }
+      const empty = finEmpty(f);
+      /* an empty week: what's open, as a plain fact, in place of cards with nothing in them */
+      if (empty) {
+        const k = h('section', 'c-fin-card kept');
+        k.append(h('div', 'c-kick', SR.weekWords(f.ws).replace(/^./, (x) => x.toUpperCase())), h('div', 'c-fin-big', M.hours(f.openMin) + ' open'), h('p', '', 'Nothing due. Add a block to any day when you’re ready.'));
+        put(k, 120, 1);
+      } else {
+        const tc = card('', 'To-dos', f.timed.length ? plural(f.timed.length, 'with a time', 'with a time') : '');
+        const shown = f.timed.slice(0, 4);
+        shown.forEach((x) => tc.appendChild(row(x.done ? 'done' : '', [h('i', 'c-fin-ring' + (x.done ? ' on' : '')), two(x.name, x.when)], () => SR.openSel({ type: 'task', id: x.id }), x.name + ', ' + x.when + (x.done ? ', done' : ''))));
+        if (f.timed.length > shown.length) tc.appendChild(h('p', 'c-fin-note', 'And ' + (f.timed.length - shown.length) + ' more with a time.'));
+        const to = stepAt('todo');
+        /* V11: what still needs a time, in the words the step, the intro, and the plan use (SR.dueWords) */
+        const dw = SR.dueWords(SR.weekCounts(ws), ws);
+        if (f.need) tc.appendChild(row('c-fin-ask', [h('span', 'c-fin-name', dw.need)], to >= 0 ? () => SR.goStep(to) : null, dw.need + '. Go to the To-dos step'));
+        if (f.late) tc.appendChild(row('c-fin-ask', [h('span', 'c-fin-name', dw.late)], to >= 0 ? () => SR.goStep(to) : null, dw.late + '. Go to the To-dos step'));
+        if (!f.timed.length && !f.need && !f.late) tc.appendChild(h('p', 'c-fin-note', dw.none + '.'));
+        put(tc, 48 + shown.length * 54 + ((f.need ? 1 : 0) + (f.late ? 1 : 0)) * 44 + (f.timed.length > shown.length ? 28 : 0), 3);
+      }
+      /* V11: People, Moving, and Coming up open the step they came from, when this reset has it */
+      const listCard = (title, items, key, order, twoLine, note) => {
+        const s = stepAt(key), lc = card('c-fin-list', title);
+        items.forEach((x) => lc.appendChild(row('', twoLine ? [two(x.name, x.when)] : [h('span', 'c-fin-name', x.name), h('span', 'c-fin-when', x.when)], s >= 0 ? () => SR.goStep(s) : null, x.name + ', ' + x.when + (s >= 0 ? '. Go to the ' + stepName(key) + ' step' : ''))));
+        /* V11: a line under the rows, said as the step says it (Moving's "2 of 3 times this week.") */
+        if (note) lc.appendChild(h('p', 'c-fin-note', note));
+        put(lc, 48 + items.length * (twoLine ? 48 : 44) + (note ? 28 : 0), order);
+      };
+      if (f.together.length) listCard('People', f.together.slice(0, 5), 'kim', 4, false);
+      if (f.moves.length) listCard('Moving', f.moves.slice(0, 4), 'move', 5, false, SR.moveWords && ((SR.state.settings || {}).move || {}).n ? SR.moveWords(ws).text : '');
+      if (f.coming.length) listCard('Coming up', f.coming, 'ahead', 6, true);
+      if (twoCol) cols.forEach((c) => { if (c.children.length) wrap.appendChild(c); });
+      else one.sort((a, b) => a[0] - b[0]).forEach(([, c]) => wrap.appendChild(c));
+      body.appendChild(wrap);
+      /* the quiet way to send it: a picture of this plan, with a look at it first, after every card (an empty
+         week has nothing to send) */
+      if (!empty) {
+        const share = h('button', 'c-fin-share'); share.type = 'button';
+        const thumb = h('span', 'c-fin-thumb'), words = h('span', 'c-fin-sharew');
+        words.append(h('b', '', 'Share this plan'), h('small', '', 'A picture of it, for anyone'));
+        share.append(thumb, words, SR.icon('share', 9, '#FFFFFF'));
+        share.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); sharePlan(ws); });
+        body.appendChild(share);
+        planPicture(ws).then((p) => { if (p && thumb.isConnected) thumb.style.backgroundImage = 'url(' + p.url + ')'; }).catch(() => { /* the button still works; it draws again on tap */ });
+      }
+      /* the panel grows on a wide window for the two columns; the board makes room once it has */
+      const at = ws + ':' + (SR.view.reset && SR.view.reset.step);
+      if (finishWas !== at) {
+        finishWas = at; setTimeout(() => SR.layoutInsets(), 280);
+        /* the check lands once, as the finish opens (still with Calmer motion) */
+        const seal = document.querySelector('#rack .reset-seal');
+        if (seal && feelOn()) seal.animate([{ transform: 'scale(0.6)', opacity: 0 }, { transform: 'scale(1.08)', opacity: 1, offset: 0.7 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: FOUT });
+      }
+    };
+    window.SR_openPlan = (ws) => openPlan(ws);
+
+    /* the picture: the same plan, drawn as cards at a phone's width, 1080 across */
+    let picMemo = { sig: '', p: null };
+    const PIC = { W: 1080, pad: 64, gap: 24, bg: '#18191D', card: '#25262A', rule: 'rgba(255, 255, 255, 0.09)', tx: '#FFFFFF', tx2: '#CDCDCD', tx3: '#AFAFAF', gold: '#F2CF7A', ink: '#1C1C1E', kept: '#25352F', keptKick: '#A9DCC2', keptTx: '#DCEFE5', them: '#C9A6D4', word: '#3A3B3F' };
+    const nameFont = (w, s) => w + ' ' + s + 'px Gabarito, Onest, system-ui, sans-serif';
+    const wordFont = (w, s) => w + ' ' + s + 'px Onest, system-ui, sans-serif';
+    function planPicture(ws) {
+      const f = finishData(ws), who = SR.who() || {};
+      const sig = JSON.stringify([f, who.name || '']);
+      if (picMemo.sig === sig && picMemo.p) return Promise.resolve(picMemo.p);
+      /* one drawing at a time per plan: a redraw while it's drawing waits for the same picture */
+      if (picMemo.sig === sig && picMemo.wait) return picMemo.wait;
+      const fonts = document.fonts && document.fonts.load ? Promise.all([document.fonts.load(nameFont(800, 80)), document.fonts.load(nameFont(700, 34)), document.fonts.load(wordFont(500, 28)), document.fonts.load(wordFont(600, 24))]).catch(() => null) : Promise.resolve();
+      const wait = fonts.then(() => new Promise((ok) => {
+        const cv = drawPlan(f, who.name || '');
+        cv.toBlob((blob) => {
+          const p = blob ? { blob, url: URL.createObjectURL(blob), name: 'week-' + ws + '.png' } : null;
+          if (picMemo.sig === sig) { if (picMemo.old) URL.revokeObjectURL(picMemo.old.url); picMemo = { sig, p }; }
+          ok(p);
+        }, 'image/png');
+      }));
+      picMemo = { sig, p: null, wait, old: picMemo.p || picMemo.old || null };
+      return wait;
+    }
+    function drawPlan(f, name) {
+      const { W, pad, gap } = PIC, colW = (W - pad * 2 - gap) / 2, inner = 36;
+      const fit = (g, t, max) => { if (g.measureText(t).width <= max) return t; let s = t; while (s.length > 1 && g.measureText(s + '…').width > max) s = s.slice(0, -1); return s.trimEnd() + '…'; };
+      const box = (g, x, y, w, hh, r, fill) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + hh, r); g.arcTo(x + w, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fillStyle = fill; g.fill(); };
+      const ROW = 64, HEAD = 92;
+      /* V11: words wrap onto a second line before anything is cut; big type steps down until it fits */
+      const mg = document.createElement('canvas').getContext('2d');
+      const wrapText = (g, t, max) => { const out = []; let line = ''; String(t).split(' ').forEach((wd) => { const next = line ? line + ' ' + wd : wd; if (!line || g.measureText(next).width <= max) line = next; else { out.push(line); line = wd; } }); if (line) out.push(line); return out.map((l) => fit(g, l, max)); };
+      const sized = (g, t, font, big, small, max) => { let s = big; g.font = font(s); while (s > small && g.measureText(t).width > max) { s -= 2; g.font = font(s); } return s; };
+      /* each card says how tall it is at a width, and draws itself there */
+      const cards = [];
+      const kept = keptWords(f);
+      /* who cooks goes by name (Alex, Sam), so whoever gets the picture can read it */
+      const first = (s, or) => String(s || or).split(' ')[0];
+      /* V11: Meals, like the panel: each night's dinner, then the breakfasts and lunches in one line */
+      if ((f.dinners && f.dinners.length) || f.other) {
+        /* each night: its pill first, then the name in what's left, on up to two lines */
+        const nights = (f.dinners || []).map((d) => {
+          let pill = null;
+          /* V11: the name cookTag gives for someone else reading it (Alex, Ana, Anyone), never an initial */
+          if (d.who) { mg.font = wordFont(700, 22); const t = d.who.say; pill = { t, w: Math.min(mg.measureText(t).width + 28, 180) }; }
+          mg.font = wordFont(500, 28);
+          /* a night not decided yet is open, said quietly: the picture is the plan, not a list of what's left */
+          const name = d.state === 'set' ? d.name : 'Open', full = colW - inner * 2 - 76 - 8, room = full - (pill ? pill.w + 14 : 0);
+          const two = (l, r) => (l.length > 2 ? [l[0], fit(mg, l.slice(1).join(' '), r)] : l);
+          const beside = wrapText(mg, name, room);
+          /* a name too long to share two lines with who's cooking takes the width, and the pill goes under it */
+          if (pill && beside.length > 2) return { d, pill, under: true, lines: two(wrapText(mg, name, full), full) };
+          return { d, pill, lines: two(beside, room) };
+        });
+        const rowH = (n) => ROW + (n.lines.length - 1) * 34 + (n.under ? 48 : 0);
+        mg.font = wordFont(500, 26);
+        const otherLines = f.other ? wrapText(mg, f.other, colW - inner * 2) : [];
+        const otherH = otherLines.length ? 22 + otherLines.length * 36 : 0;
+        cards.push({ h: HEAD + nights.reduce((a, n) => a + rowH(n), 0) + otherH + 16, draw: (g, x, y, w, hh) => {
+          box(g, x, y, w, hh, 28, PIC.card);
+          g.font = nameFont(700, 34); g.fillStyle = PIC.tx; g.fillText('Meals', x + inner, y + 58);
+          let ry = y + HEAD;
+          nights.forEach((n, i) => {
+            const d = n.d;
+            if (i) { g.fillStyle = PIC.rule; g.fillRect(x + inner, ry, w - inner * 2, 2); }
+            g.font = wordFont(600, 24); g.fillStyle = PIC.tx3; g.fillText(d.day, x + inner, ry + 42);
+            if (n.pill) {
+              const tw = n.pill.w, px = n.under ? x + inner + 76 : x + w - inner - tw, py = n.under ? ry + 12 + n.lines.length * 34 + 10 : ry + 12;
+              g.font = wordFont(700, 22);
+              /* V11: gold is for a call to act, so your own pill is a neutral ring, as on the finish */
+              box(g, px, py, tw, 40, 20, d.who.cls === 'them' ? PIC.them : d.who.cls === 'me' ? PIC.card : PIC.word);
+              if (d.who.cls === 'me') { g.strokeStyle = 'rgba(255, 255, 255, 0.4)'; g.lineWidth = 3; g.stroke(); }
+              g.fillStyle = d.who.cls === 'them' ? PIC.ink : PIC.tx; g.fillText(fit(g, n.pill.t, tw - 28), px + 14, py + 28);
+            }
+            g.font = wordFont(500, 28); g.fillStyle = d.state === 'set' ? PIC.tx : PIC.tx3;
+            n.lines.forEach((l, k) => g.fillText(l, x + inner + 76, ry + 43 + k * 34));
+            ry += rowH(n);
+          });
+          if (otherLines.length) {
+            if (nights.length) { g.fillStyle = PIC.rule; g.fillRect(x + inner, ry, w - inner * 2, 2); }
+            g.font = wordFont(500, 26); g.fillStyle = PIC.tx2;
+            otherLines.forEach((l, k) => g.fillText(l, x + inner, ry + 46 + k * 36));
+          }
+        } });
+      }
+      if (kept) {
+        mg.font = wordFont(400, 26);
+        const lines = kept.lines.flatMap((l) => wrapText(mg, l, colW - inner * 2));
+        cards.push({ key: 'kept', h: 72 + 92 + lines.length * 38 + 30, draw: (g, x, y, w, hh) => {
+          box(g, x, y, w, hh, 28, PIC.kept);
+          g.font = wordFont(600, 22); g.fillStyle = PIC.keptKick; if ('letterSpacing' in g) g.letterSpacing = '3px'; g.fillText('KEPT FOR YOU', x + inner, y + 56); if ('letterSpacing' in g) g.letterSpacing = '0px';
+          sized(g, kept.big, (s) => nameFont(800, s), kept.big.length > 8 ? 64 : 84, 44, w - inner * 2); g.fillStyle = PIC.tx; g.fillText(fit(g, kept.big, w - inner * 2), x + inner, y + 148);
+          g.font = wordFont(400, 26); g.fillStyle = PIC.keptTx; lines.forEach((l, i) => g.fillText(l, x + inner, y + 196 + i * 38));
+        } });
+      }
+      /* a list card: a name and a day on one line, or (two) a name with when under it */
+      /* (foot: a line under the rows, as the finish's card has: Moving's "2 of 3 times this week.") */
+      const list = (key, title, items, two, foot) => { const rh = two ? 90 : 52; cards.push({ key, h: HEAD + items.length * rh + 22 + (foot ? 50 : 0), draw: (g, x, y, w, hh) => {
+        box(g, x, y, w, hh, 28, PIC.card);
+        g.font = nameFont(700, 34); g.fillStyle = PIC.tx; g.fillText(title, x + inner, y + 58);
+        items.forEach((it, i) => {
+          const ry = y + HEAD + i * rh + 34;
+          if (two) {
+            g.font = wordFont(500, 27); g.fillStyle = PIC.tx; g.fillText(fit(g, it.a, w - inner * 2), x + inner, ry);
+            g.font = wordFont(500, 23); g.fillStyle = PIC.tx3; g.fillText(fit(g, it.b, w - inner * 2), x + inner, ry + 36);
+          } else {
+            g.font = wordFont(600, 24); const bw = g.measureText(it.b).width; g.fillStyle = PIC.tx2; g.fillText(it.b, x + w - inner - bw, ry);
+            g.font = wordFont(500, 27); g.fillStyle = PIC.tx; g.fillText(fit(g, it.a, w - inner * 2 - bw - 20), x + inner, ry);
+          }
+        });
+        if (foot) { g.font = wordFont(500, 24); g.fillStyle = PIC.tx2; g.fillText(fit(g, foot, w - inner * 2), x + inner, y + HEAD + items.length * rh + 38); }
+      } }); };
+      /* to-dos with a time: each name whole on its line, when under it. V11: only what has a time; what still
+         needs one is for the panel, where it can be answered, not for a picture someone else sees */
+      const more = f.timed.length - Math.min(5, f.timed.length), TR = 88;
+      mg.font = wordFont(500, 27);
+      const todoRows = f.timed.slice(0, 5).map((t) => { const l = wrapText(mg, t.name, colW - inner * 2 - 42); return { t, lines: l.length > 2 ? [l[0], fit(mg, l.slice(1).join(' '), colW - inner * 2 - 42)] : l }; });
+      const todoH = (r) => TR + (r.lines.length - 1) * 34;
+      if (f.timed.length) cards.push({ key: 'todo', h: HEAD + todoRows.reduce((a, r) => a + todoH(r), 0) + (more ? 52 : 0) + 18, draw: (g, x, y, w, hh) => {
+        box(g, x, y, w, hh, 28, PIC.card);
+        g.font = nameFont(700, 34); g.fillStyle = PIC.tx; g.fillText('To-dos', x + inner, y + 58);
+        if (f.timed.length) { g.font = wordFont(500, 23); const t = plural(f.timed.length, 'with a time', 'with a time'), tw = g.measureText(t).width; g.fillStyle = PIC.tx3; g.fillText(t, x + w - inner - tw, y + 56); }
+        let ry = y + HEAD;
+        todoRows.forEach((r, i) => {
+          const t = r.t;
+          if (i) { g.fillStyle = PIC.rule; g.fillRect(x + inner, ry, w - inner * 2, 2); }
+          g.beginPath(); g.arc(x + inner + 13, ry + 34, 12, 0, Math.PI * 2);
+          /* V11: done is the green of a check, as on the finish; gold is for a call to act */
+          if (t.done) { g.fillStyle = '#8FD3B1'; g.fill(); } else { g.strokeStyle = PIC.tx3; g.lineWidth = 3; g.stroke(); }
+          g.font = wordFont(500, 27); g.fillStyle = PIC.tx; r.lines.forEach((l, k) => g.fillText(l, x + inner + 42, ry + 44 + k * 34));
+          g.font = wordFont(500, 23); g.fillStyle = PIC.tx3; g.fillText(t.when, x + inner + 42, ry + 76 + (r.lines.length - 1) * 34);
+          ry += todoH(r);
+        });
+        if (more) { g.font = wordFont(500, 23); g.fillStyle = PIC.tx3; g.fillText(fit(g, 'And ' + more + ' more with a time.', w - inner * 2), x + inner, ry + 34); }
+      } });
+      if (f.together.length) list('people', 'People', f.together.slice(0, 5).map((x) => ({ a: x.name, b: x.when })), true);
+      if (f.moves.length) list('move', 'Moving', f.moves.slice(0, 4).map((x) => ({ a: x.name, b: x.when })), true, SR.moveWords && ((SR.state.settings || {}).move || {}).n ? SR.moveWords(f.ws).text : '');
+      if (f.coming.length) list('coming', 'Coming up', f.coming.map((x) => ({ a: x.name, b: x.when })), true);
+      /* the columns, filled shorter first */
+      const colY = [0, 0], placed = [];
+      cards.forEach((c) => { const i = colY[0] <= colY[1] ? 0 : 1; placed.push({ c, i, y: colY[i] }); colY[i] += c.h + gap; });
+      const top = 300, colH = Math.max(0, Math.max(colY[0], colY[1]) - gap);
+      const H = Math.round(top + colH + 132);
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const g = cv.getContext('2d'); g.textBaseline = 'alphabetic';
+      g.fillStyle = PIC.bg; g.fillRect(0, 0, W, H);
+      /* the head: whose week, when, and a gold check for a week that's planned */
+      g.font = wordFont(600, 24); g.fillStyle = PIC.gold; if ('letterSpacing' in g) g.letterSpacing = '4px'; g.fillText('SUNDAY RESET', pad, pad + 40); if ('letterSpacing' in g) g.letterSpacing = '0px';
+      /* V11: the title steps down to fit; a long name goes by its first word before anything is cut */
+      const tMax = W - pad * 2 - 130;
+      let title = name ? name + '’s week' : 'My week';
+      sized(g, title, (s) => nameFont(800, s), 80, 56, tMax);
+      if (name && g.measureText(title).width > tMax) { title = first(name, '') + '’s week'; sized(g, title, (s) => nameFont(800, s), 80, 56, tMax); }
+      g.fillStyle = PIC.tx; g.fillText(fit(g, title, tMax), pad, pad + 134);
+      g.font = wordFont(500, 32); g.fillStyle = PIC.tx2; g.fillText(M.spanText(f.ws, f.last), pad, pad + 186);
+      g.beginPath(); g.arc(W - pad - 46, pad + 96, 46, 0, Math.PI * 2); g.fillStyle = PIC.gold; g.fill();
+      g.strokeStyle = PIC.ink; g.lineWidth = 9; g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(W - pad - 66, pad + 98); g.lineTo(W - pad - 52, pad + 112); g.lineTo(W - pad - 25, pad + 80); g.stroke();
+      placed.forEach(({ c, i, y }) => c.draw(g, pad + i * (colW + gap), top + y, colW, c.h));
+      g.font = wordFont(500, 22); g.fillStyle = PIC.tx3; g.fillText('Planned with Sunday Reset', pad, H - 56);
+      return cv;
+    }
+    /* V11: the same plan in words, the way the picture says it: whose week, then a line for each card */
+    function planText(f, name) {
+      const out = [(name ? name + '’s week' : 'My week') + ', ' + M.spanText(f.ws, f.last)];
+      const kept = keptWords(f);
+      /* (mid sentence, "every evening" takes a small letter, as People's "every day" does) */
+      if (kept) out.push('Kept for you: ' + kept.big + (f.evenings.length ? ', ' + kept.lines[0].replace(/\.$/, '').replace(/^Every\b/, 'every') : ' to yourself') + '.');
+      const nights = (f.dinners || []).filter((x) => x.state === 'set');
+      /* V11: each night says who or how as its pill in the picture does (Alex cooks, anyone cooks, order in;
+         I cook when the profile has no name), after a comma, so nights part with semicolons like To-dos */
+      const how = (w) => (!w ? '' : ', ' + (w.cls === 'word' ? (w.t === 'Anyone' ? 'anyone cooks' : w.t.toLowerCase()) : w.cls === 'me' && !w.full ? 'I cook' : w.say + ' cooks'));
+      if (nights.length || f.other) out.push('Meals: ' + nights.map((x) => x.day + ' ' + x.name + how(x.who)).join('; ') + (nights.length && f.other ? '. ' : '') + f.other.replace(/\.$/, '') + '.');
+      if (f.timed.length) out.push('To-dos: ' + f.timed.slice(0, 5).map((t) => t.name + ', ' + t.when).join('; ') + (f.timed.length > 5 ? '; and ' + (f.timed.length - 5) + ' more' : '') + '.');
+      const when = (s) => String(s).replace(/^Every\b/, 'every');
+      if (f.together.length) out.push('People: ' + f.together.slice(0, 5).map((x) => x.name + ', ' + when(x.when)).join('; ') + '.');
+      if (f.moves.length) out.push('Moving: ' + f.moves.slice(0, 4).map((x) => x.name + ', ' + when(x.when)).join('; ') + '.');
+      if (f.coming.length) out.push('Coming up: ' + f.coming.map((x) => x.name + ', ' + x.when).join('; ') + '.');
+      out.push('Planned with Sunday Reset');
+      return out.join('\n');
+    }
+    /* Share: the share sheet where there is one (a phone, Safari, Chrome on a Mac); a download anywhere else.
+       It always says what happened. */
+    function sharePlan(ws) {
+      const go = (p) => {
+        if (!p) { SR.toast('Couldn’t draw the picture here. Try again in a moment.', 'bad'); return; }
+        let file = null;
+        try { file = new File([p.blob], p.name, { type: 'image/png' }); } catch (e) { file = null; }
+        if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+          /* V11: the plan as words too, in the same share, for an app that takes text and not pictures */
+          const text = planText(finishData(ws), (SR.who() || {}).name || '');
+          const data = navigator.canShare({ files: [file], text }) ? { files: [file], title: 'My week', text } : { files: [file], title: 'My week' };
+          navigator.share(data).then(() => SR.toast('Shared your plan.', 'good')).catch((e) => { if (!e || e.name !== 'AbortError') save(p); });
+          return;
+        }
+        save(p);
+      };
+      const save = (p) => {
+        if (window.claude) { SR.toast('Pictures can’t be saved in this view. Open Sunday Reset in a browser to share it.', 'bad'); return; }
+        const a = document.createElement('a'); a.href = p.url; a.download = p.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        SR.toast('Saved a picture of your plan.', 'good');
+      };
+      /* a picture already drawn goes out at once, while the tap still counts as a tap */
+      const f = finishData(ws), sig = JSON.stringify([f, (SR.who() || {}).name || '']);
+      if (picMemo.sig === sig && picMemo.p) { go(picMemo.p); return; }
+      planPicture(ws).then(go).catch(() => go(null));
+    }
+
+    /* == V11 shell: a scroll that changes the view says how to get back ==
+       Russell scrolled on the trackpad and the week became the month, then the day, with nothing saying how
+       to get back. During the reset a scroll never changes the view (app.js). Anywhere else, the first
+       scroll that does leaves a small Back to the week under the view switch, named for where you were. */
+    const backPill = Kit.btn('k k-chip c-backpill', '', () => goBackLevel(), 'left', CREAM);
+    const backWords = h('span', ''); backPill.appendChild(backWords); backPill.hidden = true;
+    app.appendChild(backPill);
+    let backFrom = null, backTimer = 0;
+    const viewName = (z) => ({ day: 'the day', week: 'the week', month: 'the month', year: 'the year' }[z] || 'the week');
+    const atFrom = () => !!backFrom && (backFrom.today ? SR.inToday() : !SR.inToday() && SR.view.zoom === backFrom.zoom);
+    function hideBack() { clearTimeout(backTimer); backFrom = null; backPill.hidden = true; }
+    function goBackLevel() {
+      const f = backFrom; hideBack();
+      if (!f) return;
+      if (f.today) { Kit.zoom('today'); return; }
+      SR.view.focus = f.focus; Kit.zoom(f.zoom);
+    }
+    function placeBack() {
+      if (backPill.hidden) return;
+      const r = tr.getBoundingClientRect();
+      /* V11: a side panel or Settings open on the right keeps its header and its close: the way back steps
+         left of it, over the desk */
+      let right = r.right;
+      ['side', 'drawer'].forEach((id) => { const p = document.getElementById(id); if (p && !p.hidden && p.offsetParent !== null) { const pr = p.getBoundingClientRect(); if (pr.width && pr.left > 0 && pr.top < r.bottom + 60) right = Math.min(right, pr.left - 12); } });
+      backPill.style.top = Math.round(r.bottom + 8) + 'px';
+      backPill.style.right = Math.round(window.innerWidth - right) + 'px';
+      /* with no desk left beside a panel, it waits until the panel closes */
+      backPill.style.visibility = right < 240 ? 'hidden' : '';
+    }
+    window.SR_levelGesture = (from) => {
+      if (!backFrom) backFrom = from;
+      if (atFrom() || SR.view.reset) { hideBack(); return; }
+      backWords.textContent = 'Back to ' + (backFrom.today ? 'Now' : viewName(backFrom.zoom));
+      backPill.setAttribute('aria-label', backWords.textContent);
+      const was = backPill.hidden;
+      backPill.hidden = false; placeBack();
+      if (was && feelOn()) backPill.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: FOUT });
+      clearTimeout(backTimer); backTimer = setTimeout(hideBack, 9000);
+    };
+    Kit.renders.push(() => { if (backFrom && (atFrom() || SR.view.reset || SR.view.phone)) hideBack(); else placeBack(); });
+    /* V11: in the reset a pinch (or +) can look closer; once it has, this chip brings the whole week or month
+       back (shell.css shows it while body.c-deskzoomed, which renderViewCtl sets) */
+    const fitWords = h('span', '');
+    const fitChip = Kit.btn('k k-chip c-fitchip', '', () => { SR.Snd.init(); SR.deskZoom(0); }, 'zoomout', CREAM);
+    fitChip.appendChild(fitWords);
+    app.appendChild(fitChip);
+    Kit.renders.push(() => { const w = 'Fit the ' + (SR.view.zoom === 'month' ? 'month' : SR.view.zoom === 'day' ? 'day' : 'week'); if (fitWords.textContent !== w) { fitWords.textContent = w; fitChip.setAttribute('aria-label', w + ' to the screen'); } placeFit(); });
+    /* V11: a panel open on the right keeps its close button: the chip steps left of it, over the desk, and
+       waits while there's no desk left beside the panel and the reset's own panel */
+    function placeFit() {
+      fitChip.style.right = ''; fitChip.style.visibility = '';
+      if (getComputedStyle(fitChip).display === 'none') return;
+      const c = fitChip.getBoundingClientRect(), p = document.getElementById('side');
+      if (!p || p.hidden || p.offsetParent === null) return;
+      const pr = p.getBoundingClientRect();
+      if (!pr.width || pr.left <= 0 || pr.top > c.bottom + 8 || pr.bottom < c.top - 8 || pr.left > c.right + 8) return;
+      const right = pr.left - 12, rk = document.getElementById('rack'), rr = rk && rk.offsetParent !== null && !document.body.classList.contains('c-panel-off') && rk.dataset.edge === 'left' ? rk.getBoundingClientRect().right : 0;
+      fitChip.style.right = Math.round(window.innerWidth - right) + 'px';
+      if (right - c.width < rr + 12) fitChip.style.visibility = 'hidden';
+    }
+    {
+      let fitSoon = 0;
+      const refit = () => { placeFit(); clearTimeout(fitSoon); fitSoon = setTimeout(placeFit, 300); };
+      ['side'].forEach((id) => { const p = document.getElementById(id); if (p) new MutationObserver(refit).observe(p, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] }); });
+      new MutationObserver(refit).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      window.addEventListener('resize', () => requestAnimationFrame(placeFit));
+    }
+    /* a panel opening or closing on the right moves it, once now and once the panel has slid in */
+    {
+      let placeSoon = 0;
+      const moved = () => { if (backPill.hidden) return; placeBack(); clearTimeout(placeSoon); placeSoon = setTimeout(placeBack, 300); };
+      ['side', 'drawer'].forEach((id) => { const p = document.getElementById(id); if (p) new MutationObserver(moved).observe(p, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] }); });
     }
 
     /* == V7: the letter rack. A wooden rack up top, letter tiles on the desk, a bag beside it.
@@ -3514,7 +4772,8 @@
         { id: 'lunch', name: 'Lunch', line: 'A time each day', icon: 'bowl', c: meal, on: () => !!a.meals.lunch, set: (v) => { a.meals.lunch = v; } },
         { id: 'dinner', name: 'Dinner', line: 'Who cooks, and groceries', icon: 'pot', c: meal, on: () => a.help.dinners !== false, set: (v) => { a.help.dinners = v; } }
       ];
-      if (partnered(a)) out.push({ id: 'together', name: a.partner.trim() ? 'Time with ' + a.partner.trim() : 'Time together', line: 'An evening idea each week', icon: 'heart', c: cc('us'), on: () => a.help.together !== false, set: (v) => { a.help.together = v; } });
+      /* V11: People is for anyone, partner or not */
+      out.push({ id: 'together', name: 'People', line: 'Ideas for time with your people', icon: 'heart', c: cc('us'), on: () => a.help.together !== false, set: (v) => { a.help.together = v; } });
       const fc = { move: 'yours', make: 'yours', people: 'family', home: 'home' };
       OBX.FOCUS.forEach((f) => out.push({ id: f.id, name: f.name, line: f.line, icon: f.icon, c: cc(fc[f.id] || 'yours'), on: () => a.focus.includes(f.id), set: (v) => { a.focus = v ? a.focus.concat(f.id) : a.focus.filter((x) => x !== f.id); } }));
       return out;
@@ -3911,10 +5170,14 @@
       pomo.hidden = !running;
       pomo.classList.toggle('rest', pom.phase !== 'work');
       bl.hidden = !running;
-      /* V11: due this week, the one count every to-do place uses, and never wider than 99+ */
-      const n = dueWeek().length; due.textContent = n ? capN(n) : '';
-      todos.setAttribute('aria-label', 'To-dos' + (n ? ', ' + n + ' due this week' : ''));
-      todos.title = n ? n + (n === 1 ? ' to-do' : ' to-dos') + ' due this week' : 'To-dos';
+      /* V11: what's due in the next 7 days, the count its list in To-dos, the strip, and the desk use, and
+         never wider than 99+ */
+      const dl = dueWeek(), n = dl.length; due.textContent = n ? capN(n) : '';
+      /* V11: what was due before today is said as that, not as due in the next 7 days */
+      const was = dl.filter((x) => x.task.due < SR.today).length, ahead = n - was;
+      const dueSaid = [ahead ? ahead + ' due in the next 7 days' : '', was ? was + ' due before today' : ''].filter(Boolean).join(', ');
+      todos.setAttribute('aria-label', 'To-dos' + (n ? ', ' + dueSaid : ''));
+      todos.title = n ? (n === 1 ? '1 to-do: ' : n + ' to-dos: ') + dueSaid : 'To-dos';
       lib.setAttribute('aria-pressed', String(libOpen()));
       todos.setAttribute('aria-pressed', String(!today && !!v.bench && v.bench.tab !== 'blocks'));
       const p = SR.who(), name = (p && p.name) || 'You';
@@ -3942,7 +5205,6 @@
       }
       checkDetail();
       drawStackBar(); drawKindChips(); drawRack(); devKeep(); maybeHello();
-      if (v.reset && SR.stepsNow()[v.reset.step].key === 'done') shareBox(document.getElementById('rack-body'), v.reset.week);
       const ag = document.getElementById('agenda');
       listBtn.setAttribute('aria-pressed', String(!!(ag && !ag.hidden)));
       onScreen();

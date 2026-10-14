@@ -332,9 +332,8 @@ body.big-text .c-menu { max-height: calc((100vh - 100px) / 1.14); }
 .c-pt { line-height: 1; }
 
 /* == the place panel: the day strip's hours never print on top of each other ==
-   Its last label reads "midnight +1 day" (92 px, set right) and covered 6 pm and 9 pm on a 306 px strip.
-   The two labels before the last step aside (the ticks on the strip stay). */
-.ds-ticks span:has(+ span.last), .ds-ticks span:has(+ span + span.last) { visibility: hidden; }
+   (round three: placePanel in app.js centers each label on its tick and prints only the ones that fit,
+   8 px apart and clear of the strip's ends, so 6 pm and 9 pm show again) */
 
 /* == the tools over a picked block, the hover note, and toasts: the corners' shapes ==
    Buttons 38 tall and 12 round with 8 between mark and word, like the band's; the hover note on the 4 px

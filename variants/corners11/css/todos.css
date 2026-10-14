@@ -1,0 +1,166 @@
+/* == V11: To-dos. The reset's To-dos step (shapeTodo in variant.js) and a to-do's own panel
+   (taskPanelFeel in board/src/app.js) ==
+   Russell, Oct 14: the summary read clunky, and both screens wanted better padding and spacing. Spacing is
+   on 4 px steps, words at 12 px or more on the surface tokens, every control 44 px where touch is the way in. */
+
+/* == the step: one summary, then the tiles == */
+body.c-resetting .rack.resetting .rack-body > .c-tdsum { gap: 12px; padding: 16px; border-radius: 16px; margin: 0; }
+.c-tdsum p { margin: 0; }
+.c-tdsum .c-tdsum-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; font-size: 16px; line-height: 1.3; font-weight: 500; color: var(--tx-2); }
+/* the count is white: gold belongs to the one call to action, Next */
+.c-tdsum .c-tdsum-h b { font-family: var(--name); font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -0.01em; color: var(--tx); margin: 0; font-variant-numeric: tabular-nums; }
+.c-tdsum-ok { align-self: center; width: 24px; height: 24px; border-radius: 50%; background: var(--good, #8FD3B1); display: grid; place-items: center; flex: none; }
+.c-tdsum-ok canvas { width: 14px !important; height: 14px !important; }
+.c-tdsum .c-tdsum-h:has(.c-tdsum-ok) { color: var(--tx); font-weight: 600; }
+.c-tdsum .c-tdsum-say { font-size: 14px; line-height: 1.45; color: var(--tx-2); }
+.c-tdsum .c-tdsum-say + .c-tdsum-say.after { margin-top: -8px; }
+.c-tdsum .c-tdsum-say.after::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #E88A6E; margin-right: 8px; vertical-align: 1px; }
+/* the hours as a bar: each to-do in its own color, then the week's open time that's left */
+.c-tdbar { position: relative; display: flex; gap: 2px; height: 8px; }
+.c-tdbar i { flex: 1 1 0; min-width: 4px; border-radius: 2px; }
+.c-tdbar-open { flex: 1 1 0; border-radius: 2px; background: var(--sf-hover); }
+/* more work than open time: a white tick where the open time runs out */
+.c-tdbar-room { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: #FFFFFF; box-shadow: 0 0 0 2px var(--sf-solid); }
+
+/* the tiles: an 8 px gutter, 12 px inside, the same height row to row */
+body.c-step-todo .c-tilegrid { gap: 8px; }
+body.c-step-todo .rack.resetting .c-tilegrid .tile { padding: 12px; min-height: 80px; gap: 8px; justify-content: space-between; }
+body.c-step-todo .rack.resetting .c-tilegrid .tile .tl { gap: 8px; }
+/* the due line keeps its words whole; a chip that can't fit beside it moves under it */
+body.c-step-todo .rack.resetting .c-tilegrid .tile .mt { gap: 4px 8px; }
+body.c-step-todo .rack.resetting .c-tilegrid .tile .mt-t { flex: 1 0 auto; max-width: 100%; }
+body.c-resetting .rack.resetting .rack-body > .c-sumlater { margin: 4px 0 -4px; }
+/* V11: New to-do is the reset's one new tile (shell.css .tile.add) */
+
+/* coming up: a quiet fold under the tiles */
+body.c-step-todo .c-coming { margin-top: 4px; padding-top: 4px; }
+body.c-step-todo .c-comhead { min-height: 44px; padding: 8px 0; gap: 12px; }
+body.c-step-todo .c-coming li { gap: 12px; padding: 8px 0; }
+body.c-step-todo .c-coming li.c-cmore { padding-left: 28px; font-size: 13px; color: var(--tx-3); border-bottom: 0; }
+
+/* == a to-do's panel, top down: what it is, where it stands, what to do, its steps, details, Delete == */
+.side-in:has(> .c-tdp-hero) { gap: 16px; }
+/* the close x stays pinned while the panel scrolls; here its kicker is a band under it, so rows slide under
+   the band and never sit behind the x (Suggest steps, Mark done) */
+#side:has(.c-tdp-hero) .side-in > .side-kicker:first-child { position: sticky; top: -22px; z-index: 1; margin: -22px -22px 0; padding: 22px 22px 16px; background: var(--sf-solid); }
+.c-tdp-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; }
+.c-tdp-mark { width: 44px; height: 44px; border-radius: 12px; background: var(--bg); display: grid; place-items: center; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18); }
+.c-tdp-mark canvas { width: 22px !important; height: 22px !important; }
+.c-tdp-head { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.side .input.c-tdp-name { display: block; font: 700 22px/1.25 var(--name); color: var(--tx); background: transparent; border: 0; border-radius: 8px; padding: 4px 8px; margin: 0 -8px; width: calc(100% + 16px); min-height: 36px; resize: none; overflow: hidden; field-sizing: content; }
+.side .input.c-tdp-name:hover { background: var(--sf-raised); }
+.side .input.c-tdp-name:focus { background: var(--sf-raised); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); outline: none; }
+.c-tdp-hero.done .input.c-tdp-name { text-decoration: line-through; color: var(--tx-3); }
+.c-tdp-facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+/* the steps' count keeps one line beside the due date, so checking a step never moves what's under it */
+.c-tdp-facts:has(> .c-tdp-sum) { flex-wrap: nowrap; }
+.c-tdp-facts > .c-tdp-due { flex: none; }
+.c-tdp-sum { min-width: 0; font-size: 14px; line-height: 1.3; color: var(--tx-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* when it's due: a chip that opens the calendar, the date field under it for typing */
+.c-tdp-due:focus-within { min-width: 156px; }
+.c-tdp-due { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 10px; background: var(--sf-raised); font-size: 14px; font-weight: 600; color: var(--tx); cursor: pointer; }
+.c-tdp-due:hover { background: var(--sf-hover); }
+.c-tdp-due canvas { width: 16px !important; height: 16px !important; flex: none; }
+.c-tdp-due.none span { color: var(--tx-2); }
+.side .c-tdp-due .input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; border-radius: 10px; padding: 0 12px; font-size: 14px; font-weight: 600; cursor: pointer; color-scheme: dark; }
+.side .c-tdp-due .input:focus { opacity: 1; background: var(--sf-solid); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); outline: none; }
+.c-tdp-len { gap: 4px; }
+
+/* where it stands */
+/* a grid, so the dot sits on the middle of the first line however many lines follow it: the text sets the
+   rows, and Show sits in the middle without making them taller */
+.c-tdp-state { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; align-items: start; min-height: 48px; padding: 12px 8px 12px 16px; border-radius: 12px; background: var(--sf-raised); }
+.c-tdp-state .c-tdp-words { display: contents; }
+.c-tdp-state .c-tdp-main { grid-column: 2; grid-row: 1; }
+.c-tdp-state .c-tdp-sub { grid-column: 2; grid-row: 2; }
+/* 16 px type at 1.35 makes a 21.6 px line: a 10 px dot 6 px down is on its middle */
+.c-tdp-state > .c-tdp-dot { grid-column: 1; grid-row: 1; margin: 6px 0 0; }
+.c-tdp-state > .small { grid-column: 3; grid-row: 1; align-self: center; margin: -10px 0; }
+.c-tdp-state:has(.c-tdp-sub) > .small { grid-row: 1 / span 2; }
+.c-tdp-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 2px var(--tx-3); }
+.c-tdp-state.set .c-tdp-dot, .c-tdp-state.good .c-tdp-dot { background: var(--good, #8FD3B1); box-shadow: none; }
+.c-tdp-state.part .c-tdp-dot { background: linear-gradient(90deg, var(--good, #8FD3B1) 50%, transparent 50%); box-shadow: inset 0 0 0 2px var(--good, #8FD3B1); }
+.c-tdp-state.missed .c-tdp-dot, .c-tdp-state.after .c-tdp-dot { background: #E88A6E; box-shadow: none; }
+.c-tdp-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+.c-tdp-words p { margin: 0; }
+.c-tdp-main { font-size: 16px; line-height: 1.35; font-weight: 600; color: var(--tx); }
+.c-tdp-sub { font-size: 14px; line-height: 1.45; color: var(--tx-2); }
+.c-tdp-also { margin-top: -8px; }
+
+/* what to do about it: the gold one takes its own row, the rest share the next one in equal parts, so no
+   button is ever left alone on a row of its own */
+.c-tdp-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.c-tdp-acts .small { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 16px; font-size: 14px; justify-content: center; }
+.c-tdp-acts .small.primary { flex-basis: 100%; }
+
+/* its steps: one list, hairlines between rows, a new step as the last row */
+.c-tdp-steps { display: flex; flex-direction: column; gap: 8px; }
+.c-tdp-sh { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.c-tdp-sh .lbl { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--tx-2); }
+.c-tdp-sh .small.quiet { min-height: 32px; padding: 0 8px; margin-right: -8px; font-size: 13px; }
+.side .c-tdp-list { gap: 0; background: var(--sf-raised); border-radius: 12px; overflow: hidden; }
+.side .c-tdp-list .step { background: transparent; border-radius: 0; padding: 8px 8px 8px 12px; column-gap: 8px; row-gap: 0; box-shadow: inset 0 -1px 0 var(--sf-edge); }
+.side .c-tdp-list .step .grip { width: 28px; height: 28px; }
+.side .c-tdp-list .step .grip canvas { width: 16px; height: 16px; }
+.side .c-tdp-list .step .c-tdp-sname { display: block; width: 100%; min-width: 0; font: 600 14px/1.35 var(--font); color: var(--tx); background: transparent; border: 0; border-radius: 6px; padding: 4px; resize: none; overflow: hidden; field-sizing: content; }
+.side .c-tdp-list .step .c-tdp-sname:hover { background: var(--sf-raised); }
+.side .c-tdp-list .step .c-tdp-sname:focus { outline: none; background: var(--sf-raised); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
+.side .c-tdp-list .step.done .c-tdp-sname { text-decoration: line-through; color: var(--tx-3); }
+.side .c-tdp-list .step-meta { min-height: 32px; }
+.side .c-tdp-list .step .when { font-size: 12px; font-weight: 600; color: var(--tx-3); padding-left: 4px; }
+.side .c-tdp-list .step .when.past { color: #E88A6E; }
+.side .c-tdp-list .step .when.done { color: var(--good, #8FD3B1); }
+.side .c-tdp-list .c-tdp-when { min-height: 32px; padding: 0 4px; margin: 0; border: 0; border-radius: 6px; background: transparent; color: var(--good, #8FD3B1); font-size: 12px; font-weight: 600; cursor: pointer; }
+.side .c-tdp-list .c-tdp-when:hover { background: var(--sf-hover); text-decoration: underline; text-underline-offset: 2px; }
+.c-tdp-addrow { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 8px 4px 20px; }
+.c-tdp-addrow canvas { width: 14px !important; height: 14px !important; flex: none; }
+.side .c-tdp-addrow .input { border: 0; background: transparent; padding: 8px 0; font-size: 14px; font-weight: 500; }
+.side .c-tdp-addrow .input:focus, .side .c-tdp-addrow .input:focus-visible { outline: none; }
+.c-tdp-addrow:focus-within { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); border-radius: 0 0 12px 12px; }
+.c-tdp-list > .c-tdp-addrow:first-child:focus-within { border-radius: 12px; }
+.side .c-tdp-ideas { padding: 12px; gap: 8px; border-radius: 12px; }
+.side .c-tdp-ideas .c-tdp-sub { margin: 0; }
+.side .c-tdp-ideas .list-row { font-size: 14px; font-weight: 600; padding: 4px 4px 4px 12px; min-height: 44px; }
+
+/* the settings used less: one fold, what they're set to on its edge */
+.c-tdp-more { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-tdp-msum { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px; border-radius: 12px; cursor: pointer; list-style: none; }
+.c-tdp-msum::-webkit-details-marker { display: none; }
+.c-tdp-msum:hover { background: var(--sf-raised); }
+.c-tdp-msum:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.c-tdp-mname { font-size: 14px; font-weight: 600; color: var(--tx); }
+.c-tdp-mval { flex: 1; min-width: 0; text-align: right; font-size: 13px; color: var(--tx-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-tdp-msum canvas { width: 12px !important; height: 12px !important; flex: none; transition: transform 0.2s ease; }
+.c-tdp-more[open] .c-tdp-msum canvas { transform: rotate(180deg); }
+.c-tdp-mbody { display: flex; flex-direction: column; gap: 16px; padding: 4px 16px 16px; }
+.c-tdp-mbody .field { gap: 8px; }
+.c-tdp-mbody .field > .lbl, .c-tdp-mbody .field > label { font-size: 13px; font-weight: 600; color: var(--tx-2); }
+.c-tdp-mbody .field.c-tdp-inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.c-tdp-mbody .field.c-tdp-inline + .field.c-tdp-inline { margin-top: -8px; }
+.c-tdp-mbody .input { font-size: 14px; padding: 8px 12px; min-height: 40px; }
+.c-tdp-mbody .c-tdp-inline .input { width: auto; min-width: 0; max-width: 64%; flex: 0 1 188px; }
+.c-tdp-mbody .chip-btn { min-height: 36px; padding: 0 12px; font-size: 13px; }
+
+/* Delete, last, under its rule */
+.side-in:has(> .c-tdp-hero) > .rule { margin: 4px 0 0; }
+.side-in:has(> .c-tdp-hero) > .actions { margin-top: -4px; }
+
+/* a finger gets 44 px */
+@media (pointer: coarse) {
+  .c-tdp-due, .c-tdp-acts .small, .c-tdp-sh .small.quiet, .side .c-tdp-list .c-tdp-when, .c-tdp-mbody .chip-btn, .c-tdp-mbody .input { min-height: 44px; }
+  .side .c-tdp-list .step .grip { width: 44px; height: 44px; }
+  /* the x is 44 px here, so the band under it is as tall */
+  #side:has(.c-tdp-hero) .side-in > .side-kicker:first-child { padding-bottom: 28px; }
+  /* the tick looks the same, 22 px, inside a 44 px target; the negative margin keeps the row as it was */
+  .side .c-tdp-list .tick { width: 44px; height: 44px; margin: -11px; border: 0; border-radius: 12px; background: transparent; grid-template: 1fr / 1fr; }
+  .side .c-tdp-list .tick::before { content: ""; grid-area: 1 / 1; width: 22px; height: 22px; box-sizing: border-box; border-radius: 7px; border: 2px solid rgba(255, 255, 255, 0.5); }
+  .side .c-tdp-list .tick::after { grid-area: 1 / 1; }
+  .side .c-tdp-list .tick:checked { background: transparent; }
+  .side .c-tdp-list .tick:checked::before { background: var(--good); border-color: var(--good); }
+  .side .c-tdp-list .step .c-tdp-sname { min-height: 44px; padding: 10px 4px; }
+  /* the time and the length get the row from under the mark, so the bigger buttons fit */
+  .side .c-tdp-list .step-meta { grid-column: 2 / -1; }
+}
+/* calmer motion: the fold turns at once */
+body.calm .c-tdp-msum canvas { transition: none; }
+@media (prefers-reduced-motion: reduce) { .c-tdp-msum canvas { transition: none; } }

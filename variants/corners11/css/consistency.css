@@ -1,0 +1,88 @@
+/* == V11: one way across surfaces (round two, consistency) ==
+   Gold is the one call to action on a surface: Next, Done, Start the reset, Open the week. Data is never
+   gold: numbers are white (--tx), an open state is grey (--tx-3), a secondary Add is a raised neutral button
+   (the meal step's card, .c-mealgo), and done is the green of a check. This file loads after variant.css and
+   polish.css and before the other area files, so a rule that lives in yourtime.css, people.css, or
+   shell.css is changed in its own file (color only). Spacing on 4 px steps, words at 12 px or more. */
+
+/* numbers in a step's summary and in Look ahead's line are white */
+.c-sum b, .c-aheadnote b { color: var(--tx); }
+
+/* To-dos: Next 7 days (the rolling list) leads on a raised card, its name in white */
+.c-tdsec.due { background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-tdsec.due .c-tdsec-h h3 { color: var(--tx); }
+/* a to-do's open state (Needs a time, Time passed, due today) in white, set apart by its weight */
+.c-tdgh.ask { color: var(--tx); }
+.c-td-line .ask { color: var(--tx); }
+/* Give it a time is a raised neutral button; hovering it lifts it in white, not gold */
+.c-td-time:hover::before { background: var(--sf-hover); }
+
+/* the intro's facts: a plain kicker, then each fact in white */
+.c-intro-note .c-kick { color: var(--tx-3); }
+
+/* the To-dos step's one line to Look ahead: the same raised row as the Meals step's Groceries */
+body.c-resetting .rack.resetting .rack-body > .c-tdahead { flex: 1 1 100%; min-width: 0; width: 100%; }
+.k .c-tdahead, .c-tdahead { display: flex; align-items: center; gap: 8px; min-height: 52px; margin-top: 12px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); font: 500 14px var(--k-font); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s var(--f-out); }
+.c-tdahead:hover { background: var(--sf-hover); }
+.c-tdahead:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-tdahead:focus-visible { outline: 3px solid #F2CF7A; outline-offset: 2px; }
+.c-tdahead b { font: 700 16px 'Gabarito', var(--k-font); }
+.c-tdahead .grow { flex: 1; min-width: 0; color: var(--tx-2); }
+.c-tdahead canvas:first-child { width: 18px !important; height: 18px !important; }
+.c-tdahead canvas:last-child { width: 14px !important; height: 14px !important; }
+
+/* toasts: the action (Undo, Redo, Start) is a 44 px target with a mouse as well as a finger, and the
+   toast keeps its own 2 px inset around it */
+.toast.act { min-height: 48px; padding: 2px 2px 2px 16px; }
+.toast .toast-act { min-height: 44px; padding: 0 16px; border-radius: 12px; margin-left: auto; }
+
+/* the reset's panel folding aside (Hide the steps, or while a tap's place panel is open) slides in a quarter
+   second at most; with Calmer motion (every transition instant, style.css) it goes where it is instead of
+   travelling across the desk */
+body.c-resetting .rack.resetting { transition-duration: 0.24s; }
+/* folded for a place panel, it leaves the keyboard's path too once it's out of sight */
+body.c-resetting.c-panel-fold .rack.resetting { visibility: hidden; transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.24s; }
+body.calm.c-resetting.c-panel-off .rack.resetting { transform: none; opacity: 0; visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { body.c-resetting.c-panel-off .rack.resetting { transform: none; opacity: 0; visibility: hidden; pointer-events: none; } }
+
+@media (prefers-reduced-motion: reduce) { .c-tdahead { transition: none; } }
+body.calm .c-tdahead { transition: none; }
+
+/* == V11: the place panel's seven days are 44 px targets (round three, consistency) ==
+   The panel's close button floated beside its words and took 30 px from all of them, which left the days
+   40 wide. Here it sits over the kicker's row instead (the kicker and the title already keep clear of it),
+   so the days, the strip, and the button get the panel's whole width: 44 px days with 4 between. On a
+   phone the panel's sides are 16; a phone narrower than that still has 44 px days, and the row scrolls
+   sideways (its padding keeps a focus ring whole). */
+#side:has(.weekpick) > .side-x { float: none; top: -10px; margin: -10px -10px -22px auto; }
+/* (a finger's 44 px button reaches past the kicker, so the block under it starts 4 px lower) */
+@media (pointer: coarse) {
+  #side:has(.weekpick) > .side-x { margin-bottom: -34px; }
+  #side:has(.weekpick) .side-in > .side-kicker:first-child { margin-bottom: 4px; }
+}
+#side .weekpick { grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 4px; margin: -6px; padding: 6px; overflow-x: auto; scrollbar-width: none; }
+#side .weekpick::-webkit-scrollbar { display: none; }
+/* (16 between its parts, on the 4 px rhythm as in a to-do's panel) */
+#side:has(.weekpick) .side-in { gap: 16px; }
+/* the panel's foot (.place-foot, round three fix): the line that says what moves and the Add button, together.
+   While more of the panel is below (a long name, a short phone, the reset's half sheet) the foot rides the
+   bottom on the panel's own color, and what scrolls under it fades into it: a sign there's more, and the
+   line above Add is never hidden. Scrolled to the end, it sits where it is. Only color and a shade change
+   with .more, never the layout, so the panel can't flicker between the two. --pf-x is the panel's side
+   padding, so the foot covers it edge to edge */
+#side:has(.weekpick) { --pf-x: 22px; padding-left: var(--pf-x); padding-right: var(--pf-x); }
+#side.more:has(.weekpick) { -webkit-mask-image: none; mask-image: none; }
+#side .place-foot { position: sticky; bottom: -16px; z-index: 1; display: flex; flex-direction: column; gap: 12px; margin: -4px calc(-1 * var(--pf-x, 22px)) -16px; padding: 12px var(--pf-x, 22px) 16px; }
+#side .place-foot .effect { margin: 0; }
+#side .place-foot .go.wide { position: static; box-shadow: none; }
+#side.more .place-foot { background: var(--sf-solid); box-shadow: inset 0 1px 0 var(--sf-edge); }
+#side.more .place-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 32px; background: linear-gradient(to bottom, rgba(35, 35, 37, 0), var(--sf-solid)); pointer-events: none; }
+@media (max-width: 599px) {
+  #side:has(.weekpick) { --pf-x: 16px; }
+  #side:has(.weekpick) > .side-x { margin-right: -4px; }
+}
+/* a row of days too wide for a narrow phone scrolls sideways; its edge fades on the side with more days
+   (.more-l, .more-r, set by weekCells as it scrolls) */
+#side .weekpick.more-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+#side .weekpick.more-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+#side .weekpick.more-l.more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }

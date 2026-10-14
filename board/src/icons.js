@@ -276,6 +276,8 @@
       poly(g, [12, 1.8, 17, 8.6, 14.8, 8.6, 19, 14.4, 16, 14.4, 20.4, 19.8, 3.6, 19.8, 8, 14.4, 5, 14.4, 9.2, 8.6, 7, 8.6]);
       fillRR(g, 10.5, 19.4, 3, 3, 0.4);
     },
+    /* V11: an evergreen, for Christmas: the vector set's tree is a round, leafy one */
+    fir(g) { ICONS.tree(g); },
     carrot(g) {
       g.translate(-1.1, 1.2);
       g.beginPath(); g.moveTo(15.6, 6.4); g.quadraticCurveTo(18.4, 8, 17.6, 10.4); g.lineTo(5, 20.6); g.quadraticCurveTo(3.2, 21.4, 3.6, 19.4); g.lineTo(13.4, 6.8); g.quadraticCurveTo(14.4, 5.8, 15.6, 6.4); g.closePath(); g.fill();
@@ -440,6 +442,8 @@
     person(g) { dot(g, 12, 7.6, 3.8); g.beginPath(); g.moveTo(4.5, 20.5); g.quadraticCurveTo(4.5, 13, 12, 13); g.quadraticCurveTo(19.5, 13, 19.5, 20.5); g.closePath(); g.fill(); },
     /* a pin: it stays on the bar */
     pin(g) { g.translate(0, -0.8); poly(g, [8, 3.5, 16, 3.5, 15, 9.5, 18.5, 13.5, 5.5, 13.5, 9, 9.5]); g.lineWidth = 2.6; line(g, [12, 13.5, 12, 21]); },
+    /* V11: an open box with an arrow rising out of it: share */
+    share(g) { g.lineWidth = 2.6; line(g, [8.6, 9.6, 5.6, 9.6, 5.6, 20.4, 18.4, 20.4, 18.4, 9.6, 15.4, 9.6]); line(g, [12, 14.6, 12, 3.6]); line(g, [8.2, 7.4, 12, 3.6, 15.8, 7.4]); },
     /* a speech mark with a line in it, for notes back to us */
     note2(g) { fillRR(g, 3, 4, 18, 12.5, 3); poly(g, [7, 15, 12, 15, 6.5, 21]); cut(g, () => { g.lineWidth = 1.8; line(g, [7, 8.6, 17, 8.6]); line(g, [7, 12, 13.5, 12]); }); }
   };

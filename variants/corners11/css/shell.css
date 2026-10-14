@@ -1,0 +1,134 @@
+/* == V11 shell: the reset's frame, the finish, and the way back to the week (Oct 14) ==
+   Russell: "that Finish later should be closer to the left-hand side at the bottom", the finish has "a
+   lot of buttons", and a scroll left him on the month with nothing saying how to get back. */
+
+/* == the footer: Finish later on the left, Back and Next on the right, on every step and on a phone == */
+body.c-resetting .rack.resetting .rack-right { justify-content: flex-end; flex-wrap: nowrap; gap: 8px; align-items: center; }
+body.c-resetting .rack.resetting .rack-right > button { min-height: 44px; border-radius: 14px; white-space: nowrap; }
+body.c-resetting .rack.resetting .rack-right > .reset-later { margin: 0 auto 0 -12px; padding: 0 12px; background: transparent; color: var(--tx-2, #CDCDCD); font: 500 14px/1 var(--k-font); }
+body.c-resetting .rack.resetting .rack-right > .reset-later:hover { background: var(--sf-hover); color: var(--tx, #FFFFFF); }
+body.c-resetting .rack.resetting .rack-right > .small:not(.reset-later) { padding: 0 16px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx, #FFFFFF); font: 600 14px/1 var(--k-font); }
+body.c-resetting .rack.resetting .rack-right > .small:not(.reset-later):hover { background: var(--sf-hover); }
+body.c-resetting .rack.resetting .rack-right > .go { min-width: 0; padding: 0 20px; overflow: hidden; text-overflow: ellipsis; }
+body.c-resetting .rack.resetting .rack-right > button:active { transform: translateY(1px); }
+
+/* the kicker wraps under the hide button instead of running under it; on the finish the gold check says
+   every step is done, so the count steps aside */
+body.c-resetting .rack.resetting .reset-kicker { white-space: normal; }
+body.c-resetting.c-step-done .rack.resetting .reset-where { display: none; }
+/* where the steps stand along the bottom (a phone, a tablet standing up), the button that hides them points down */
+body.c-resetting.c-rsheet .rack.resetting .c-hidepanel canvas { transform: rotate(-90deg); }
+
+/* == the finish: a gold check beside the title, the plan at a glance, and one quiet Share == */
+body.c-resetting .rack.resetting .reset-title.reset-done { display: flex; align-items: center; gap: 12px; }
+.reset-seal { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--k-gold, #F2CF7A); display: grid; place-items: center; }
+.reset-seal canvas { width: 18px !important; height: 18px !important; }
+@media (max-width: 759px) { .reset-seal { width: 30px; height: 30px; } .reset-seal canvas { width: 15px !important; height: 15px !important; } }
+
+/* a wide window gives the finish two columns; the board makes room beside it. V11 check: only from 1400 wide,
+   so the week beside it stays big enough to read (finTwo() in variant.js uses the same width). Motion stays
+   under a quarter second. */
+body.c-resetting .rack.resetting { transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (min-width: 1400px) { body.c-resetting.c-step-done.c-finwide .rack.resetting { width: 600px; } }
+@media (prefers-reduced-motion: reduce) { body.c-resetting .rack.resetting { transition: none; } }
+body.calm.c-resetting .rack.resetting { transition: none; }
+
+body.c-resetting .rack.resetting .rack-body > .c-fin, body.c-resetting .rack.resetting .rack-body > .c-fin-share { flex: 1 1 100%; width: 100%; min-width: 0; }
+.c-fin { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.c-fin-col { display: contents; }
+.c-fin.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.c-fin.two .c-fin-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* the step's title takes focus after Next or Back, for a keyboard and a screen reader; a mouse sees no ring */
+body.c-resetting .rack.resetting .reset-title:focus { outline: none; }
+body.c-resetting .rack.resetting .reset-title:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 4px; border-radius: 8px; }
+.c-fin-card { min-width: 0; padding: 16px 16px 8px; border-radius: 18px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-fin-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.c-fin-h h3 { margin: 0; font: 600 16px/1.25 var(--name); color: var(--tx, #FFFFFF); }
+.c-fin-aside { flex: none; font: 500 12px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-fin-row { display: flex; align-items: center; gap: 12px; width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 8px; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.07); border-radius: 0; background: none; color: var(--tx, #FFFFFF); font: 400 14px/1.3 var(--k-font); text-align: left; }
+.c-fin-h + .c-fin-row { border-top-color: transparent; }
+button.c-fin-row { cursor: pointer; border-radius: 10px; }
+button.c-fin-row:hover { background: var(--sf-hover); }
+button.c-fin-row:active { background: var(--sf-press); transform: translateY(1px); }
+button.c-fin-row:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: -2px; }
+.c-fin-list .c-fin-row { min-height: 36px; }
+/* a row that opens its step is a full touch target */
+.c-fin-list button.c-fin-row { min-height: 44px; }
+.c-fin-day { flex: none; width: 32px; font: 600 13px/1 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-fin-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-fin-two { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-fin-two .c-fin-name { flex: none; }
+.c-fin-sub { font: 500 13px/1.25 var(--k-font); color: var(--tx-3, #AFAFAF); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-fin-list .c-fin-row:has(.c-fin-two) { min-height: 48px; }
+/* V11 (consistency): an open meal is grey, the way the plan and the picture say Open; gold is Done's */
+.c-fin-name.open { color: var(--tx-3, #AFAFAF); }
+.c-fin-name.past { color: var(--tx-3, #AFAFAF); }
+.c-fin-when { flex: none; font: 500 13px/1.2 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-fin-when.lead { width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx-3, #AFAFAF); }
+.c-fin-ring { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--tx-3, #AFAFAF); }
+.c-fin-ring.on { background: #8FD3B1; box-shadow: none; }
+.c-fin-row.done .c-fin-name { color: var(--tx-3, #AFAFAF); text-decoration: line-through; }
+/* V11 (consistency): what still needs a time is an open state, grey like an open meal */
+.c-fin-ask .c-fin-name { color: var(--tx-3, #AFAFAF); }
+.c-fin-more canvas { flex: none; width: 16px !important; height: 16px !important; }
+.c-fin-note { margin: 4px 0 8px; font: 400 13px/1.4 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-fin-row .c-who { flex: none; }
+/* time kept for you: good news, in the plan's own green */
+.c-fin-card.kept { padding: 16px; background: rgba(124, 198, 164, 0.16); box-shadow: none; }
+.c-fin-card.kept .c-kick { color: #A9DCC2; }
+.c-fin-big { margin-top: 8px; font: 700 30px/1.1 var(--name); letter-spacing: -0.01em; color: var(--tx, #FFFFFF); }
+.c-fin-card.kept p { margin: 4px 0 0; font: 400 14px/1.45 var(--k-font); color: #DCEFE5; }
+
+/* Share: quiet, with a look at the picture it makes */
+.c-fin-share { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 68px; padding: 8px 16px 8px 8px; border: 0; border-radius: 18px; background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx, #FFFFFF); text-align: left; cursor: pointer; }
+.c-fin-share:hover { background: var(--sf-hover); }
+.c-fin-share:active { background: var(--sf-press); transform: translateY(1px); }
+.c-fin-share:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+.c-fin-thumb { flex: none; width: 40px; height: 52px; border-radius: 8px; background: #18191D center top / cover no-repeat; box-shadow: inset 0 0 0 1px var(--sf-edge), 0 6px 14px -8px rgba(0, 0, 0, 0.6); }
+.c-fin-sharew { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-fin-sharew b { font: 600 14px/1.3 var(--k-font); color: var(--tx, #FFFFFF); }
+.c-fin-sharew small { font: 400 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-fin-share > canvas { flex: none; width: 18px !important; height: 18px !important; }
+
+/* the reset's toasts carry a way on (Resume, See the plan): a button's words stay on one line, and its target
+   reaches 44 px tall inside the toast's own padding without making the toast any bigger */
+.toast .toast-act { white-space: nowrap; flex: none; position: relative; }
+.toast .toast-act::after { content: ''; position: absolute; inset: -6px -4px; }
+/* while the reset's panel is on the left, toasts center over the desk beside it, never over Back or Done.
+   V11: not while the meal board has them at the top (body.c-toasts-top), where they center on the board */
+@media (min-width: 760px) {
+  body.c-resetting:not(.c-rsheet):not(.c-panel-off):not(.c-toasts-top) .toasts { left: calc(50% + 236px); }
+  body.c-resetting:not(.c-rsheet):not(.c-panel-off):not(.c-toasts-top) .toast { max-width: min(560px, calc(100vw - 520px)); }
+}
+@media (min-width: 1400px) {
+  body.c-resetting.c-step-done.c-finwide:not(.c-panel-off):not(.c-toasts-top) .toasts { left: calc(50% + 316px); }
+  body.c-resetting.c-step-done.c-finwide:not(.c-panel-off):not(.c-toasts-top) .toast { max-width: min(560px, calc(100vw - 680px)); }
+}
+/* the step bar's buttons and the panel's hide button keep their look and reach 44 px to the touch */
+.k .c-sbtn { position: relative; }
+.k .c-sbtn::after { content: ''; position: absolute; inset: -5px 0; }
+.c-hidepanel::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; }
+/* on the phone's one day, a toast stops short of the round Add in the corner, so its button stays in reach */
+body.phone-desk .toasts { right: 84px !important; }
+
+/* == a scroll that changed the view: the way back, under the view switch == */
+.k.c-backpill { position: fixed; z-index: 45; top: 80px; right: 16px; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 22px; font: 600 14px/1 var(--k-font); color: var(--tx, #FFFFFF); cursor: pointer; }
+.k.c-backpill[hidden] { display: none; }
+.k.c-backpill canvas { width: 14px !important; height: 14px !important; }
+.k.c-backpill:active { transform: translateY(1px); }
+.k.c-backpill:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+
+/* == V11: a panel opened from any step, where the reset is a sheet, takes the whole height and the sheet
+   steps aside (one rule in app.js layoutInsets, body.c-sheet-aside, and frame.css) == */
+
+/* == V11: one new tile in every step (New block, New to-do, New idea): a drawn plus and its name, centered,
+   across the whole row, 56 tall, on a dashed edge == */
+body.c-resetting .rack.resetting .rack-body .tile.add { flex: 1 1 100%; grid-column: 1 / -1; width: auto; max-width: none; height: auto; min-height: 56px; display: flex; flex-direction: row; align-items: center; justify-content: center; padding: 0 16px; border: 1.5px dashed rgba(255, 255, 255, 0.3); border-radius: 14px; background: transparent; box-shadow: none; color: var(--tx-2, #CDCDCD); }
+body.c-resetting .rack.resetting .rack-body .tile.add .tl { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+body.c-resetting .rack.resetting .rack-body .tile.add canvas { flex: none; width: 14px !important; height: 14px !important; }
+body.c-resetting .rack.resetting .rack-body .tile.add .nm { font: 600 14px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: 1; }
+body.c-resetting .rack.resetting .rack-body .tile.add:hover { background: var(--sf-hover); border-color: rgba(255, 255, 255, 0.5); transform: none; }
+body.c-resetting .rack.resetting .rack-body .tile.add:hover .nm { color: var(--tx, #FFFFFF); }
+body.c-resetting .rack.resetting .rack-body .tile.add:active { background: var(--sf-press); transform: translateY(1px); }
+body.c-resetting .rack.resetting .rack-body .tile.add:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { body.c-resetting .rack.resetting .rack-body .tile.add:active { transform: none; } }

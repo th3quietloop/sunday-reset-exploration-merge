@@ -131,14 +131,14 @@
 <script>
 (function () {
   'use strict';
-  /* the ten: the two V11 uses now, and eight free ones from Google Fonts that are far less common
+  /* the ten: Onest (V11's words since Oct 14), the two it used before, and seven more free ones from Google Fonts that are far less common
      (the rank is how often each is used on Google Fonts; Poppins is 5th of all) */
   const FONTS = [
-    { name: 'Poppins', now: 'Corners now', by: 'Indian Type Foundry, Jonny Pinhorn, Ninad Kale', since: 2015, rank: 5, w: '400;500;600;700;800', weights: '400 to 800', why: 'Round and geometric. Friendly, but it is the 5th most used font on Google Fonts, so it reads like a lot of other apps.' },
-    { name: 'Atkinson Hyperlegible Next', short: 'Atkinson Next', now: 'Panels now', by: 'Braille Institute, Applied Design Works', since: 2025, rank: 185, w: '200..800', weights: '200 to 800', why: 'Made so no two letters can be mistaken for each other. Very clear at small sizes, a little technical.' },
+    { name: 'Poppins', by: 'Indian Type Foundry, Jonny Pinhorn, Ninad Kale', since: 2015, rank: 5, w: '400;500;600;700;800', weights: '400 to 800', why: 'Round and geometric. Friendly, but it is the 5th most used font on Google Fonts, so it reads like a lot of other apps.' },
+    { name: 'Atkinson Hyperlegible Next', short: 'Atkinson Next', by: 'Braille Institute, Applied Design Works', since: 2025, rank: 185, w: '200..800', weights: '200 to 800', why: 'Made so no two letters can be mistaken for each other. Very clear at small sizes, a little technical.' },
     { name: 'Instrument Sans', by: 'Rodrigo Fuenzalida, Jordan Egstad', since: 2023, rank: 59, w: '400..700', weights: '400 to 700', why: 'A sharp, current grotesk. Precise without feeling cold, so labels and buttons look designed.' },
     { name: 'Schibsted Grotesk', by: 'Bakken & Bæck, Henrik Kongsvoll', since: 2023, rank: 49, w: '400..900', weights: '400 to 900', why: 'Made for a Norwegian newspaper group. Plainspoken and confident, with steady, even numbers.' },
-    { name: 'Onest', by: 'Dmitri Voloshin, Andrey Kudryavtsev', since: 2023, rank: 184, w: '100..900', weights: '100 to 900', why: 'Built for screens. Calm and neutral, a little warmer than the usual neutral sans.' },
+    { name: 'Onest', now: 'V11 now', by: 'Dmitri Voloshin, Andrey Kudryavtsev', since: 2023, rank: 184, w: '100..900', weights: '100 to 900', why: 'Built for screens. Calm and neutral, a little warmer than the usual neutral sans.' },
     { name: 'Golos Text', by: 'Alexandra Korolkova, Vitaly Kuzmin', since: 2023, rank: 255, w: '400..900', weights: '400 to 900', why: 'A workhorse for small text: open shapes, and a tail on the l and the 1 so they never blur together.' },
     { name: 'Rethink Sans', by: 'Hans Thiessen', since: 2023, rank: 219, w: '400..800', weights: '400 to 800', why: 'Open and friendly with a crisp edge. Feels organized, which suits a planner.' },
     { name: 'Parkinsans', by: 'Red Stone, for Parkinson’s UK', since: 2024, rank: 268, w: '300..800', weights: '300 to 800', why: 'Warm and human, made to be clear. The most personality of the clean ones.' },
@@ -155,7 +155,7 @@
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const until = async (ok, ms) => { const end = Date.now() + (ms || 20000); while (Date.now() < end) { try { if (ok()) return true; } catch (e) { /* not yet */ } await wait(100); } return false; };
 
-  let cur = Math.max(0, FONTS.findIndex((f) => f.name === saved('font', 'Poppins')));
+  let cur = Math.max(0, FONTS.findIndex((f) => f.name === saved('font', 'Onest')));
   let last = cur, names = saved('names', 'gabarito'), screen = Math.min(2, saved('screen', 0)), step = saved('step', null);
   let stars = new Set(saved('stars', [])), onlyStars = false, showing = cur, ready = false, W = null, D = null;
   $('gf').href = GF;

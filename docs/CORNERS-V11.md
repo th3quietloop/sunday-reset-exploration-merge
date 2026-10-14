@@ -276,3 +276,32 @@ Every panel and chip is one near black surface with a little glass, from the Cha
 - "Due this week" as the next seven days rather than Sunday to Saturday.
 - How close the bench camera comes (up to 1.7 times), and whether it goes back in after each drop.
 - Whether "Plan meals" sits in the right places on the phone.
+
+## Rounds one to three, and a hotfix (Oct 14, afternoon)
+
+Russell's long list of notes (Look ahead, Your time, To-dos, meals, people, moving, the trackpad, the finish) was built in three rounds, each an area builder, an independent checker trying to break it, a fixer, and a completeness critic. Every run's report is in the session; what matters is below. 205 tests pass.
+
+### The drop that vanished (live hotfix)
+Russell showed V11 at an Apple Store and a block dragged from the reset's panel never appeared on the board. Round one had found why: a block set down before the desk drew it once never got starting values for its press, grip, and glow, so its height was NaN and it was never drawn, though it was saved and counted. The fix (two lines in scene.js, `feelBlock`) went live on its own as a hotfix (branch `v11-hotfix-drop`, commit 6683902) before the rest, and was checked on the live link with a mouse and with touch.
+
+### What the rounds built
+- Look ahead: dates you add (a day to remember, a trip, a set time), lead times for gifts and flights, holidays.
+- Your time: the hours to yourself as a seven day strip, the drop that lands and shows, a toast with Undo on every drop that names what moved.
+- To-dos: one window for what's due (the week being planned), Time passed on a to-do whose time went by, a panel with Details folded.
+- Meals: any meal in any row, the grocery list on the board, Edit with Hide beside each tile, a success toast when you close, one way to name cooks.
+- People: partners, kids, family, friends, and groups; time together counted from color, ideas, and names, never caregiving routines.
+- Moving: an optional step, on when the setup leaned toward moving more or a goal is set.
+- The frame: one step bar that folds when it doesn't fit, the reset as a bottom sheet on phones and upright tablets, panels and toasts that never cover each other, pinch to change the view (a plain scroll never does), a finish that says what this reset did, Finish later at the bottom left.
+
+### For Russell to decide
+- Every drop on the board gets a toast with Undo, in the Planner too, not only in the reset. Keep it everywhere?
+- A to-do dropped on time that's already gone keeps its own status (Time passed) instead of counting as done.
+- Blocks marked done still count toward time to yourself.
+- The big hours number on Your time and To-dos stays gold, though gold is for the one call to action.
+- Extra groceries that don't come from a meal (milk, paper towels) need a saved state change. Build it?
+- Pantry left the reset; it stays on the meal board's bench. Rename it, or retire it?
+- The shared picture of the week names to-dos and their times. Fine to share those?
+- On an upright tablet, a panel opened from a step covers the right part of the week instead of shrinking the week beside it.
+- Cooks: on the meal board and the dinner panel, "You" and "Sam"; in the picture someone else reads, first names.
+- The Next 7 days bench prints piece names at about 8 to 9 px at 1440 by 900: a closer bench while carrying, taller pieces, or leave it.
+- Caregiving routines (up with, bedtime, drop off, pick up) don't count as time together; plum and friends blocks and people ideas always do.

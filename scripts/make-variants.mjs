@@ -1,6 +1,6 @@
 // Builds each minimal version from the board: v/<id> is board/ with the kit and that version's own
 // chrome in place of round two's top bar. node scripts/make-variants.mjs
-import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,8 @@ const VEC = new Set(['corners11']);
 for (const id of ids) {
   if (only.length && !only.includes(id)) continue;
   if (!existsSync(join(root, 'variants', id, 'variant.js'))) continue;
-  const out = join(root, 'v', id);
+  /* MV_OUT=/some/folder builds there instead of v/, so several people can build and test at once */
+  const out = process.env.MV_OUT ? join(process.env.MV_OUT, id) : join(root, 'v', id);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   cpSync(join(root, 'board'), out, { recursive: true, filter: (p) => !/merge\.(js|css)$/.test(p) });
@@ -23,13 +24,18 @@ for (const id of ids) {
   /* a version's finishing pass on spacing and alignment, kept in its own file, loads last */
   const polish = existsSync(join(root, 'variants', id, 'polish.css'));
   if (polish) cpSync(join(root, 'variants', id, 'polish.css'), join(out, 'src', 'polish.css'));
+  /* a version's stylesheets kept per area (css/*.css) load after polish.css, in name order */
+  const areaCss = existsSync(join(root, 'variants', id, 'css')) ? readdirSync(join(root, 'variants', id, 'css')).filter((f) => f.endsWith('.css')).sort() : [];
+  if (areaCss.length) cpSync(join(root, 'variants', id, 'css'), join(out, 'src', 'css'), { recursive: true });
   /* a version's own tools (the type tester) go in lab/, beside its page, so they can open it in a frame */
   if (existsSync(join(root, 'variants', id, 'lab'))) cpSync(join(root, 'variants', id, 'lab'), join(out, 'lab'), { recursive: true });
   /* a version's own pictures (a rendered bag, say) go next to its page */
   if (existsSync(join(root, 'variants', id, 'assets'))) cpSync(join(root, 'variants', id, 'assets'), join(out, 'assets'), { recursive: true });
   let html = readFileSync(join(out, 'index.html'), 'utf8');
-  html = html.replace('<link rel="stylesheet" href="src/merge.css">', '<link rel="stylesheet" href="src/kit.css">\n<link rel="stylesheet" href="src/variant.css">' + (polish ? '\n<link rel="stylesheet" href="src/polish.css">' : ''));
+  html = html.replace('<link rel="stylesheet" href="src/merge.css">', '<link rel="stylesheet" href="src/kit.css">\n<link rel="stylesheet" href="src/variant.css">' + (polish ? '\n<link rel="stylesheet" href="src/polish.css">' : '') + areaCss.map((f) => '\n<link rel="stylesheet" href="src/css/' + f + '">').join(''));
   html = html.replace('<script src="src/merge.js"></script>', '<script src="src/kit.js"></script>\n<script src="src/variant.js"></script>');
+  /* V11 sets its words in Onest (Russell's pick from the type tester) */
+  if (id === 'corners11') html = html.replace('&family=Poppins:wght@400;500;600;700', '&family=Poppins:wght@400;500;600;700&family=Onest:wght@400..800');
   if (VEC.has(id)) html = html.replace('<script src="src/icons.js"></script>', '<script src="src/icon-paths.js"></script>\n<script src="src/icons.js"></script>');
   html = html.replace('  <header class="topnav" id="topnav"></header>\n', '');
   html = html.replace('<title>Sunday Reset</title>', `<title>Sunday Reset · ${names[id]}</title>`);

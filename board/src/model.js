@@ -642,6 +642,9 @@
   function taskPlan(t, where, today, nowMin) {
     const steps = t.steps || [];
     const open = steps.filter((s) => !s.done);
+    /* V11: while steps are still open, a checked off step's time plans none of them, so it can't make the
+       to-do missed (or partial). With every step checked, its times still count as before. */
+    if (where && open.length && open.length < steps.length) where = where.filter((p) => !p.step || open.some((s) => s.id === p.step));
     const ahead = (where || []).filter((p) => windowTime(today, p.date, p.add.start) + p.add.dur > (nowMin == null ? 0 : nowMin));
     const whole = ahead.some((p) => !p.step);
     const timed = open.filter((s) => ahead.some((p) => p.step === s.id));
@@ -853,6 +856,141 @@
     for (const t of state.tasks) if (!t.done && t.due && t.due >= addDays(from, -30) && t.due <= to) { const p = taskPlan(t, pl.get(t.id), from); out.push({ date: t.due < from ? from : t.due, kind: 'due', name: t.name, icon: t.icon, id: t.id, due: t.due, status: p.status, after: p.after }); }
     const rank = { trip: 0, marker: 1, timed: 2, due: 3 };
     return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : rank[a.kind] - rank[b.kind]));
+  }
+
+  /* == V11: getting ready ==
+     Some dates need a head start: a gift before a birthday, gifts before a holiday that has them,
+     booking before a trip. Each kind of getting ready says when to start (lead, days before the date)
+     and when it should be done (by, days before). An event keeps its own list (ready: keys, or
+     { k, lead, by }); one without a list gets what its kind and name suggest. What came of it is kept
+     on the event, per date (prep: { 'gift@2026-10-21': a to-do's id, or 'skip' }), so a date that comes
+     every year asks again next year. */
+  const READY = {
+    gift: { name: 'A gift', short: 'Gift', todo: 'Gift for {x}', lead: 21, by: 3, icon: 'gift', cat: 'family', dur: 45 },
+    gifts: { name: 'Gifts', short: 'Gifts', todo: 'Gifts for {x}', lead: 56, by: 10, icon: 'gift', cat: 'family', dur: 90 },
+    plans: { name: 'Plans', short: 'Plans', todo: 'Plans for {x}', lead: 21, by: 7, icon: 'calendar', cat: 'family', dur: 30 },
+    travel: { name: 'Booking travel', short: 'Booking', todo: 'Book travel for {x}', lead: 56, by: 28, icon: 'plane', cat: 'family', dur: 45 },
+    pack: { name: 'Packing', short: 'Packing', todo: 'Pack for {x}', lead: 3, by: 1, icon: 'shirt', cat: 'home', dur: 45 },
+    tickets: { name: 'Tickets', short: 'Tickets', todo: 'Tickets for {x}', lead: 28, by: 14, icon: 'film', cat: 'yours', dur: 15 },
+    wear: { name: 'Something to wear', short: 'Something to wear', todo: 'Something to wear to {x}', lead: 21, by: 5, icon: 'shirt', cat: 'yours', dur: 60 },
+    costume: { name: 'Costumes', short: 'Costumes', todo: 'Costumes for {x}', lead: 28, by: 5, icon: 'shirt', cat: 'family', dur: 60 }
+  };
+  /* what each kind of date can get ready for, in the order a panel offers them */
+  const READY_FOR = { marker: ['gift', 'plans'], trip: ['travel', 'pack'], timed: [], occasion: ['gift', 'tickets', 'wear', 'travel'] };
+  /* a line about getting ready shows a little before it starts: as long again as it takes, up to three
+     weeks (packing from six days out, gifts for a holiday from eleven weeks out) */
+  const headsUp = (r) => Math.min(21, r.lead);
+  /* V11: the person whose board it is, said the way a date would name them (Alex's birthday) */
+  const ownName = (state) => String((state && state.profile && state.profile.name) || '').trim().toLowerCase();
+  function readySuggest(e, state) {
+    const n = String(e.name || '').toLowerCase().replace(/’/g, '\'');
+    if (e.kind === 'trip') return ['travel', 'pack'];
+    /* nobody needs a reminder to buy their own birthday gift, by any name */
+    const me = ownName(state);
+    if (e.kind === 'marker') return /^(your|my) birthday/.test(n) || (me && n.startsWith(me + '\'s birthday')) ? [] : /birthday/.test(n) || e.icon === 'cake' ? ['gift'] : /anniversary/.test(n) ? ['plans'] : [];
+    if (e.kind === 'timed' && e.occasion) return /wedding|shower|party|birthday|graduation|retire/.test(n) ? ['gift'] : /concert|show|game|match|play|theat|festival|tickets/.test(n) ? ['tickets'] : [];
+    return [];
+  }
+  const readyList = (e, state) => (Array.isArray(e.ready) ? e.ready : readySuggest(e, state)).map((r) => (typeof r === 'string' ? { k: r } : r)).filter((r) => r && READY[r.k]);
+  /* the keys an event gets ready for, the ones it keeps or the ones it would be offered */
+  const readyKeys = (e, state) => readyList(e, state).map((r) => r.k);
+  /* a holiday that begins at sundown is named for its beginning; what you get ready for is the holiday */
+  const readyName = (e) => String(e.name || '').replace(/ begins$/, '');
+  /* V11: a to-do already on the list for it counts: one that says what it is (a gift, packing) and
+     names the date's person, place, or holiday, due between the day to start and the date. A holiday
+     also takes one that says what it is and names no other date coming up (Family gifts before
+     Christmas). Booking travel only asks until four weeks out; after that it's likely done. */
+  const READY_WORDS = { gift: /\bgifts?\b|present/, gifts: /\bgifts?\b|present/, plans: /\bplan/, travel: /\bbook|flight|hotel|travel|train|ticket/, pack: /\bpack/, tickets: /ticket/, wear: /\bwear|outfit|dress|suit/, costume: /costume/ };
+  const READY_LATE = { travel: false };
+  const STOP = ['the', 'and', 'for', 'with', 'from', 'weekend', 'trip', 'visit', 'birthday', 'anniversary', 'begins', 'day', 'party', 'night'];
+  const plainWords = (s) => String(s || '').toLowerCase().replace(/[’']s\b/g, '').replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !STOP.includes(w));
+  function readyTask(state, e, r, on, start, others) {
+    const words = READY_WORDS[r.k];
+    if (!words) return null;
+    const mine = plainWords(readyName(e));
+    const hit = state.tasks.filter((t) => !t.archived && t.due && t.due >= addDays(start, -14) && t.due <= on && words.test(String(t.name || '').toLowerCase())).find((t) => {
+      const tw = plainWords(t.name);
+      if (mine.some((w) => tw.includes(w))) return true;
+      return !!(e.holiday || e.readyFrom) && !others.some((w) => tw.includes(w));
+    });
+    return hit || null;
+  }
+  function readyFor(state, e, on, today, tasks, others) {
+    if (on < today) return [];
+    tasks = tasks || new Map(state.tasks.map((t) => [t.id, t]));
+    return readyList(e, state).map((r) => {
+      const R = READY[r.k], lead = r.lead != null ? r.lead : R.lead, by = r.by != null ? r.by : R.by;
+      const key = r.k + '@' + on, got = e.prep && e.prep[key];
+      const start = addDays(on, -lead), ideal = addDays(on, -by);
+      const task = got && got !== 'skip' ? tasks.get(got) || null : !got ? readyTask(state, e, r, on, start, others || []) : null;
+      /* a to-do made for it is due by the day it should be done; if that's gone by, before the date */
+      const due = ideal >= today ? ideal : addDays(on, -1) >= today ? addDays(on, -1) : today;
+      /* well past when it should be done (booking a trip that's days away), it's likely handled: gone */
+      const late = READY_LATE[r.k] !== false;
+      const when = task ? (task.done ? 'done' : 'added') : got === 'skip' ? 'skip' : today < start ? 'later' : today <= ideal ? 'now' : !late || diffDays(today, on) < Math.ceil(by / 2) ? 'past' : 'soon';
+      return { k: r.k, key, name: R.name, short: R.short, todo: R.todo.replace('{x}', readyName(e)), icon: R.icon, cat: R.cat, dur: R.dur, lead, by, start, ideal, due, when, task, on };
+    });
+  }
+  /* The dates coming up, each with what to get ready and when. Everything in the days from `from`, and
+     past them (up to farDays) only what needs a head start now or soon (headsUp): Christmas shows
+     up when it's time to think about gifts, not in June. The dates you added in this reset (keep, an id
+     or a list of them) show either way, each once, at its first date. A far date whose to-do is on the
+     list stays, saying so, until it's done. */
+  function lookAhead(state, from, days, today, farDays, keep) {
+    const to = addDays(from, days - 1), farTo = addDays(from, Math.max(days, farDays || 182) - 1);
+    const tasks = new Map(state.tasks.map((t) => [t.id, t]));
+    const keeps = [].concat(keep || []);
+    const out = [];
+    /* the words that name each date, so a to-do for one isn't taken for another's */
+    const named = liveEvents(state).filter((e) => e.kind === 'marker' || e.kind === 'trip' || e.big || e.occasion).map((e) => ({ id: e.id, words: plainWords(readyName(e)) }));
+    const othersOf = (e) => named.filter((x) => x.id !== e.id).reduce((a, x) => a.concat(x.words), []);
+    const push = (e, on, extra) => {
+      const all = readyFor(state, e, on, today, tasks, othersOf(e));
+      const far = on > to, near = (r) => diffDays(today, r.start) <= headsUp(r);
+      const ready = all.filter((r) => r.when !== 'skip' && r.when !== 'past' && (r.when !== 'later' || near(r)) && (!far || (r.when !== 'done' && (r.when !== 'added' || near(r)))));
+      if (far && !ready.length && !(keeps.includes(e.id) && !out.some((x) => x.id === e.id))) return;
+      out.push(Object.assign({ date: on, kind: e.kind, name: e.name, icon: e.icon || (e.kind === 'trip' ? 'plane' : 'star'), id: e.id, holiday: e.holiday || e.readyFrom || null, occasion: !!e.occasion, yearly: !!e.yearly, off: !!e.off, ready, far }, extra || {}));
+    };
+    for (const d of range(from, diffDays(from, farTo) + 1)) {
+      for (const m of markersOn(state, d)) push(m, d);
+      for (const e of timedOn(state, d)) if (e.big || e.occasion) push(e, d, { start: e.start, dur: e.dur });
+    }
+    for (const e of liveEvents(state)) if (e.kind === 'trip' && e.end >= from && e.date <= farTo) push(e, e.date, { end: e.end, shown: e.date < from ? from : e.date });
+    const rank = { trip: 0, marker: 1, timed: 2 };
+    const at = (x) => x.shown || x.date;
+    return out.sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : rank[a.kind] - rank[b.kind]));
+  }
+  /* The events a kept holiday puts on the board: one every year for a date the calendar fixes, and one
+     for each listed date from a week ago on for the rest. A date that already has a day to remember by
+     the same name (a Christmas you added yourself) keeps yours and gets no second one; holidayTwins
+     finds those, so yours can take the holiday's getting ready. */
+  const holNorm = (s) => String(s || '').toLowerCase().replace(/[’']/g, '').replace(/\s*\(us\)$/, '').replace(/ begins$/, '').trim();
+  function holidayDates(h, today) {
+    if (!h.md) return (h.dates || []).filter((d) => d >= addDays(today, -7));
+    const y = +today.slice(0, 4);
+    return [y + '-' + h.md >= today ? y + '-' + h.md : (y + 1) + '-' + h.md];
+  }
+  /* V11: what a holiday gets ready for; with kids at home some get ready for something else (costumes at Halloween) */
+  function holidayReady(state, h) {
+    const kids = !!(state.profile && Array.isArray(state.profile.kids) && state.profile.kids.length);
+    return ((kids && h.kids) || h.ready || []).map((r) => Object.assign({}, r));
+  }
+  function holidayTwins(state, h, today) {
+    const names = [holNorm(h.name), holNorm(h.title)], out = [];
+    for (const d of holidayDates(h, today)) for (const m of markersOn(state, d)) if (!m.holiday && names.includes(holNorm(m.name)) && !out.includes(m)) out.push(m);
+    return out;
+  }
+  function holidayEvents(state, h, today) {
+    const twins = holidayTwins(state, h, today);
+    const dup = (date) => markersOn(state, date).some((m) => twins.includes(m));
+    const base = () => ({ kind: 'marker', name: h.title || h.name, icon: h.icon || 'star', holiday: h.id, ready: holidayReady(state, h) });
+    const out = holidayDates(h, today).filter((d) => !dup(d)).map((d) => Object.assign({ id: 'hol-' + h.id + (h.md ? '' : '-' + d.slice(0, 4)), date: d }, h.md ? { yearly: true } : {}, base()));
+    /* V11: your own Christmas this year that doesn't repeat keeps this year; the holiday covers the next three */
+    if (h.md && !out.length && twins.length && !twins.some((m) => m.yearly)) {
+      const y = +holidayDates(h, today)[0].slice(0, 4);
+      for (let k = 1; k <= 3; k++) out.push(Object.assign({ id: 'hol-' + h.id + '-' + (y + k), date: (y + k) + '-' + h.md }, base()));
+    }
+    return out;
   }
 
   /* A small summary of one date, for the month and year views. */
@@ -1227,6 +1365,15 @@
     return v;
   }
   const MAP_KEYS = ['dates', 'dinners', 'weeks', 'shopping'];
+  /* V11: these merge field by field below the top, so two devices that each change a different one
+     keep both: meals per date and meal, and the profile, settings, and meal book per field. Inside
+     them a list of things with ids (profile.people, mealbook.own) merges by id, and a list of words
+     (settings.holidays, mealbook.hide, profile.kids) as a set: each side's additions stay, and a
+     removal on either side sticks. */
+  /* V11: a number is how many levels merge by field; an object gives each field its own. Settings goes
+     one level, and its switches (modules) one more, so Meals turned off on one device and People on the
+     other both stay off; hours and the move goal still come whole from one side (tests/merge.test.mjs) */
+  const DEEP_KEYS = { meals: 2, profile: 1, settings: { modules: 1 }, mealbook: 1 };
   function mergeBoards(base, mine, theirs) {
     base = base || {}; mine = mine || {}; theirs = theirs || {};
     const clashes = [];
@@ -1236,6 +1383,38 @@
       clashes.push(name);
       return m;
     };
+    const ided = (m, t) => Array.isArray(m) && Array.isArray(t) && [...m, ...t].every((x) => x && typeof x === 'object' && x.id != null);
+    const byId = (b, m, t, name) => {
+      const bm = new Map((Array.isArray(b) ? b : []).map((x) => [x.id, x])), mm = new Map(m.map((x) => [x.id, x])), tm = new Map(t.map((x) => [x.id, x]));
+      const order = m.map((x) => x.id).concat(t.map((x) => x.id).filter((id) => !mm.has(id)));
+      const list = [];
+      for (const id of order) {
+        const v = pick(bm.get(id), mm.get(id), tm.get(id), name + ' ' + id);
+        if (v !== undefined) list.push(v);
+      }
+      return list;
+    };
+    const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+    const words = (v) => Array.isArray(v) && v.every((x) => x == null || typeof x !== 'object');
+    /* top (V11): an object both sides emptied between them stays at the top (settings is never dropped),
+       and goes below it (a day whose meals were each cleared on one device) */
+    const deep = (b, m, t, name, depth, top) => {
+      /* only one side changed it (or both the same way): that side, whole */
+      if (same(m, b)) return t;
+      if (same(t, b) || same(m, t)) return m;
+      const per = !!depth && typeof depth === 'object';
+      if ((per || depth > 0) && [b, m, t].every((v) => v == null || isObj(v))) {
+        const o = {}, sub = new Set([...Object.keys(b || {}), ...Object.keys(m || {}), ...Object.keys(t || {})]);
+        for (const s of sub) { const v = deep((b || {})[s], (m || {})[s], (t || {})[s], name + ' ' + s, per ? depth[s] || 0 : depth - 1, false); if (v !== undefined) o[s] = v; }
+        return Object.keys(o).length || (top && m != null && t != null) ? o : undefined;
+      }
+      if (ided(m, t)) return byId(b, m, t, name);
+      if (words(m) && words(t)) {
+        const was = Array.isArray(b) ? b : [], keep = m.filter((x) => t.includes(x) || !was.includes(x));
+        return keep.concat(t.filter((x) => !keep.includes(x) && !m.includes(x) && !was.includes(x)));
+      }
+      return pick(b, m, t, name);
+    };
     const out = {};
     const keys = new Set([...Object.keys(base), ...Object.keys(mine), ...Object.keys(theirs)]);
     for (const k of keys) {
@@ -1244,21 +1423,43 @@
         const o = {}, sub = new Set([...Object.keys(b || {}), ...Object.keys(m || {}), ...Object.keys(t || {})]);
         for (const s of sub) { const v = pick((b || {})[s], (m || {})[s], (t || {})[s], k + ' ' + s); if (v !== undefined) o[s] = v; }
         out[k] = o;
-      } else if (Array.isArray(m) && Array.isArray(t) && [...m, ...t].every((x) => x && typeof x === 'object' && x.id != null)) {
-        const bm = new Map((Array.isArray(b) ? b : []).map((x) => [x.id, x])), mm = new Map(m.map((x) => [x.id, x])), tm = new Map(t.map((x) => [x.id, x]));
-        const order = m.map((x) => x.id).concat(t.map((x) => x.id).filter((id) => !mm.has(id)));
-        const list = [];
-        for (const id of order) {
-          const v = pick(bm.get(id), mm.get(id), tm.get(id), k + ' ' + id);
-          if (v !== undefined) list.push(v);
-        }
-        out[k] = list;
+      } else if (DEEP_KEYS[k]) {
+        const v = deep(b, m, t, k, DEEP_KEYS[k], true);
+        if (v !== undefined) out[k] = v;
+      } else if (ided(m, t)) {
+        out[k] = byId(b, m, t, k);
       } else {
         const v = pick(b, m, t, k);
         if (v !== undefined) out[k] = v;
       }
     }
+    /* V11: a diet and what it leaves out are one choice: when both devices picked a different diet, mine
+       comes whole, never Everything with the other's list */
+    if (clashes.includes('mealbook diet') && out.mealbook && mine.mealbook) out.mealbook = Object.assign({}, out.mealbook, { out: (mine.mealbook.out || []).slice() });
+    twoPartners(base, mine, theirs, out, clashes);
     return { doc: out, clashes };
+  }
+  /* V11: two devices that each added a first partner keep both. Mine stays the partner, and theirs joins
+     profile.people as a partner too (an id made from the name, so any device merging the same two agrees),
+     with the dinners and meals they were cooking on that device, where the first partner cooks as 'kim' */
+  function twoPartners(base, mine, theirs, out, clashes) {
+    const pb = base.profile || {}, pm = mine.profile || {}, pt = theirs.profile || {};
+    if (pb.partner || !pm.partner || !pt.partner || pm.partner.toLowerCase() === pt.partner.toLowerCase() || !out.profile) return;
+    const people = (out.profile.people || []).slice();
+    let p = people.find((x) => x && x.group === 'partner' && x.name === pt.partner);
+    if (!p) { p = { id: 'pt' + Array.from(pt.partner).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36), name: pt.partner, group: 'partner' }; people.push(p); }
+    out.profile = Object.assign({}, out.profile, { partner: pm.partner, people });
+    const at = clashes.indexOf('profile partner');
+    if (at >= 0) clashes.splice(at, 1);
+    const cook = 'p:' + p.id, theirsOnly = (b, m, t) => same(m, b) && !same(t, b);
+    Object.keys(out.dinners || {}).forEach((d) => {
+      const x = out.dinners[d], at3 = (s) => (s.dinners || {})[d];
+      if (x && x.cook === 'kim' && theirsOnly(at3(base), at3(mine), at3(theirs))) out.dinners[d] = Object.assign({}, x, { cook });
+    });
+    Object.keys(out.meals || {}).forEach((d) => Object.keys(out.meals[d] || {}).forEach((k) => {
+      const x = out.meals[d][k], at3 = (s) => ((s.meals || {})[d] || {})[k];
+      if (x && x.cook === 'kim' && theirsOnly(at3(base), at3(mine), at3(theirs))) out.meals[d] = Object.assign({}, out.meals[d], { [k]: Object.assign({}, x, { cook }) });
+    }));
   }
 
   /* == quick add in plain words == */
@@ -1332,6 +1533,8 @@
     groceries, groceryProgress, dinnerFromItems, upcoming, dayCard,
     nowInfo, blockRecord, previewEndEarly, endEarly, previewExtend, extendBlock, fillIdeas, momentFor, remindersFor, mergeBoards, parseQuick, sameBoard: same
   };
+  /* V11: Look ahead, getting ready, and kept holidays */
+  Object.assign(api, { READY, READY_FOR, readyKeys, readyFor, lookAhead, holidayEvents, holidayTwins, holidayReady });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Model = api;
 })(typeof window !== 'undefined' ? window : globalThis);

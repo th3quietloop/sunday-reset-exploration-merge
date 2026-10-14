@@ -18,7 +18,10 @@
     meals: { name: 'Meals', base: '#3B7F45', ink: '#FFFFFF' },
     home: { name: 'Home', base: '#1F6F87', ink: '#FFFFFF' },
     away: { name: 'Away', base: '#2A4B90', ink: '#FFFFFF' },
-    open: { name: 'Breathing room', base: '#EFE3CA', ink: '#5A4430' }
+    open: { name: 'Breathing room', base: '#EFE3CA', ink: '#5A4430' },
+    /* V11: friends get a rose of their own, so a coffee with a friend never reads as Family (white on it is
+       5.7 to 1). It's in CAT_ORDER only in V11, which adds it (app.js, FEEL) */
+    friends: { name: 'Friends', base: '#A8436F', ink: '#FFFFFF' }
   };
   const CAT_ORDER = ['yours', 'family', 'us', 'work', 'meals', 'home', 'away', 'open', 'sleep'];
 
@@ -239,6 +242,35 @@
     { id: 'make', name: 'Make', icon: 'brush' },
     { id: 'date', name: 'Date', icon: 'heart' }
   ];
+  /* V11: the people in a week, grouped by who they are to you. A board's partner and kids keep their
+     profile fields; anyone else (a second partner, family, friends, someone you're dating) is in
+     profile.people as { id, name, group }. cat is the color their ideas take on the board; pick is
+     the word for one of them when you add someone. */
+  const PEOPLE_GROUPS = [
+    { id: 'partner', name: 'Partner', many: 'Partners', pick: 'Partner', cat: 'us', icon: 'heart' },
+    { id: 'kids', name: 'Kids', many: 'Kids', pick: 'Kid', cat: 'family', icon: 'person' },
+    { id: 'family', name: 'Family', many: 'Family', pick: 'Family', cat: 'family', icon: 'house' },
+    { id: 'friends', name: 'Friends', many: 'Friends', pick: 'Friend', cat: 'friends', icon: 'chat' },
+    /* V11: the group is called what it is, Seeing someone, everywhere (its id stays dating) */
+    { id: 'dating', name: 'Seeing someone', many: 'Seeing someone', pick: 'Seeing someone', cat: 'us', icon: 'cup' }
+  ];
+  /* V11: ideas for each group that come with the app. They aren't kept on the board: an idea you make
+     is (state.ideas, with for set to its group), and an idea without for is a partner's, as before.
+     when: the part of the day it looks for first (morning, day, afternoon, evening, late).
+     meal: an idea that is a dinner sets that night's dinner instead of adding a second one; its value is
+     how the dinner happens (out, home), or '' when that's still open. */
+  const PEOPLE_IDEAS = [
+    ['p-evening', 'An evening together', 'partner', 120, 'heart', 'date', 'evening'],
+    ['k-games', 'A board game', 'kids', 45, 'tiles', '', 'afternoon'], ['k-fort', 'Build a fort', 'kids', 60, 'house', '', 'afternoon'], ['k-bake', 'Bake something', 'kids', 60, 'pot', '', 'afternoon'],
+    ['k-park', 'The park', 'kids', 60, 'sun', '', 'day'], ['k-read', 'Read together', 'kids', 30, 'book', '', 'evening'], ['k-art', 'Draw or paint', 'kids', 45, 'brush', '', 'afternoon'],
+    ['k-walk', 'A walk or a bike ride', 'kids', 45, 'shoe', '', 'day'], ['k-movie', 'Movie night', 'kids', 120, 'film', '', 'evening'],
+    ['f-call', 'Call home', 'family', 30, 'handset', '', 'afternoon'], ['f-dinner', 'Dinner together', 'family', 90, 'fork', '', 'evening', ''], ['f-visit', 'A visit', 'family', 120, 'house', '', 'day'],
+    ['f-video', 'A video call', 'family', 30, 'phone', '', 'afternoon'], ['f-photos', 'Look through old photos', 'family', 45, 'book', '', 'afternoon'], ['f-walk', 'A walk together', 'family', 45, 'shoe', '', 'day'],
+    ['fr-coffee', 'Coffee', 'friends', 60, 'cup', '', 'morning'], ['fr-games', 'Game night', 'friends', 120, 'tiles', '', 'evening'], ['fr-walk', 'A walk and a talk', 'friends', 45, 'shoe', '', 'day'],
+    ['fr-dinner', 'Dinner out', 'friends', 90, 'fork', '', 'evening', 'out'], ['fr-call', 'Catch up on the phone', 'friends', 30, 'handset', '', 'afternoon'], ['fr-movie', 'A movie', 'friends', 120, 'film', '', 'evening'],
+    ['d-coffee', 'Coffee', 'dating', 45, 'cup', '', 'morning'], ['d-walk', 'A walk somewhere new', 'dating', 60, 'shoe', '', 'day'], ['d-dinner', 'Dinner out', 'dating', 90, 'fork', '', 'evening', 'out'],
+    ['d-show', 'A show or a movie', 'dating', 120, 'film', '', 'evening'], ['d-cook', 'Cook together', 'dating', 90, 'pot', '', 'evening', 'home'], ['d-call', 'A long call', 'dating', 45, 'handset', '', 'evening']
+  ].map(([id, name, group, dur, icon, kind, when, meal]) => Object.assign({ id, name, for: group, dur, icon, kind: kind || '', when: when || '', builtin: true }, meal != null ? { meal } : {}));
 
   /* Blocks you can drop anywhere. */
   const PALETTE = [
@@ -260,7 +292,7 @@
   const KIT_ROWS = [
     { name: 'Move', ids: ['workout', 'run', 'walk', 'stretch', 'nap'] },
     { name: 'Make', ids: ['creative', 'project', 'reading', 'scroll', 'winddown'] },
-    { name: 'People', ids: ['call-loved', 'coffee-friend', 'texts', 'call'] },
+    { name: 'Keep in touch', ids: ['call-loved', 'coffee-friend', 'texts', 'call'] },
     { name: 'Home and meals', ids: ['lunch', 'groceries', 'cookahead', 'laundry', 'clean', 'errand'] },
     { name: 'Work', ids: ['deep', 'meeting', 'study', 'room'] }
   ];
@@ -272,7 +304,7 @@
     { id: 'creative', name: 'Creative', icon: 'brush', line: 'Two long creative stretches and a walk', items: [{ p: 'creative', dur: 120, when: 'morning' }, { p: 'walk', dur: 30, when: 'afternoon' }, { p: 'creative', dur: 90, when: 'afternoon' }, { p: 'reading', dur: 45, when: 'evening' }] },
     { id: 'workout', name: 'Workout', icon: 'dumbbell', line: 'Train, stretch, cook ahead, and a walk', items: [{ p: 'workout', dur: 60, when: 'morning' }, { p: 'stretch', dur: 15, when: 'morning' }, { p: 'cookahead', dur: 60, when: 'afternoon' }, { p: 'walk', dur: 45, when: 'evening' }] },
     { id: 'rest', name: 'Rest', icon: 'moon', line: 'A slow walk, a nap, reading, and winding down', items: [{ p: 'walk', dur: 30, when: 'morning' }, { p: 'nap', dur: 45, when: 'afternoon' }, { p: 'reading', dur: 60, when: 'afternoon' }, { p: 'winddown', dur: 30, when: 'evening' }] },
-    { id: 'people', name: 'People', icon: 'people', line: 'Coffee with a friend, a call, and texts back', items: [{ p: 'coffee-friend', dur: 60, when: 'morning' }, { p: 'call-loved', dur: 30, when: 'afternoon' }, { p: 'texts', dur: 15, when: 'evening' }] },
+    { id: 'people', name: 'Keep in touch', icon: 'people', line: 'Coffee with a friend, a call, and texts back', items: [{ p: 'coffee-friend', dur: 60, when: 'morning' }, { p: 'call-loved', dur: 30, when: 'afternoon' }, { p: 'texts', dur: 15, when: 'evening' }] },
     { id: 'focus', name: 'Focus', icon: 'book', line: 'Two deep work blocks inside Work', items: [{ p: 'deep', dur: 120, when: 'morning', work: true }, { p: 'deep', dur: 90, when: 'afternoon', work: true }, { p: 'walk', dur: 30, when: 'afternoon' }] },
     { id: 'empty', name: 'Blank slate', icon: 'broom', line: 'Only locked blocks stay', empty: true },
     { id: 'easy', name: 'Take it easy', icon: 'leaf', line: 'Locked blocks and meals stay. To dos wait for another day', easy: true }
@@ -295,28 +327,57 @@
   ];
   const BREAKDOWN_ANY = [S('Decide the first small step', 10), S('Do the first step', 25), S('Finish up', 20)];
 
-  /* The Sunday Reset, one job per step. */
+  /* The Sunday Reset, one job per step. V11's own words for a step are in its feel field: every version
+     shares this list, and only V11 plans every meal and every person, so only V11 takes them (app.js, FEEL). */
   const STEPS = [
     { key: 'back', title: 'Look back', zoom: 'week', line: 'Here’s last week. Keep one thing, change one thing.' },
-    { key: 'ahead', title: 'Look ahead', zoom: 'month', line: 'The next five weeks. Anything coming that needs a block now?' },
+    { key: 'ahead', title: 'Look ahead', zoom: 'month', line: 'The next five weeks. Anything coming that needs a block now?', feel: { line: 'What’s coming, and when to start getting ready.' } },
     { key: 'shape', title: 'Set the week', zoom: 'week', line: 'How does this week look?' },
     { key: 'yours', title: 'Your time', zoom: 'week', tab: 'blocks', line: 'Put your own time on the week first, where it fits.' },
-    { key: 'todo', title: 'To do', zoom: 'week', tab: 'todo', line: 'Give the things due soon a time this week: drag one onto a day, or tap it.' },
-    { key: 'dinners', title: 'Dinners', zoom: 'week', tab: 'dinners', line: 'Pick dinners and who’s cooking. The grocery list fills in as you go.' },
-    { key: 'kim', title: 'You and {partner}', zoom: 'week', tab: 'kim', line: 'Pick one thing to bring to {partner} this week.' },
+    { key: 'todo', title: 'To do', zoom: 'week', tab: 'todo', line: 'Give the things due soon a time this week: drag one onto a day, or tap it.', feel: { title: 'To-dos' } },
+    { key: 'dinners', title: 'Dinners', zoom: 'week', tab: 'dinners', line: 'Pick dinners and who’s cooking. The grocery list fills in as you go.', feel: { title: 'Meals', line: 'Plan the week’s meals. The grocery list fills in as you go.' } },
+    { key: 'kim', title: 'You and {partner}', zoom: 'week', tab: 'kim', line: 'Pick one thing to bring to {partner} this week.', feel: { title: 'People', line: 'Time with the people in your week.' } },
     { key: 'done', title: 'Your week', zoom: 'week', line: 'Here’s what you set up.' }
   ];
+  /* V11: the Moving step. It isn't in STEPS, so versions that list STEPS themselves never show it;
+     a version that has it puts it after the meals step (app.js, under FEEL), and it shows when the setup
+     leaned toward moving more or a goal is set in Settings (useMove in app.js). */
+  const MOVE_STEP = { key: 'move', title: 'Moving', zoom: 'week', tab: 'blocks', line: 'Your workouts, runs, and walks for the week, and a goal if you want one.' };
 
   /* The Sunday templates as first shipped, so an update can tell whether Sunday was changed by hand. */
   const SUNDAY_V1 = { wake: h(5, 30), bed: h(22), blocks: [B('up', 'Up with Elijah', 'family', 'bottle', h(5, 30), h(8, 30)), B('ready', 'Get ready', 'family', 'shirt', h(8, 30), h(10)), B('church', 'Church', 'family', 'church', h(10), h(12), FIXED), B('lunch', 'Lunch, pack them up', 'family', 'fork', h(12), h(14)), B('reset', 'Sunday Reset', 'yours', 'calendar', h(14), h(14, 45)), B('workout', 'Workout', 'yours', 'dumbbell', h(14, 45), h(15, 45)), B('creative', 'Creative projects', 'yours', 'brush', h(15, 45), h(18), SOFT), B('dinner', 'Dinner', 'meals', 'pot', h(18), h(18, 45), { dinner: true }), B('evening', 'Free evening', 'yours', 'moon', h(18, 45), h(22), SOFT)] };
   const SUNDAY_HOME_V1 = { wake: h(5, 30), bed: h(22), blocks: [B('up', 'Up with Elijah', 'family', 'bottle', h(5, 30), h(8, 30)), B('ready', 'Get ready', 'family', 'shirt', h(8, 30), h(10)), B('church', 'Church', 'family', 'church', h(10), h(12), FIXED), B('lunch', 'Lunch', 'family', 'fork', h(12), h(13)), B('reset', 'Sunday Reset', 'yours', 'calendar', h(13), h(13, 45)), B('afternoon', 'Family afternoon', 'family', 'heart', h(13, 45), h(17), SOFT), B('walk', 'Walk, bath, feed', 'family', 'shoe', h(17), h(19)), B('bedtime', 'Bedtime', 'family', 'moon', h(19), h(19, 45)), B('dinner', 'Dinner', 'meals', 'pot', h(19, 45), h(20, 30), { dinner: true }), B('evening', 'Evening with Kim', 'us', 'heart', h(20, 30), h(22), SOFT)] };
   const stable = (v) => Array.isArray(v) ? '[' + v.map(stable).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v);
+  /* V11: saved data. VERSION stays 7 because every field V11 added is optional, read with a default,
+     and left alone by code that doesn't know it: V11's migrate keeps them (tests/saved-data.test.mjs),
+     and so does V10's, run as it shipped, so V10 opens a V11 board and saves it back whole
+     (tests/older-build.test.mjs). The fields: profile.people ({ id, name, group, home }),
+     profile.partnerId (the id a partner had before stepping up to the first place), settings.move
+     ({ on, n, unit }), settings.holidays (holiday ids), settings.modules.people, an event's holiday,
+     ready, readyFrom, and prep, dinners[date].with and .parts, a cook stored as 'p:' and a person's id,
+     ideas[].for and .who, meals[date].breakfast and .lunch, and mealbook.
+     How an older build shows them: a dinner cooked by 'p:' is planned and its groceries count, but its
+     panel shows no cook and no way picked; a Friends block takes the older build's fallback color and its
+     panel says You and the partner; People, Moving, holidays, and the meal book don't show.
+     Breakfast and lunch: V7 to V10 kept them on the device only ('sundayreset.v7.meals'). V11 moves them
+     onto the board with its first meal change and leaves the device copy as it was, so an older build
+     still shows them as they were then; what V11 changes later doesn't reach it, and what an older build
+     changes later moves over on V11's next meal change (variant.js, moveOldMeals).
+     Merging: Model.mergeBoards merges meals per date and meal, the profile and meal book per field,
+     settings per field with its switches (modules) one by one, a diet together with what it leaves out,
+     and two first partners as two partners (tests/merge.test.mjs). An older build's mergeBoards keeps the
+     profile, meals, and meal book whole, so in a household with one device on V10, a V10 merge can still
+     drop a person or a meal added on the other device in the same moment.
+     Meals stay in the store's app/core document: an older build writes each month's document with only
+     dates and dinners, so meals kept there would be lost. With parts, a year of breakfasts and lunches is
+     about 100 KB of core. */
   const VERSION = 7;
   /* Who the board belongs to. Names in the app's own words (tabs, buttons, lines) come from here,
      never from code. Russell's board keeps Kim, Elijah, and Kim's cookbook. */
   const RUSSELL = { name: 'Russell', partner: 'Kim', kids: ['Elijah'], cookbook: 'https://truffle-recipes.vercel.app' };
   /* ideas that only make sense in Russell's house, left out of a new person's board */
-  const PERSONAL_IDEAS = ['first-bday', 'her-movie', 'photobook'];
+  /* V11: and one that assumes a holiday (the Christmas decorations) */
+  const PERSONAL_IDEAS = ['first-bday', 'her-movie', 'photobook', 'decor-plan'];
   /* Bring a saved board up to date. Sunday gets church at 9 unless it was changed by hand;
      new blocks join the palette; saved day recipes get a home. */
   function migrate(st) {
@@ -490,11 +551,15 @@
     const st = defaultState(today);
     st.rhythm = { days, shapes: {} };
     st.events = []; st.dates = {}; st.tasks = []; st.meetings = [];
-    st.groups = [copy(INBOX)].concat(GROUPS.filter((g) => g.id === 'home' || g.id === 'bills').map(copy), [{ id: 'people', name: 'People', icon: 'heart' }]);
+    st.groups = [copy(INBOX)].concat(GROUPS.filter((g) => g.id === 'home' || g.id === 'bills').map(copy), [{ id: 'people', name: 'Friends and family', icon: 'heart' }]);
     st.ideas = st.ideas.filter((i) => !PERSONAL_IDEAS.includes(i.id));
     st.profile = { name: a.name || '', partner: a.partner || '', kids, cookbook: '' };
     const help = a.help || {};
     st.settings = Object.assign({}, st.settings, { modules: { dinners: help.dinners !== false, together: !!a.partner && help.together !== false } });
+    /* V11: People is for anyone, partner or not, unless the setup turned it off (help.people); a setup
+       that leaned toward moving more turns on the Moving step */
+    if (help.people != null || help.together === false) st.settings.modules.people = help.people != null ? help.people !== false : false;
+    if ((a.focus || []).includes('move')) st.settings.move = { on: true };
     let tz = '';
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { tz = ''; }
     if (tz) st.settings.tz = tz;
@@ -541,7 +606,37 @@
     return st;
   }
 
-  const api = { h, CATS, CAT_ORDER, SHAPES, PANTRY_KINDS, COOKS, DINNER_HOW, ORDER_FROM, IDEA_KINDS, BREAKDOWNS, BREAKDOWN_ANY, STEPS, PRESETS, KIT_ROWS, PALETTE_IDS, VERSION, RUSSELL, INBOX, defaultState, buildState, sampleState, careList, migrate };
+  const api = { h, CATS, CAT_ORDER, SHAPES, PANTRY_KINDS, COOKS, DINNER_HOW, ORDER_FROM, IDEA_KINDS, PEOPLE_GROUPS, PEOPLE_IDEAS, BREAKDOWNS, BREAKDOWN_ANY, STEPS, MOVE_STEP, PRESETS, KIT_ROWS, PALETTE_IDS, VERSION, RUSSELL, INBOX, defaultState, buildState, sampleState, careList, migrate };
+  /* == V11: holidays a board can keep ==
+     None is assumed. Each stays off until someone turns it on (Look ahead offers the list once, and
+     Settings, Calendars, keeps it). One that's on goes on the board as a day to remember, with what to
+     get ready and when (Model.READY). A date the calendar fixes (md) comes every year; the rest follow
+     the moon or a rule, so each lists its dates for 2026 to 2028. Dates that follow the moon (moon) can
+     move a day where you live. Jewish holidays begin at sundown, so theirs is the evening they begin.
+     kids is what it gets ready for instead when there are kids at home (Model.holidayReady). */
+  const HOLIDAYS = [
+    { id: 'lunar', name: 'Lunar New Year', icon: 'star', moon: true, dates: ['2026-02-17', '2027-02-06', '2028-01-26'], ready: [{ k: 'plans', lead: 21, by: 3 }] },
+    { id: 'valentine', name: 'Valentine’s Day', icon: 'heart', md: '02-14', ready: [{ k: 'plans', lead: 21, by: 7 }] },
+    { id: 'ramadan', name: 'Ramadan', title: 'Ramadan begins', icon: 'moon', moon: true, dates: ['2026-02-18', '2027-02-08', '2028-01-28'], ready: [{ k: 'plans', lead: 14, by: 2 }] },
+    { id: 'holi', name: 'Holi', icon: 'brush', moon: true, dates: ['2026-03-04', '2027-03-22', '2028-03-11'], ready: [{ k: 'plans', lead: 14, by: 2 }] },
+    { id: 'eidfitr', name: 'Eid al-Fitr', icon: 'moon', moon: true, dates: ['2026-03-20', '2027-03-09', '2028-02-26'], ready: [{ k: 'gifts', lead: 28, by: 3 }] },
+    { id: 'passover', name: 'Passover', title: 'Passover begins', icon: 'pot', dates: ['2026-04-01', '2027-04-21', '2028-04-10'], ready: [{ k: 'plans', lead: 21, by: 3 }] },
+    { id: 'easter', name: 'Easter', icon: 'leaf', dates: ['2026-04-05', '2027-03-28', '2028-04-16'], ready: [{ k: 'plans', lead: 14, by: 2 }] },
+    { id: 'orthodox', name: 'Orthodox Easter', icon: 'leaf', dates: ['2026-04-12', '2027-05-02', '2028-04-16'], ready: [{ k: 'plans', lead: 14, by: 2 }] },
+    { id: 'mother', name: 'Mother’s Day (US)', title: 'Mother’s Day', icon: 'gift', dates: ['2026-05-10', '2027-05-09', '2028-05-14'], ready: [{ k: 'gift', lead: 21, by: 4 }] },
+    { id: 'eidadha', name: 'Eid al-Adha', icon: 'moon', moon: true, dates: ['2026-05-27', '2027-05-16', '2028-05-05'], ready: [{ k: 'plans', lead: 21, by: 3 }] },
+    { id: 'father', name: 'Father’s Day (US)', title: 'Father’s Day', icon: 'gift', dates: ['2026-06-21', '2027-06-20', '2028-06-18'], ready: [{ k: 'gift', lead: 21, by: 4 }] },
+    { id: 'rosh', name: 'Rosh Hashanah', title: 'Rosh Hashanah begins', icon: 'star', dates: ['2026-09-11', '2027-10-01', '2028-09-20'], ready: [{ k: 'plans', lead: 21, by: 3 }] },
+    { id: 'midautumn', name: 'Mid-Autumn Festival', icon: 'moon', moon: true, dates: ['2026-09-25', '2027-09-15', '2028-10-03'], ready: [{ k: 'plans', lead: 14, by: 2 }] },
+    { id: 'diwali', name: 'Diwali', icon: 'sun', moon: true, dates: ['2026-11-08', '2027-10-29', '2028-10-17'], ready: [{ k: 'gifts', lead: 28, by: 3 }] },
+    { id: 'halloween', name: 'Halloween', icon: 'moon', md: '10-31', ready: [{ k: 'plans', lead: 21, by: 5 }], kids: [{ k: 'costume', lead: 28, by: 5 }] },
+    { id: 'thanksgiving', name: 'Thanksgiving (US)', title: 'Thanksgiving', icon: 'pot', dates: ['2026-11-26', '2027-11-25', '2028-11-23'], ready: [{ k: 'plans', lead: 42, by: 14 }] },
+    { id: 'hanukkah', name: 'Hanukkah', title: 'Hanukkah begins', icon: 'star', dates: ['2026-12-04', '2027-12-24', '2028-12-12'], ready: [{ k: 'gifts', lead: 42, by: 7 }] },
+    { id: 'christmas', name: 'Christmas', icon: 'fir', md: '12-25', ready: [{ k: 'gifts', lead: 56, by: 10 }] },
+    { id: 'kwanzaa', name: 'Kwanzaa', title: 'Kwanzaa begins', icon: 'star', md: '12-26', ready: [{ k: 'plans', lead: 21, by: 3 }] },
+    { id: 'nye', name: 'New Year’s Eve', icon: 'star', md: '12-31', ready: [{ k: 'plans', lead: 21, by: 7 }] }
+  ];
+  api.HOLIDAYS = HOLIDAYS;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Data = api;
 })(typeof window !== 'undefined' ? window : globalThis);

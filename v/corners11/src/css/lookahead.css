@@ -1,0 +1,137 @@
+/* == V11: the reset's Look ahead step (aheadBody in board/src/app.js) and adding a date ==
+   The coming weeks, each under a quiet heading; each date a card with its day, what it is, and when to
+   start getting ready; further out, only what needs a head start; overlaps, each once, in one quiet
+   card; the holidays you keep; four ways to add a date; one line about what's due. Spacing on 4 px steps, words at 12 px or more on the surface
+   tokens, targets 44 px, and nothing gold but the step's Next. */
+body.c-resetting .rack.resetting .rack-body > .c-ah { flex: 1 1 100%; min-width: 0; width: 100%; }
+.c-ah { display: flex; flex-direction: column; gap: 24px; padding-bottom: 8px; }
+.c-ah-wk, .c-ah-addsec, .c-ah-hol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* a week's heading: when, in words, then its days */
+.c-ah-wkh { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0; padding: 0 4px; font: 600 12px/16px var(--k-font, var(--font)); }
+.c-ah-wkh b { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-2); }
+.c-ah-wkh span { color: var(--tx-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* a week with nothing in it is its heading alone, and empty weeks in a row sit closer */
+.c-ah-wk.empty + .c-ah-wk.empty { margin-top: -12px; }
+/* nothing at all in five weeks: one calm card, with the ways to add right under it */
+.c-ah-empty { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-ah-empty b { font: 600 16px/22px var(--name); color: var(--tx); }
+.c-ah-empty p { margin: 0; font: 400 14px/20px var(--k-font, var(--font)); color: var(--tx-2); }
+
+/* a date: its day on the left, what it is beside it, and what to get ready under that */
+.c-ah-card { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 12px; padding: 12px 12px 12px 8px; border-radius: 16px; background: var(--sf-raised); }
+.c-ah-card.fresh { animation: c-ah-fresh 0.25s ease-out both; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.32); }
+@keyframes c-ah-fresh { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.c-ah-date { display: flex; flex-direction: column; align-items: center; padding-top: 4px; }
+.c-ah-date span { font: 600 12px/16px var(--k-font, var(--font)); letter-spacing: 0.06em; text-transform: uppercase; color: var(--tx-3); }
+.c-ah-date b { font: 700 22px/26px var(--name); color: var(--tx); font-variant-numeric: tabular-nums; }
+.c-ah-date small { font: 400 12px/16px var(--k-font, var(--font)); color: var(--tx-3); font-variant-numeric: tabular-nums; }
+.c-ah-main { min-width: 0; display: flex; flex-direction: column; }
+.rack .c-ah-name, .c-ah-name { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-height: 44px; margin: 0; padding: 4px 8px; border: 0; border-radius: 10px; background: transparent; color: var(--tx); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out; }
+.rack .c-ah-name:hover, .c-ah-name:hover { background: var(--sf-hover); }
+.rack .c-ah-name:active { transform: translateY(1px); }
+.rack .c-ah-name:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+/* a long name wraps instead of losing its end */
+.c-ah-nl { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.c-ah-nl canvas { flex: none; width: 16px !important; height: 16px !important; margin-top: 3px; }
+.c-ah-nm { min-width: 0; font: 600 16px/22px var(--name); color: var(--tx); overflow-wrap: anywhere; }
+.c-ah-meta { padding-left: 24px; font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-2); }
+
+/* overlaps: one quiet card after the dates, each pair once, and a way to see them all */
+.c-ah-clashes { display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 12px; border-radius: 16px; background: var(--sf-raised); }
+.c-ah-cl { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; margin: 0; }
+.c-ah-cl canvas { width: 16px !important; height: 16px !important; margin-top: 2px; }
+.c-ah-cl > span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.c-ah-cl b { font: 600 14px/20px var(--k-font, var(--font)); color: var(--tx); overflow-wrap: anywhere; }
+.c-ah-cl span span { font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-2); }
+.c-ah-clashes > .c-ah-btn { align-self: flex-start; margin-left: 8px; }
+
+/* getting ready: what, when, and a tap to put it on your to-dos */
+.c-ah-prep { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; margin: 8px 0 0 8px; padding-top: 12px; border-top: 1px solid var(--sf-edge); }
+.c-ah-prep canvas { width: 16px !important; height: 16px !important; margin-top: 2px; }
+.c-ah-pw { margin: 0; font: 400 14px/20px var(--k-font, var(--font)); color: var(--tx-2); }
+.c-ah-pw b { margin-right: 8px; font-weight: 600; color: var(--tx); }
+.c-ah-acts { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 8px; }
+/* the buttons read small and are 44 px to a finger: their reach runs 4 px past each edge */
+.rack .c-ah-btn, .c-ah-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font, var(--font)); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.c-ah-btn::after { content: ''; position: absolute; inset: -4px; }
+.rack .c-ah-btn:hover, .c-ah-btn:hover { background: var(--sf-press); }
+.rack .c-ah-btn.quiet, .c-ah-btn.quiet { background: transparent; color: var(--tx-2); }
+.rack .c-ah-btn.quiet:hover, .c-ah-btn.quiet:hover { background: var(--sf-hover); color: var(--tx); }
+.rack .c-ah-btn:active, .c-ah-btn:active { transform: translateY(1px); }
+.rack .c-ah-btn:focus-visible, .c-ah-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ah-added .c-ah-pw b, .c-ah-done .c-ah-pw b { color: var(--tx-2); }
+/* once it's on your to-dos, Open sits on the same line */
+.c-ah-prep.c-ah-added { grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; }
+.c-ah-added .c-ah-acts { grid-column: 3; margin: 0; }
+.c-ah-added canvas { margin-top: 0; }
+
+/* the holidays you keep: asked once, then one line with Change */
+.c-ah-hol { padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-ah-hol .c-ah-wkh { padding: 0; }
+.c-ah-hol .c-ah-wkh b { font: 600 16px/22px var(--name); letter-spacing: 0; text-transform: none; color: var(--tx); }
+.c-ah-line, .c-ah-holrow p { margin: 0; font: 400 14px/20px var(--k-font, var(--font)); color: var(--tx-2); }
+.c-ah-hol .c-ah-acts { margin-top: 4px; }
+.c-ah-holrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.c-ah-hol.open > .c-ah-btn { align-self: flex-start; margin-top: 4px; }
+.c-hol-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.c-hol { display: grid; grid-template-columns: 16px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 8px; align-items: center; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.c-hol canvas { grid-row: 1 / 3; width: 16px !important; height: 16px !important; }
+/* a name takes two lines on a phone rather than losing its end */
+.c-hol b { font: 600 14px/18px var(--k-font, var(--font)); overflow-wrap: anywhere; }
+.c-hol small { font: 400 12px/16px var(--k-font, var(--font)); color: var(--tx-3); }
+.c-hol:hover { background: var(--sf-hover); }
+.c-hol:active { transform: translateY(1px); }
+.c-hol:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-hol[aria-pressed="true"] { background: #FFFFFF; box-shadow: none; color: var(--sf-ink); }
+.c-hol[aria-pressed="true"] small { color: #4A4A4E; }
+.c-hol-note { margin: 4px 0 0; font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-3); }
+.drawer .c-hol-grid { margin-top: 12px; }
+
+/* adding a date: the kind first, four tiles */
+.c-ah-kinds, .c-evkinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rack .c-ah-kind, .c-ah-kind, .side .c-evkind, .c-evkind { display: grid; grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px; align-items: center; min-height: 64px; padding: 12px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.c-ah-kind canvas, .c-evkind canvas { grid-row: 1; width: 20px !important; height: 20px !important; }
+.c-ah-kind b, .c-evkind b { font: 600 14px/20px var(--k-font, var(--font)); }
+.c-ah-kind span, .c-evkind span { grid-column: 1 / 3; font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-2); }
+.rack .c-ah-kind:hover, .c-ah-kind:hover, .side .c-evkind:hover, .c-evkind:hover { background: var(--sf-hover); }
+.c-ah-kind:active, .c-evkind:active { transform: translateY(1px); }
+.c-ah-kind:focus-visible, .c-evkind:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.side .c-evkind[aria-pressed="true"], .c-evkind[aria-pressed="true"] { background: #FFFFFF; box-shadow: none; color: var(--sf-ink); }
+.c-evkind[aria-pressed="true"] span { color: #4A4A4E; }
+/* once a kind is picked, the four tiles shrink to their names, so the fields lead */
+.c-evkinds.picked .c-evkind { min-height: 44px; padding: 8px 12px; }
+.c-evkinds.picked .c-evkind span { display: none; }
+
+/* Add it is a full 44 px to a finger */
+.side .c-ev-add, .c-ev-add { min-height: 44px; padding: 0 20px; }
+/* V11: on a phone in the reset, a date's panel takes the whole screen while it's open, as every panel
+   opened from a step does (app.js layoutInsets, body.c-sheet-aside) */
+
+/* what to get ready: toggles that say when they start */
+.c-ready { display: flex; flex-direction: column; gap: 8px; }
+.side .c-ready-opt, .c-ready-opt { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 8px; align-items: center; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.c-ready-opt canvas { width: 16px !important; height: 16px !important; }
+.c-ready-opt b { font: 600 14px/20px var(--k-font, var(--font)); }
+.c-ready-opt small { font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-3); white-space: nowrap; }
+.c-ready-opt:hover { background: var(--sf-hover); }
+.c-ready-opt:active { transform: translateY(1px); }
+.c-ready-opt:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.side .c-ready-opt[aria-pressed="true"], .c-ready-opt[aria-pressed="true"] { background: #FFFFFF; box-shadow: none; color: var(--sf-ink); }
+.c-ready-opt[aria-pressed="true"] small { color: #4A4A4E; }
+
+/* what's due: one line, pointing at the step that gives it a time */
+.c-ah-due { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; align-items: start; margin: 0; padding: 0 4px; font: 400 14px/20px var(--k-font, var(--font)); color: var(--tx-2); }
+.c-ah-due canvas { width: 16px !important; height: 16px !important; margin-top: 2px; }
+.c-ah-due b { color: var(--tx); font-weight: 600; }
+.c-ah-due .c-nowrap { white-space: nowrap; }
+
+/* the day on the month, ringed while you point at its date */
+.c-ah-ring { position: fixed; z-index: 30; pointer-events: none; border-radius: 12px; box-shadow: 0 0 0 2.5px #FFFFFF, 0 6px 18px rgba(0, 0, 0, 0.3); animation: c-ah-ring 0.16s ease-out both; }
+@keyframes c-ah-ring { from { opacity: 0; } to { opacity: 1; } }
+
+body.calm .c-ah-card.fresh, body.calm .c-ah-ring, .c-ah-card.fresh.still, .c-ah-ring.still { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .c-ah-card.fresh, .c-ah-ring { animation: none; }
+  .c-ah-name, .c-ah-btn, .c-hol, .c-ah-kind, .c-evkind, .c-ready-opt { transition: none; }
+}

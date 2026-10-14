@@ -260,8 +260,10 @@
       if (two) cand.push({ k: 'icon2', s: size2(iconRoom, H * 0.24), bonus: 1.06 });
     }
     /* stacked: the name with its time printed under it, preferred on the day board whenever it fits */
+    /* V11: a block marked done carries its check (the mark beside the name) from a shorter width */
+    const doneMark = FEEL && sp.done;
     if (sp.stack && sp.sub && W > H * 0.95) {
-      const withIcon = W > H * 2.1, room = withIcon ? iconRoom : W - 2 * pad;
+      const withIcon = W > H * (doneMark ? 1.3 : 2.1), room = withIcon ? iconRoom : W - 2 * pad;
       const ns = sizeFor(g, label, room, H * 0.25);
       const subS = Math.min(H * 0.19, sizeFor(g, sp.sub, room, H * 0.19, 700, true));
       if (subS >= Math.max(14, minS) && ns >= H * 0.14) cand.push({ k: withIcon ? 'stackI' : 'stack', s: ns, subS, bonus: 1.5 });
@@ -277,9 +279,11 @@
         const sf = wrapFit(g, sp.sub, room, Math.min(nm.s * 0.74, H * 0.16), 2, 700, true);
         if (sf.s >= Math.max(13, minS)) sub = sf;
       }
-      const tall = (s) => nm.lines.length * nm.s * 1.08 + (s ? H * 0.05 + s.lines.length * s.s * 1.18 : 0);
+      /* V11: done, the check sits over the name, a line of its own */
+      const ck = doneMark ? nm.s * 1.0 : 0;
+      const tall = (s) => ck + nm.lines.length * nm.s * 1.08 + (s ? H * 0.05 + s.lines.length * s.s * 1.18 : 0);
       if (sub && tall(sub) > H - 2 * pad) sub = null;
-      if (tall(null) <= H - 2 * pad) cand.push({ k: 'wrap', s: nm.s, nm, sub, bonus: sub ? 1.04 : 1 });
+      if (tall(null) <= H - 2 * pad) cand.push({ k: 'wrap', s: nm.s, nm, sub, ck, bonus: sub ? 1.04 : 1 });
     }
     if (W < H * 0.9) {
       cand.push({ k: 'vert1', s: Math.min(sizeFor(g, label, H * 0.88, H * 0.3), W * 0.62), bonus: 0.92 });
@@ -291,6 +295,11 @@
         if (W > 8) Icons.draw(g, icon, W / 2, H / 2, Math.min(W * 0.6, H * 0.36), sp.ink);
         return keep(key, cv);
       }
+    }
+    /* V11: a block marked done takes a layout that shows its check whenever one fits */
+    if (doneMark) {
+      const marked = cand.filter((c) => c.k === 'icon1' || c.k === 'icon2' || c.k === 'stackI' || c.k === 'wrap');
+      if (marked.length) cand.splice(0, cand.length, ...marked);
     }
     cand.sort((x, y) => y.s * y.bonus - x.s * x.bonus);
     let best = cand[0];
@@ -322,9 +331,10 @@
         setFont(g, best.subS, 700, true);
         g.fillText(sp.sub, x0, H * 0.72);
       } else if (best.k === 'wrap') {
-        const nm = best.nm, sb = best.sub;
-        const total = nm.lines.length * nm.s * 1.08 + (sb ? H * 0.05 + sb.lines.length * sb.s * 1.18 : 0);
+        const nm = best.nm, sb = best.sub, ck = best.ck || 0;
+        const total = ck + nm.lines.length * nm.s * 1.08 + (sb ? H * 0.05 + sb.lines.length * sb.s * 1.18 : 0);
         let y = (H - total) / 2;
+        if (ck) { Icons.draw(g, 'check', W / 2, y + ck * 0.45, ck * 0.8, sp.ink); y += ck; }
         g.textAlign = 'center';
         setFont(g, nm.s, 800);
         nm.lines.forEach((t) => { g.fillText(t, W / 2, y + nm.s * 0.56); y += nm.s * 1.08; });
@@ -405,7 +415,8 @@
   /* colors and height for a block, from its kind of time */
   const cats = () => (deskTheme && deskTheme.blocks) || Data.CATS;
   function look(b) {
-    const C = cats(), cat = C[b.cat] || C.yours;
+    /* V11: a kind of time a theme's own palette doesn't have yet (Friends) keeps its own color */
+    const C = cats(), cat = C[b.cat] || (FEEL && Data.CATS[b.cat]) || C.yours;
     let base = cat.base, ink = cat.ink, h = H_HARD;
     if (b.sleep) { h = H_SLEEP; }
     else if (b.soft) { base = mix(cat.base, b.cat === 'work' ? '#EAF2FA' : '#FFFAF2', b.cat === 'work' ? 0.42 : 0.5); h = H_SOFT; ink = pickInk(base, cat.base); }
@@ -416,7 +427,9 @@
   }
 
   let focusFn = null, dimMat = null;
-  function setFocus(fn) { focusFn = typeof fn === 'function' ? fn : null; if (!dimMat) dimMat = lam('#A9845C'); }
+  /* V11: the dimmed wood is a touch lighter, so its printed name passes 4.5 to 1 (#3A2A16 on #B8946A, 4.91) */
+  const DIM_INK = '#3A2A16';
+  function setFocus(fn) { focusFn = typeof fn === 'function' ? fn : null; if (!dimMat) dimMat = lam(FEEL ? '#B8946A' : '#A9845C'); }
 
   /* == a block on a day row == */
   const haloGeo = new T.PlaneGeometry(1, 1); haloGeo.rotateX(-Math.PI / 2);
@@ -531,7 +544,10 @@
     const grip = !!opts.grip && !b.soft && !b.sleep && !b.fixed && !b.done;
     /* a version can print only the mark on a week block too narrow for its name (window.SR_iconOnly); hovering names it */
     const thin = !!(window.SR_iconOnly && !opts.hMul && !b.piece && w < 0.42 && !b.free);
-    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink: lk.ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR, floorU });
+    /* V11: a dimmed block still says what it is, in a quiet brown on its plain wood (4.9 to 1), so you can
+       aim between blocks while a moment is about something else */
+    const ink = FEEL && dim ? DIM_INK : lk.ink;
+    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip: grip && !dim, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR, floorU });
     if (face.material.map !== tex) { face.material.map = tex; face.material.needsUpdate = true; }
     u.canGrip = grip && w > dU * 0.9;
     if (u.canGrip) {
@@ -541,7 +557,7 @@
       u.grip.position.set(w / 2 - gs * 0.55, h + 0.012, 0);
     }
     u.pin.visible = !!(b.fixed && !b.sleep && w > 0.3);
-    face.visible = !dim;
+    face.visible = !dim || FEEL;
     if (dim) { u.body.material = dimMat; u.pin.visible = false; u.canGrip = false; }
     const lockS = dU > 1.5 ? 2.0 : 1.15;
     u.pin.scale.setScalar(lockS);
@@ -566,7 +582,7 @@
     g.fillText(String(r.num), 34 + wdW + 18, 110);
     /* feel: a day that isn't your usual says what kind it is, when nothing more pressing is there */
     const kindLine = !r.trip && !(r.markers && r.markers.length) && !r.due && r.kind;
-    const line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : r.due ? r.due + (r.due === 1 ? ' thing due' : ' things due') : kindLine ? r.kind : '';
+    const line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : r.due ? r.due + (FEEL ? (r.due === 1 ? ' to-do due' : ' to-dos due') : r.due === 1 ? ' thing due' : ' things due') : kindLine ? r.kind : '';
     if (line) {
       const col = r.today ? '#FFE3A6' : r.trip ? '#2A4B90' : r.markers && r.markers.length ? '#983A5E' : kindLine ? '#5C4426' : '#963A28';
       const icon = r.trip ? 'plane' : r.markers && r.markers.length ? r.markerIcon || 'cake' : kindLine ? r.kindIcon || 'calendar' : 'flag';
@@ -638,7 +654,7 @@
   const gapTexCache = new Map();
   const gapTex = (t) => { if (!gapTexCache.has(t)) gapTexCache.set(t, gapTexture(t)); return gapTexCache.get(t); };
 
-  const CAT = (c) => (cats()[c] || cats().yours).base;
+  const CAT = (c) => (cats()[c] || (FEEL && Data.CATS[c]) || cats().yours).base;
   function drawStrip(g, blocks, x, y, w, h) {
     const vis = blocks.filter((b) => !b.sleep);
     if (!vis.length) return;
@@ -698,7 +714,7 @@
       setFont(g, 38, 700, true);
       if (more && 22 + tw + 16 + g.measureText(more).width <= W - 24) { g.fillStyle = c.yours ? '#6B4F0C' : '#5E4C36'; g.fillText(more, 22 + tw + 16, H - 76); }
     } else if (c.todo) {
-      const t = c.todo + (c.todo === 1 ? ' to do' : ' to dos');
+      const t = c.todo + (FEEL ? (c.todo === 1 ? ' to-do' : ' to-dos') : c.todo === 1 ? ' to do' : ' to dos');
       setFont(g, 40, 700, true);
       g.fillStyle = '#1D6376'; g.fillText(t, 26, H - 74);
     } else if (c.yours && !lines.length && !c.trip) {
@@ -1723,8 +1739,9 @@
     g.textBaseline = 'middle'; g.textAlign = 'left';
     g.fillStyle = '#2F2418'; fitFont(g, sp.title, W - 240, 84, 900);
     g.fillText(sp.title, 180, 96);
-    g.fillStyle = '#5A4632'; fitFont(g, sp.sub || '', W - 240, 46, 700, true);
-    g.fillText(sp.sub || '', 180, 180);
+    /* V11: the line under the name prints larger, so it reads with the week and the bench framed together */
+    g.fillStyle = '#5A4632'; fitFont(g, sp.sub || '', W - 240, FEEL ? 62 : 46, 700, true);
+    g.fillText(sp.sub || '', 180, FEEL ? 184 : 180);
     return canvasTex(cv);
   }
   function buildBench() {
@@ -2955,22 +2972,32 @@
     }
     /* where a scale by s around a point leaves the bench's gaps to the room in the same proportion */
     const fixed = (s, lo, hi, a0, a1) => { const g0 = Math.max(0, a0 - lo), g1 = Math.max(0, hi - a1), left = (hi - lo) - s * (a1 - a0); return (lo + (g0 + g1 > 0 ? left * g0 / (g0 + g1) : left / 2) - s * a0) / (1 - s); };
+    /* V11: the week comes too. The board and the bench stay inside the room together, so framing the bench
+       close never pushes the week's first hours off the screen (Oct 14, To-dos at 1440 by 900): the close
+       view grows only as far as the room has slack around both */
+    const allPts = box(union([placeBox(WEEK_BOX, TF.week), bb]), BOARD_Y + 0.4), u0 = shot(tmpCam, allPts);
+    const inRoom = (r) => r.x0 >= room.x0 - 1 && r.x1 <= room.x1 + 1 && r.y0 >= room.y0 - 1 && r.y1 <= room.y1 + 1;
     const ground = new T.Plane(new T.Vector3(0, 1, 0), 0), rc = new T.Raycaster(), c0 = tmpCam.position.clone();
     benchTmp.copy(tmpCam); benchTmp.updateProjectionMatrix();
     const place = (s, q) => { benchTmp.position.copy(q).addScaledVector(c0.clone().sub(q), 1 / s); benchTmp.updateMatrixWorld(); };
     /* the bench's middle first, so a piece carried off it moves the view the least */
+    /* V11: with the week in view too, the two together sit in the middle of the room first (the point a scale
+       by s turns the pair's middle into the room's), so they're never left low with bare desk above */
+    const mid = (s, lo, hi, a0, a1) => ((lo + hi) / 2 - s * (a0 + a1) / 2) / (1 - s);
     const closeAt = (s) => {
-      for (const [px, py] of [[(b0.x0 + b0.x1) / 2, (b0.y0 + b0.y1) / 2], [fixed(s, room.x0, room.x1, b0.x0, b0.x1), fixed(s, room.y0, room.y1, b0.y0, b0.y1)]]) {
+      const tries = [[(b0.x0 + b0.x1) / 2, (b0.y0 + b0.y1) / 2], [fixed(s, room.x0, room.x1, b0.x0, b0.x1), fixed(s, room.y0, room.y1, b0.y0, b0.y1)], [fixed(s, room.x0, room.x1, u0.x0, u0.x1), fixed(s, room.y0, room.y1, u0.y0, u0.y1)]];
+      if (FEEL) tries.unshift([mid(s, room.x0, room.x1, u0.x0, u0.x1), mid(s, room.y0, room.y1, u0.y0, u0.y1)]);
+      for (const [px, py] of tries) {
         rc.setFromCamera(new T.Vector2(px / W * 2 - 1, 1 - py / H * 2), tmpCam);
         const q = new T.Vector3();
         if (!rc.ray.intersectPlane(ground, q)) continue;
         place(s, q);
-        const r = shot(benchTmp);
-        if (r.x0 >= room.x0 - 1 && r.x1 <= room.x1 + 1 && r.y0 >= room.y0 - 1 && r.y1 <= room.y1 + 1) return q;
+        if (inRoom(shot(benchTmp)) && (!FEEL || inRoom(shot(benchTmp, allPts)))) return q;
       }
       return null;
     };
     let lo = 1, hi = Math.min(BENCH_ZMAX, b.need || BENCH_ZMAX, (room.x1 - room.x0) / Math.max(1, b0.x1 - b0.x0), (room.y1 - room.y0) / Math.max(1, b0.y1 - b0.y0)), s = 1, q = null;
+    if (FEEL) hi = Math.min(hi, (room.x1 - room.x0) / Math.max(1, u0.x1 - u0.x0), (room.y1 - room.y0) / Math.max(1, u0.y1 - u0.y0));
     if (hi > 1.06) {
       q = closeAt(hi);
       if (q) s = hi;
@@ -3045,7 +3072,10 @@
     const place = (f) => { tmpCam.position.copy(f.look).addScaledVector(f.dir, f.d * 1.02); tmpCam.lookAt(f.look); tmpCam.updateMatrixWorld(); };
     const shown = () => seenProps(tmpCam, W, H).filter(Boolean).length;
     const tryMode = (mode, f, plan, keep) => { propMode = mode; backAt = plan || null; sideKept = keep ? new Set(keep) : null; placeProps(); aimProps(); place(f); return shown(); };
-    const mt = layout === 'week' && propList.length ? matTarget() : null;
+    /* V11: with a stack laid out on the bench, the things on the desk step out (benchAway), so the camera
+       doesn't pull back or lift the board to make room for a back row of them: that left bare desk above
+       the week and the bench, and the mat cut off below */
+    const mt = layout === 'week' && propList.length && !(FEEL && benchWanted()) ? matTarget() : null;
     /* a phone's day has no room beside the mat; things there stand only along its back edge, or not at all */
     let best = { mode: 'side', f: pick, plan: null, keep: null, n: phoneDay ? -1 : tryMode('side', pick) };
     propCost = null;
@@ -3377,7 +3407,10 @@
   function press(obj) { pressObj = FEEL && obj ? obj : null; }
   function feelBlock(m, dt, liftTo, showGrip, sel) {
     const u = m.userData;
-    if (!u.vel) { u.vel = new T.Vector3(); u.pressK = 0; u.gripK = 0; u.haloK = 0; }
+    /* V11: a block set down before its first frame (adoptPosition and land give it a speed first) still
+       starts with no dip, grip, or glow; left unset they were NaN, and the block vanished where it landed */
+    if (!u.vel) u.vel = new T.Vector3();
+    if (u.pressK == null || u.pressK !== u.pressK) { u.pressK = 0; u.gripK = 0; u.haloK = 0; }
     /* a block placed from a panel waits, unseen, for the copy flying to it (land() lets it go) */
     if (u.held) {
       u.heldT = (u.heldT || 0) + dt;
@@ -3786,6 +3819,8 @@
       const u = m.userData, b = u.block;
       if (u.row !== todayRow || u.shrink != null || !b || b.sleep || b.free) continue;
       if (!(b.start <= min && min < b.start + b.dur)) continue;
+      /* V11: a dimmed block wears no plate in its own color; the pin and its line still say now */
+      if (FEEL && focusFn && !focusFn(b)) return;
       const wU = b.dur / 60, x0 = -wU / 2 + GAP, x1 = -wU / 2 + (min - b.start) / 60;
       if (x1 - x0 < 0.02) return;
       if (weekSpent.parent !== m) m.add(weekSpent);

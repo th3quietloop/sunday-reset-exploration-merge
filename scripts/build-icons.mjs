@@ -19,7 +19,7 @@ const MAP = {
   wrench: ['wrench', 'fill'], basket: ['basket', 'fill'], tooth: ['tooth', 'fill'], film: ['film-strip', 'fill'], box: ['package', 'fill'],
   key: ['key', 'fill'], drop: ['drop', 'fill'], star: ['star', 'fill'], bottle: ['baby-carriage', 'fill'], church: ['church', 'fill'],
   heart: ['heart', 'fill'], plane: ['airplane', 'fill'], car: ['car', 'fill'], receipt: ['receipt', 'fill'], broom: ['broom', 'fill'],
-  tree: ['tree', 'fill'], carrot: ['carrot', 'fill'], drumstick: ['hamburger', 'fill'], bowl: ['bowl-food', 'fill'], tiles: ['squares-four', 'fill'],
+  tree: ['tree', 'fill'], fir: ['tree-evergreen', 'fill'], carrot: ['carrot', 'fill'], drumstick: ['hamburger', 'fill'], bowl: ['bowl-food', 'fill'], tiles: ['squares-four', 'fill'],
   chat: ['chat-circle', 'fill'], brush: ['paint-brush', 'fill'], calendar: ['calendar-blank', 'fill'], house: ['house', 'fill'],
   check: ['check', 'bold'], plus: ['plus', 'bold'], list: ['list-bullets', 'bold'], flag: ['flag', 'fill'], lock: ['lock', 'fill'],
   unlock: ['lock-open', 'fill'], minus: ['minus', 'bold'], up: ['caret-up', 'bold'], down: ['caret-down', 'bold'], x: ['x', 'bold'],

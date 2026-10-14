@@ -58,7 +58,7 @@
   const FOCUS = [
     { id: 'move', name: 'Moving more', line: 'Workouts and walks', icon: 'runner', row: 'Move' },
     { id: 'make', name: 'Something of yours', line: 'Creative time, reading', icon: 'brush', row: 'Make' },
-    { id: 'people', name: 'Friends and family', line: 'Calls, coffee, texts back', icon: 'chat', row: 'People' },
+    { id: 'people', name: 'Friends and family', line: 'Calls, coffee, texts back', icon: 'chat', row: 'Keep in touch' },
     { id: 'home', name: 'Home', line: 'Laundry, cleaning, errands', icon: 'house', row: 'Home and meals' }
   ];
 

@@ -1,0 +1,91 @@
+/* == V11: the reset's Your time step (yoursBody in board/src/app.js) ==
+   Three parts, one after the other: how much of the week is yours and on which days, one place a
+   block fits, then your blocks. Spacing on 4 px steps; words at 12 px or more on the surface tokens. */
+body.c-resetting .rack.resetting .rack-body > .yt-sum,
+body.c-resetting .rack.resetting .rack-body > .yt-sug,
+body.c-resetting .rack.resetting .rack-body > .yt-blocks { flex: 1 1 100%; min-width: 0; width: 100%; }
+
+/* how much is yours */
+.yt-sum { padding: 16px 16px 12px; border-radius: 16px; background: var(--sf-raised); }
+.yt-big { margin: 0; font-size: 16px; line-height: 1.3; color: var(--tx-2); }
+/* V11: the number is white; gold belongs to the step's one call to action, Next */
+.yt-big b { font-family: var(--name); font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -0.01em; color: var(--tx); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.yt-sum.zero .yt-big b { font-size: 22px; color: var(--tx); margin: 0; }
+.yt-sub { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: var(--tx-3); }
+
+/* and on which days: seven small columns, the board's rows turned on their side */
+.yt-days { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.yt-day { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.yt-dn { font-size: 12px; font-weight: 600; line-height: 16px; color: var(--tx-2); }
+.yt-h { font-size: 12px; line-height: 16px; color: var(--tx-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.yt-bar { position: relative; display: block; width: 100%; max-width: 32px; height: 40px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+/* V11: the bars are data, in light grey (8.9 to 1 on the panel), never gold */
+.yt-bar i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--tx-2); border-radius: 0 0 8px 8px; }
+.yt-day.yt-none .yt-bar { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+/* a day that's over steps back in a real color, never faded */
+.yt-day.yt-over .yt-dn { color: var(--tx-3); }
+.yt-day.yt-over .yt-bar i { background: #86868B; }
+.yt-day.yt-today .yt-dn { color: var(--tx); font-weight: 700; }
+.yt-day.yt-today .yt-bar { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
+
+/* one place it fits */
+.yt-sug { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: var(--sf-raised); }
+.yt-sug > canvas { width: 22px; height: 22px; flex: none; }
+.yt-sugw { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.yt-sugw b { font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--tx); }
+.yt-sugw small { font-size: 13px; line-height: 1.4; color: var(--tx-2); }
+/* V11: Add is a raised neutral button, like the Meals step's card: Next is the step's one gold call */
+.rack .yt-add { flex: none; min-width: 64px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); box-shadow: inset 0 0 0 1px var(--sf-edge); font: 600 14px var(--k-font); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.rack .yt-add:hover { background: var(--sf-hover); }
+.rack .yt-add:active { transform: translateY(1px); }
+.rack .yt-add:focus-visible { outline: 2.5px solid var(--k-gold); outline-offset: 2px; }
+
+/* your blocks */
+.yt-blocks { margin-top: 20px; }
+.yt-hd h3 { margin: 0; font: 600 12px/16px var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3); }
+.yt-hd p { margin: 4px 0 0; font-size: 14px; line-height: 1.4; color: var(--tx-2); }
+.yt-hd .yt-past { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--tx-3); }
+.yt-hd .yt-past canvas { width: 14px; height: 14px; flex: none; }
+.yt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+body.c-resetting .rack.resetting .yt-grid .tile { width: auto; height: auto !important; min-height: 60px; padding: 12px 12px 8px; gap: 4px; }
+body.c-resetting .rack.resetting .yt-grid .tile .nm { font-size: 14px; -webkit-line-clamp: 2; }
+body.c-resetting .rack.resetting .yt-grid .tile canvas { width: 18px; height: 18px; }
+body.c-resetting .rack.resetting .yt-grid .tile .mt { font-size: 12px; }
+
+/* the toast after a drop: held at half the window by left: 50%, it wrapped to three lines on a phone.
+   It takes the width its words need, up to the window less its gutters */
+@media (max-width: 759px) { .toasts { width: max-content; max-width: calc(100vw - 32px); } }
+
+/* a narrow window has the panel under the board: the days keep their hours and lose the bars, so your
+   blocks come into view sooner */
+@media (max-width: 759px) {
+  .yt-sum { padding: 12px 16px; }
+  .yt-big b { font-size: 26px; }
+  .yt-days { margin-top: 12px; }
+  .yt-bar { display: none; }
+  .yt-day { gap: 0; }
+  .yt-day.yt-today .yt-h { color: var(--tx); }
+  .yt-day.yt-none .yt-h { color: var(--tx-3); }
+  .yt-day:not(.yt-none):not(.yt-over):not(.yt-today) .yt-h { color: var(--tx); }
+  .yt-sug { margin-top: 0; }
+  .yt-blocks { margin-top: 4px; }
+}
+
+/* a laptop's window: the days keep their hours and lose the bars, and on the shortest the strip gives way
+   (the week beside it shows the same), so your blocks are in view without scrolling */
+@media (min-width: 760px) and (max-height: 860px) {
+  .yt-sum { padding: 12px 16px; }
+  .yt-big b { font-size: 26px; }
+  .yt-days { margin-top: 8px; }
+  .yt-bar { display: none; }
+  .yt-day { gap: 0; }
+  .yt-day.yt-today .yt-h { color: var(--tx); }
+  .yt-day:not(.yt-none):not(.yt-over):not(.yt-today) .yt-h { color: var(--tx); }
+  .yt-sug { margin-top: 0; }
+  .yt-blocks { margin-top: 4px; }
+  .yt-grid { margin-top: 8px; }
+}
+@media (min-width: 760px) and (max-height: 760px) { .yt-days { display: none; } }
+
+@media (prefers-reduced-motion: reduce) { .rack .yt-add { transition: none; } }
+body.calm .rack .yt-add { transition: none; }

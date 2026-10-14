@@ -1,0 +1,200 @@
+/* == V11: meals. The meal board's grocery list, its edit state, and the reset's Meals step (Oct 14) ==
+   Russell: "I wanted to see those on this actual board", "the X is a little hard to find", "I need to
+   know that it's a success, that it's saved". Leather and wood stay as they are; the list is a sheet of
+   paper on the leather, the way the notepad is paper on the desk. Paper words, measured on #FBF5E9: ink
+   #2A2118 14.5, headings #7B5320 6.2, the line under a thing #6B5B4A 6.0, a thing in the cart #76664F 5.1. */
+
+/* == toasts show over a mat (they sat under it, so nothing the meal board did was ever said) == */
+body.c-toasts-up #toasts { z-index: 210; }
+/* while the meal board is open its toasts sit at the top, over its title: at the bottom they covered the
+   grocery list's Share and Copy, and on a phone the day's own card (on a phone with no card open they stay
+   at the bottom, so Done is never covered) */
+body.c-toasts-top #toasts { top: 24px; bottom: auto !important; }
+body.c-toasts-top.phone #toasts, body.c-toasts-top.phone-desk #toasts { top: max(12px, env(safe-area-inset-top)); }
+
+/* the main column's foot leaves room for the sheet's shadow; the column scrolls with a quiet bar */
+.c-meals .c-meal-main { padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: rgba(255, 240, 220, 0.25) transparent; }
+.c-meals .c-meal-main::-webkit-scrollbar { width: 8px; }
+.c-meals .c-meal-main::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(255, 240, 220, 0.25); }
+.c-meals .c-meal-main::-webkit-scrollbar-track { background: transparent; }
+/* the column's More below sits in the board's half (it's placed from script) */
+.c-meals .c-meal-body { position: relative; }
+
+/* == the board's corner keeps count == */
+.c-mcorner { align-self: end; display: flex; flex-direction: column; gap: 0; padding: 0 0 4px 4px; color: #4A3418; font-family: var(--k-font); }
+.c-mcorner b { font: 700 13px/1.2 var(--k-font); white-space: nowrap; }
+.c-mcorner span { font: 600 12px/1.2 var(--k-font); }
+.c-mealgrid.c-tall .c-mcorner { align-self: end; align-items: center; padding: 0 0 8px; text-align: center; }
+.c-mealgrid.c-tall .c-mcorner b { font-size: 12px; }
+
+/* on a computer the board leaves room under it, so the groceries' first lines show without a scroll. The
+   room is a floor, not a ceiling: a row grows to fit its longest name (at 1280 by 720 the floor is 80 px, and
+   "Thai place on Pacific" over "Order in" needs more), so a name is never cut */
+@media (min-width: 1100px) {
+  .c-meals .c-mealgrid { grid-auto-rows: auto; }
+  .c-meals .c-mealgrid > .c-mcell { min-height: clamp(76px, calc((100vh - 480px) / var(--rows, 3)), 150px); }
+  .c-meals .c-mcell .c-dblock b { font-size: 16px; }
+}
+/* a name sizes to its cell: narrow days take a smaller size and break long words where a dictionary allows
+   ("Left-overs"), never "Leftov..." */
+.c-meals .c-mealgrid > .c-mcell { container-type: inline-size; }
+.c-meals .c-mcell .c-dblock b { hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
+@container (max-width: 112px) {
+  .c-meals .c-mcell .c-dblock { padding-left: 8px; padding-right: 8px; }
+  .c-meals .c-mcell .c-dblock b, .c-meals .c-mcell .c-dblock.c-tight b { font-size: 14px; }
+}
+@container (max-width: 84px) {
+  .c-meals .c-mcell .c-dblock { padding-left: 4px; padding-right: 4px; }
+  .c-meals .c-mcell .c-dblock b, .c-meals .c-mcell .c-dblock.c-tight b { font-size: 13px; }
+  .c-meals .c-mcell .c-dblock small { font-size: 12px; }
+}
+/* a row's "Every day" hint is on the type scale, in a real color rather than faded ink (about 6 to 1 on the wood) */
+.c-meals .c-mrow-hint { font-size: 12px; color: #4A3418; }
+/* who's making it: the tag is small to look at and 44 px to tap (its touch area reaches past its edge) */
+.c-meals .c-cook { overflow: visible; display: block; }
+.c-meals .c-cook-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-meals .c-cook::before { content: ''; position: absolute; left: -8px; right: -8px; top: -12px; bottom: -12px; }
+
+/* == the grocery list, on the board == */
+.c-shop { display: flex; flex-direction: column; gap: 12px; flex: none; }
+.c-shop[hidden], .c-shopjump[hidden] { display: none; }
+.c-shop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.k .c-shop-tog, .c-shop-tog { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, 0.08); color: var(--tx); font: 500 14px var(--k-font); cursor: pointer; transition: background-color 0.15s ease-out, transform 0.12s var(--f-out); }
+.c-shop-tog:hover { background: rgba(255, 255, 255, 0.14); }
+.c-shop-tog:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-shop-tog b { font: 700 16px 'Gabarito', var(--k-font); }
+.c-shop-n { color: var(--tx-2); }
+.c-shop-tog canvas { width: 18px !important; height: 18px !important; }
+.c-shop-tog canvas:last-child { width: 14px !important; height: 14px !important; }
+.c-shop-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.k .c-shop-act, .c-shop-act { min-height: 44px; }
+.c-shop-plain { width: 100%; min-height: 0; resize: vertical; font: 500 14px/1.5 var(--k-font); }
+/* the sheet */
+.c-shop-paper { padding: 16px 24px 20px; border-radius: 8px; background: #FBF5E9; color: #2A2118; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 12px 22px -12px rgba(20, 10, 0, 0.65); }
+.c-shop-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 28px; align-items: start; }
+.c-shop-group { display: flex; flex-direction: column; min-width: 0; }
+.c-shop-group h4 { margin: 0 0 4px; font: 700 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: #7B5320; }
+.c-shop-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid rgba(123, 83, 32, 0.16); cursor: pointer; }
+.c-shop-row:last-child { border-bottom: 0; }
+/* the real check box is there for the keyboard and a screen reader; the drawn one is what shows */
+.c-shop-tick { position: absolute; left: 0; top: 50%; width: 24px; height: 24px; margin: -12px 0 0; opacity: 0; cursor: pointer; }
+.c-shop-box { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; box-shadow: inset 0 0 0 2px #7B5320; background: #FFFDF8; transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out; }
+.c-shop-box canvas { width: 14px !important; height: 14px !important; opacity: 0; transform: scale(0.6); transition: opacity 0.12s ease-out, transform 0.16s var(--f-out); }
+.c-shop-tick:checked + .c-shop-box { background: #3B7F45; box-shadow: inset 0 0 0 2px #3B7F45; }
+.c-shop-tick:checked + .c-shop-box canvas { opacity: 1; transform: none; }
+.c-shop-tick:focus-visible + .c-shop-box { outline: 3px solid #C98A1B; outline-offset: 2px; }
+.c-shop-row:hover .c-shop-box { box-shadow: inset 0 0 0 2px #4A3418; }
+.c-shop-row:hover .c-shop-tick:checked + .c-shop-box { box-shadow: inset 0 0 0 2px #2F6A38; }
+.c-shop-words { min-width: 0; display: flex; flex-direction: column; gap: 0; }
+.c-shop-name { font: 600 16px/1.3 var(--k-font); color: #2A2118; }
+.c-shop-words small { font: 500 12px/1.35 var(--k-font); color: #6B5B4A; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.c-shop-row.got .c-shop-name { color: #76664F; text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: rgba(118, 102, 79, 0.8); }
+.c-shop-none { margin: 0; font: 500 14px/1.5 var(--k-font); color: #6B5B4A; }
+/* on a phone the list waits after the meals: a line under the board goes to it */
+.k .c-shopjump, .c-shopjump { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, 0.08); color: var(--tx); font: 500 14px var(--k-font); cursor: pointer; }
+.c-shopjump b { font-weight: 600; }
+.c-shopjump span { color: var(--tx-2); }
+.c-shopjump canvas { width: 18px !important; height: 18px !important; }
+.c-shopjump canvas:last-child { width: 14px !important; height: 14px !important; }
+@media (max-width: 1099px) {
+  .c-meal-body > .c-shop { padding-top: 8px; }
+  /* where the board and the meals stack, the meal board's head stays in view as you scroll (Done, the week,
+     and the title are never 2000 px away), on a band of the same leather */
+  .c-meals .c-mat-head { position: sticky; top: -14px; z-index: 6; margin: -14px -12px 0; padding: 12px 12px 8px; background: var(--s-leather, none) #6A4A34; background-size: 420px; transition: box-shadow 0.16s ease-out; }
+  .c-meals .c-mat-head.c-scrolled { box-shadow: 0 12px 12px -12px rgba(20, 10, 0, 0.6); }
+  .c-meals .c-mat-head h2 { margin-top: 0; }
+  /* the meals take the width they have in columns of their own, so the library is shorter to scroll past */
+  .c-meal-side .c-lib:not(.c-editing) .c-pwrap { flex: 1 1 172px; }
+}
+@media (min-width: 760px) and (max-width: 1099px) {
+  .c-meals .c-mat-head { top: -20px; margin: -20px -24px 0; padding: 16px 24px 12px; }
+}
+@media (max-width: 599px) {
+  .c-shop-paper { padding: 12px 16px 16px; }
+  .c-shop-cols { grid-template-columns: 1fr; gap: 8px; }
+  .c-shop-head { gap: 8px; }
+  .c-shop-acts { width: 100%; }
+  .c-shop-acts > * { flex: 1 1 0; }
+}
+
+/* == editing the library: a tile holds still, and its button sits beside it ==
+   One meal to a row, so every name has room and every button lines up down one edge. No grip, no lift,
+   no drag while editing; the button is the one thing to tap. */
+.c-lib.c-editing .c-trow2 { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
+.c-meal-side .c-lib.c-editing .c-pwrap { flex: none; width: 100%; display: flex; align-items: stretch; gap: 8px; }
+/* V11: editing is a state you can see: the library wears a white ring while it lasts */
+.c-meal-side.c-lib-editing { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4); }
+/* Edit is 44 px to tap, like everything else here */
+.k .c-libedit, .c-libedit { min-height: 44px; padding: 0 16px; }
+.c-libsec { align-items: center; }
+.c-pwrap.editing .c-piece { flex: 1; min-width: 0; cursor: default; }
+.c-pwrap.editing .c-piece:hover { transform: none; }
+.k .c-pwrap.editing .c-phide, .c-pwrap.editing .c-phide { position: static; flex: none; z-index: auto; width: auto; min-width: 88px; height: auto; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; opacity: 1; pointer-events: auto; transform: none; background: rgba(255, 255, 255, 0.12) !important; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.32) !important; color: var(--tx); font: 600 14px var(--k-font); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s var(--f-out); }
+.c-pwrap.editing .c-phide::before { display: none; }
+.c-pwrap.editing .c-phide:hover { background: rgba(255, 255, 255, 0.2) !important; }
+.c-pwrap.editing .c-phide:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-pwrap.editing .c-phide canvas { width: 14px !important; height: 14px !important; }
+.c-pwrap.editing .c-phide:focus-visible { outline: 3px solid #F2CF7A; outline-offset: 2px; }
+
+/* == a day's card says its changes are saved == */
+.c-mpop-saved { display: inline-flex; align-items: center; gap: 4px; color: #8FD3B1; font: 600 13px var(--k-font); }
+.c-mpop-saved[hidden] { display: none; }
+.c-mpop-saved canvas { width: 14px !important; height: 14px !important; }
+
+/* == the reset's Meals step == */
+body.c-resetting .rack.resetting .rack-body > .c-ms-go, body.c-resetting .rack.resetting .rack-body > .c-ms, body.c-resetting .rack.resetting .rack-body > .c-ms-shop { flex: 1 1 100%; min-width: 0; width: 100%; }
+/* V11: the way to the meal board is a big raised card, not gold: Next is the step's one gold call (and Done
+   is the dinner mat's). It's the same card in the step and on a Dinner block's mat */
+.k .c-mealgo, .c-mealgo { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; border-radius: 16px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); font: 700 16px/1.25 'Gabarito', var(--k-font); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s var(--f-out); }
+.c-mealgo:hover { background: var(--sf-hover); }
+.c-mealgo:active { background: var(--sf-press); transform: translateY(1px); transition-duration: 0.06s; }
+.c-mealgo:focus-visible { outline: 3px solid #F2CF7A; outline-offset: 2px; }
+.c-mealgo .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.c-mealgo b { font: 700 16px/1.25 'Gabarito', var(--k-font); }
+.c-mealgo small { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); }
+.c-mealgo canvas:first-child { width: 24px !important; height: 24px !important; }
+.c-mealgo canvas:last-child { width: 14px !important; height: 14px !important; }
+.k.c-mat .c-mealgo { width: auto; max-width: 360px; align-self: flex-start; margin-top: 16px; }
+.c-ms { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.c-ms-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.k .c-ms-again, .c-ms-again { flex: none; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--tx); font: 500 13px var(--k-font); cursor: pointer; transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out; }
+.c-ms-again:hover { background: var(--sf-hover); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.c-ms-again:active { transform: translateY(1px); }
+.c-ms-grid { display: grid; grid-template-columns: 44px repeat(var(--rows, 3), minmax(0, 1fr)); gap: 8px 4px; align-items: stretch; }
+.c-ms-k { align-self: end; padding: 0 4px 4px; font: 600 12px/1.2 var(--k-font); color: var(--tx-3); text-align: center; }
+.c-ms-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; color: var(--tx-2); }
+.c-ms-day b { font: 600 12px/1.2 var(--k-font); text-transform: uppercase; letter-spacing: 0.04em; }
+.c-ms-day span { font: 700 16px/1.2 'Gabarito', var(--k-font); color: var(--tx); }
+.c-ms-day.today::after { content: ''; width: 6px; height: 6px; margin-top: 4px; border-radius: 50%; background: #5EC4B6; }
+.k .c-ms-cell, .c-ms-cell { min-width: 0; min-height: 48px; padding: 4px 8px; border: 0; border-radius: 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; text-align: left; background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.16); color: var(--tx); cursor: pointer; transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out, transform 0.12s var(--f-out); }
+.c-ms-cell:not(.on) { align-items: center; }
+.c-ms-cell:not(.on):hover { background: var(--sf-hover); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.32); }
+.c-ms-cell.past:not(.on) { box-shadow: none; background: rgba(255, 255, 255, 0.03); }
+.k .c-ms-cell.on, .c-ms-cell.on { background: var(--b); color: var(--i); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18); }
+.c-ms-cell.on:hover { transform: translateY(-1px); }
+.c-ms-cell:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-ms-cell b { max-width: 100%; font: 600 13px/1.2 'Gabarito', var(--k-font); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.c-ms-cell small { max-width: 100%; font: 600 12px/1.2 var(--k-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-ms-cell canvas { width: 14px !important; height: 14px !important; }
+.k .c-ms-fold, .c-ms-fold { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.04); color: var(--tx-2); font: 500 13px var(--k-font); cursor: pointer; }
+.c-ms-fold:hover { background: var(--sf-hover); }
+.c-ms-fold canvas { width: 14px !important; height: 14px !important; }
+.c-ms-away { display: grid; place-items: center; min-height: 48px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); color: var(--tx-3); font: 500 13px var(--k-font); }
+.k .c-ms-shop, .c-ms-shop { display: flex; align-items: center; gap: 8px; min-height: 52px; margin-top: 16px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); font: 500 14px var(--k-font); text-align: left; cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s var(--f-out); }
+.c-ms-shop:hover { background: var(--sf-hover); }
+.c-ms-shop:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-ms-shop b { font: 700 16px 'Gabarito', var(--k-font); }
+.c-ms-shop .grow { flex: 1; min-width: 0; color: var(--tx-2); }
+.c-ms-shop canvas:first-child { width: 18px !important; height: 18px !important; }
+.c-ms-shop canvas:last-child { width: 14px !important; height: 14px !important; }
+
+/* == the week's plan: its dinners lead to the meal board == */
+.k .c-pmeals, .c-pmeals { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 12px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); font: 600 14px var(--k-font); cursor: pointer; }
+.c-pmeals:hover { background: var(--sf-hover); }
+.c-pmeals canvas { width: 16px !important; height: 16px !important; }
+
+/* calmer motion: nothing slides or grows, it's there */
+body.calm .c-shop-box, body.calm .c-shop-box canvas, body.calm .c-ms-cell, body.calm .c-ms-shop, body.calm .c-shop-tog, body.calm .c-pwrap.editing .c-phide, body.calm .c-mealgo { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .c-shop-box, .c-shop-box canvas, .c-ms-cell, .c-ms-shop, .c-shop-tog, .c-pwrap.editing .c-phide, .c-mealgo { transition: none; }
+}
