@@ -1094,7 +1094,7 @@
     }
 
     /* for trying the states by hand: Kit.v3.openIntro(ws, catchup), Kit.v3.openPlan(ws), Kit.v3.chipState() */
-    Kit.v7 = { openDeskSetup: (o) => openDeskSetup(o), openSetupIntro: (o) => openSetupIntro(o), coachTour: (a) => coachTour(a), trySetup: (k) => trySetup(k), startHello, showRack, scatter: (w) => scatter(w.split('')), openIntro, openPlan, chipState, runSteps, openMealBoard, openDetail, openTodos, closeMat };
+    Kit.v7 = { openDeskSetup: (o) => openDeskSetup(o), openSetupIntro: (o) => openSetupIntro(o), coachTour: (a) => coachTour(a), trySetup: (k) => trySetup(k), startHello, showRack, scatter: (w) => scatter(w.split('')), openIntro, openPlan, chipState, runSteps, openMealBoard, openDetail, openTodos, closeMat, openMenu: () => openMenu(), closeMenu: () => closeMenu() };
     /* V11: the phone's way to the meal board: Plan meals on the phone list's dinner question, its groceries,
        a small Meals card when neither is there, and any dinner's panel (app.js asks for window.SR_planMeals) */
     window.SR_planMeals = () => {

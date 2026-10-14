@@ -23,6 +23,8 @@ for (const id of ids) {
   /* a version's finishing pass on spacing and alignment, kept in its own file, loads last */
   const polish = existsSync(join(root, 'variants', id, 'polish.css'));
   if (polish) cpSync(join(root, 'variants', id, 'polish.css'), join(out, 'src', 'polish.css'));
+  /* a version's own tools (the type tester) go in lab/, beside its page, so they can open it in a frame */
+  if (existsSync(join(root, 'variants', id, 'lab'))) cpSync(join(root, 'variants', id, 'lab'), join(out, 'lab'), { recursive: true });
   /* a version's own pictures (a rendered bag, say) go next to its page */
   if (existsSync(join(root, 'variants', id, 'assets'))) cpSync(join(root, 'variants', id, 'assets'), join(out, 'assets'), { recursive: true });
   let html = readFileSync(join(out, 'index.html'), 'utf8');

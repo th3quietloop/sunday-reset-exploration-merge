@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Type tester</title>
+<!-- A type tester for Sunday Reset V11: the real app in a frame on the left, and a panel on the right that
+     swaps the font of its words (corners, menus, Settings, the reset) live. It loads a made up board, so
+     nothing here touches your own week. Every font is free under the SIL Open Font License. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="gf" rel="stylesheet" href="">
+<style>
+  :root {
+    --bg: #000000; --panel: #1C1C1E; --raise: #2C2C2E; --raise-2: #3A3A3C; --line: #38383B;
+    --tx: #FFFFFF; --tx-2: #AFAFAF; --tx-3: #98989F; --gold: #F2CF7A; --ink: #1C1C1E;
+    --ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--tx); font: 400 14px/1.4 var(--ui); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--tx); outline-offset: 2px; }
+  .tt { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: 100vh; }
+  /* the stage: V11 itself, then the screens to flip between */
+  .stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 16px 16px 12px; gap: 12px; }
+  .view { position: relative; flex: 1; min-height: 0; border-radius: 16px; overflow: hidden; background: #111; box-shadow: inset 0 0 0 1px var(--line); }
+  .frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; background: #111; color: var(--tx-2); font-size: 15px; transition: opacity 0.2s ease-out; }
+  .loading.gone { opacity: 0; pointer-events: none; }
+  .comparing { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 6px 12px; border-radius: 10px; background: var(--tx); color: var(--ink); font-weight: 600; font-size: 13px; pointer-events: none; }
+  .comparing[hidden] { display: none; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 14px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+  .seg button { min-height: 40px; padding: 0 16px; border-radius: 10px; color: var(--tx-2); font-weight: 500; white-space: nowrap; }
+  .seg button:hover { color: var(--tx); background: var(--raise); }
+  .seg button[aria-pressed="true"] { background: var(--tx); color: var(--ink); font-weight: 600; }
+  .steps { display: inline-flex; align-items: center; gap: 6px; color: var(--tx-2); font-size: 13px; }
+  .steps[hidden] { display: none; }
+  .steps button { width: 36px; height: 36px; border-radius: 10px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); color: var(--tx); font-size: 16px; }
+  .steps button:hover { background: var(--raise); }
+  .steps span { min-width: 150px; text-align: center; }
+  .caption { color: var(--tx-2); font-size: 13px; }
+  .caption b { color: var(--tx); font-weight: 600; }
+  /* the panel on the right */
+  .panel { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--panel); box-shadow: inset 1px 0 0 var(--line); }
+  .panel header { padding: 20px 20px 8px; }
+  .panel h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .panel header p { margin: 4px 0 0; color: var(--tx-2); font-size: 13px; }
+  .sec { padding: 14px 20px 6px; }
+  .sec-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .sec h2 { margin: 0; color: var(--tx-3); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .linkish { color: var(--tx-2); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; min-height: 28px; }
+  .linkish[aria-pressed="true"] { color: var(--tx); }
+  .tags { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .tag { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; min-height: 56px; padding: 8px 12px; border-radius: 12px; background: var(--raise); text-align: left; font-size: 17px; font-weight: 600; line-height: 1.15; transition: background-color 0.12s ease-out, transform 0.12s ease-out; }
+  .tag:hover { background: var(--raise-2); }
+  .tag:active { transform: scale(0.98); }
+  .tag small { font: 500 12px/1.2 var(--ui); color: var(--tx-2); }
+  .tag[aria-pressed="true"] { background: var(--tx); color: var(--ink); }
+  .tag[aria-pressed="true"] small { color: #3A3A3C; }
+  .tag.starred::after { content: '★'; position: absolute; right: 9px; top: 7px; font: 12px/1 var(--ui); color: var(--gold); }
+  .tag[aria-pressed="true"].starred::after { color: #8A6A1A; }
+  .names { width: 100%; }
+  .names button { flex: 1; }
+  .card { margin: 14px 20px 8px; padding: 16px; border-radius: 16px; background: #000; box-shadow: inset 0 0 0 1px var(--line); }
+  .card .face { margin: 0 0 12px; font-size: 26px; font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; }
+  .card .s-title { margin: 0 0 6px; font-size: 22px; font-weight: 800; line-height: 1.15; }
+  .card .s-line { margin: 0 0 4px; font-size: 15px; color: var(--tx); }
+  .card .s-soft { color: var(--tx-2); }
+  .card .s-check { margin: 8px 0 0; font-size: 15px; color: var(--tx-2); letter-spacing: 0.02em; }
+  .card dl { margin: 14px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .card dt { color: var(--tx-3); }
+  .card dd { margin: 0; color: var(--tx); }
+  .card .why { margin: 12px 0 0; font-size: 14px; color: var(--tx); line-height: 1.45; }
+  .card .acts { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .btn { min-height: 40px; padding: 0 14px; border-radius: 12px; background: var(--raise); font-weight: 600; font-size: 14px; }
+  .btn:hover { background: var(--raise-2); }
+  .btn[aria-pressed="true"] { background: var(--gold); color: var(--ink); }
+  .keys { margin-top: auto; padding: 14px 20px 18px; color: var(--tx-3); font-size: 12px; line-height: 1.6; }
+  .keys kbd { display: inline-block; min-width: 20px; padding: 0 5px; border-radius: 5px; background: var(--raise); color: var(--tx); font: 600 11px/18px var(--ui); text-align: center; }
+  @media (max-width: 899px) {
+    .tt { grid-template-columns: 1fr; height: auto; }
+    .stage { padding: 10px 10px 8px; }
+    .view { flex: none; }
+    .panel { box-shadow: inset 0 1px 0 var(--line); overflow: visible; }
+    .seg button { padding: 0 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .tag, .loading { transition: none; } }
+</style>
+</head>
+<body>
+<div class="tt">
+  <main class="stage">
+    <div class="view" id="view">
+      <div class="frame" id="frame"><iframe id="app" title="Sunday Reset V11, with the font you pick"></iframe></div>
+      <div class="loading" id="loading">Opening V11 with a made up week…</div>
+      <div class="comparing" id="comparing" hidden></div>
+    </div>
+    <div class="bar">
+      <div class="seg" id="screens" role="group" aria-label="Screen"></div>
+      <div class="steps" id="steps" hidden>
+        <button type="button" id="stepBack" aria-label="Step before">‹</button>
+        <span id="stepName"></span>
+        <button type="button" id="stepNext" aria-label="Step after">›</button>
+      </div>
+      <div class="caption" id="caption"></div>
+    </div>
+  </main>
+  <aside class="panel" aria-label="Type">
+    <header>
+      <h1>Type tester</h1>
+      <p>Tap a font. The real V11 on the left changes with it.</p>
+    </header>
+    <section class="sec">
+      <div class="sec-h"><h2>Words</h2><button type="button" class="linkish" id="onlyStars" aria-pressed="false">Starred only</button></div>
+      <div class="tags" id="tags" role="group" aria-label="Font for the words"></div>
+    </section>
+    <section class="sec">
+      <div class="sec-h"><h2>Names and titles</h2></div>
+      <div class="seg names" id="names" role="group" aria-label="Font for names and titles"></div>
+    </section>
+    <section class="card" id="card" aria-live="polite"></section>
+    <footer class="keys">
+      <kbd>←</kbd> <kbd>→</kbd> next font · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> screens · <kbd>S</kbd> star<br>
+      Hold <kbd>Space</kbd> to see the last font again. The desk's own printed words (block names on the wood) stay as they are.
+    </footer>
+  </aside>
+</div>
+<script>
+(function () {
+  'use strict';
+  /* the ten: the two V11 uses now, and eight free ones from Google Fonts that are far less common
+     (the rank is how often each is used on Google Fonts; Poppins is 5th of all) */
+  const FONTS = [
+    { name: 'Poppins', now: 'Corners now', by: 'Indian Type Foundry, Jonny Pinhorn, Ninad Kale', since: 2015, rank: 5, w: '400;500;600;700;800', weights: '400 to 800', why: 'Round and geometric. Friendly, but it is the 5th most used font on Google Fonts, so it reads like a lot of other apps.' },
+    { name: 'Atkinson Hyperlegible Next', short: 'Atkinson Next', now: 'Panels now', by: 'Braille Institute, Applied Design Works', since: 2025, rank: 185, w: '200..800', weights: '200 to 800', why: 'Made so no two letters can be mistaken for each other. Very clear at small sizes, a little technical.' },
+    { name: 'Instrument Sans', by: 'Rodrigo Fuenzalida, Jordan Egstad', since: 2023, rank: 59, w: '400..700', weights: '400 to 700', why: 'A sharp, current grotesk. Precise without feeling cold, so labels and buttons look designed.' },
+    { name: 'Schibsted Grotesk', by: 'Bakken & Bæck, Henrik Kongsvoll', since: 2023, rank: 49, w: '400..900', weights: '400 to 900', why: 'Made for a Norwegian newspaper group. Plainspoken and confident, with steady, even numbers.' },
+    { name: 'Onest', by: 'Dmitri Voloshin, Andrey Kudryavtsev', since: 2023, rank: 184, w: '100..900', weights: '100 to 900', why: 'Built for screens. Calm and neutral, a little warmer than the usual neutral sans.' },
+    { name: 'Golos Text', by: 'Alexandra Korolkova, Vitaly Kuzmin', since: 2023, rank: 255, w: '400..900', weights: '400 to 900', why: 'A workhorse for small text: open shapes, and a tail on the l and the 1 so they never blur together.' },
+    { name: 'Rethink Sans', by: 'Hans Thiessen', since: 2023, rank: 219, w: '400..800', weights: '400 to 800', why: 'Open and friendly with a crisp edge. Feels organized, which suits a planner.' },
+    { name: 'Parkinsans', by: 'Red Stone, for Parkinson’s UK', since: 2024, rank: 268, w: '300..800', weights: '300 to 800', why: 'Warm and human, made to be clear. The most personality of the clean ones.' },
+    { name: 'Inclusive Sans', by: 'Olivia King', since: 2023, rank: 356, w: '300..700', weights: '300 to 700', why: 'Made for accessibility, like Atkinson, with softer and friendlier shapes.' },
+    { name: 'Host Grotesk', by: 'Element Type', since: 2024, rank: 404, w: '300..800', weights: '300 to 800', why: 'A clean, contemporary grotesk that is still rare in apps. Quiet and modern.' }
+  ];
+  const NAMES = 'Gabarito';
+  const GF = 'https://fonts.googleapis.com/css2?' + FONTS.map((f) => 'family=' + f.name.replace(/ /g, '+') + ':wght@' + f.w).concat(['family=Gabarito:wght@400..900']).join('&') + '&display=swap';
+  const SCREENS = ['Corners and menu', 'Settings', 'Plan your week'];
+  const $ = (id) => document.getElementById(id);
+  const mk = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+  const saved = (k, d) => { try { const v = localStorage.getItem('tt.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+  const save = (k, v) => { try { localStorage.setItem('tt.' + k, JSON.stringify(v)); } catch (e) { /* storage off */ } };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const until = async (ok, ms) => { const end = Date.now() + (ms || 20000); while (Date.now() < end) { try { if (ok()) return true; } catch (e) { /* not yet */ } await wait(100); } return false; };
+
+  let cur = Math.max(0, FONTS.findIndex((f) => f.name === saved('font', 'Poppins')));
+  let last = cur, names = saved('names', 'gabarito'), screen = Math.min(2, saved('screen', 0)), step = saved('step', null);
+  let stars = new Set(saved('stars', [])), onlyStars = false, showing = cur, ready = false, W = null, D = null;
+  $('gf').href = GF;
+
+  /* == the words in V11 take the font: its variables, and any rule that names a face outright == */
+  const ORIG = new WeakMap();
+  const stack = (f) => "'" + f + "', system-ui, sans-serif";
+  function eachRule(doc, fn) {
+    const walk = (rules) => { for (const r of rules) { if (r.cssRules) walk(r.cssRules); if (r.style) fn(r); } };
+    for (const sh of doc.styleSheets) { let rules; try { rules = sh.cssRules; } catch (e) { continue; } walk(rules); }
+  }
+  function applyTo(doc, words, title) {
+    const root = doc.documentElement.style;
+    root.setProperty('--k-font', stack(words)); root.setProperty('--font', stack(words)); root.setProperty('--name', stack(title));
+    eachRule(doc, (r) => {
+      if (!ORIG.has(r)) ORIG.set(r, { 'font-family': r.style.getPropertyValue('font-family'), font: r.style.getPropertyValue('font') });
+      const o = ORIG.get(r);
+      ['font-family', 'font'].forEach((p) => {
+        const v = o[p];
+        if (!v) return;
+        const nv = v.replace(/(['"]?)Poppins\1/g, "'" + words + "'").replace(/(['"]?)Atkinson Hyperlegible( Next)?\1/g, "'" + words + "'").replace(/(['"]?)Gabarito\1/g, "'" + title + "'");
+        if (nv !== r.style.getPropertyValue(p)) r.style.setProperty(p, nv, r.style.getPropertyPriority(p));
+      });
+    });
+  }
+  async function applyFonts(i) {
+    showing = i;
+    const f = FONTS[i], title = names === 'same' ? f.name : NAMES;
+    if (ready) {
+      try { await Promise.all(['400', '600', '700'].map((w) => D.fonts.load(w + ' 16px "' + f.name + '"'))); } catch (e) { /* draws when it arrives */ }
+      applyTo(D, f.name, title);
+    }
+    drawCaption();
+  }
+
+  /* == the panel == */
+  function drawTags() {
+    const box = $('tags');
+    box.replaceChildren();
+    FONTS.forEach((f, i) => {
+      if (onlyStars && stars.size && !stars.has(f.name) && i !== cur) return;
+      const b = mk('button', 'tag' + (stars.has(f.name) ? ' starred' : ''), f.short || f.name);
+      b.type = 'button';
+      b.style.fontFamily = stack(f.name);
+      b.setAttribute('aria-pressed', String(i === cur));
+      b.setAttribute('aria-label', f.name + (f.now ? ', ' + f.now.toLowerCase() : '') + (stars.has(f.name) ? ', starred' : ''));
+      b.appendChild(mk('small', '', f.now || (f.since + ' · ' + ordinal(f.rank) + ' most used')));
+      b.addEventListener('click', () => pick(i));
+      box.appendChild(b);
+    });
+    $('onlyStars').hidden = !stars.size;
+    $('onlyStars').setAttribute('aria-pressed', String(onlyStars));
+  }
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  function drawNames() {
+    const box = $('names');
+    box.replaceChildren();
+    [['gabarito', 'Gabarito, as now'], ['same', 'Same as the words']].forEach(([id, label]) => {
+      const b = mk('button', '', label); b.type = 'button';
+      b.setAttribute('aria-pressed', String(names === id));
+      b.addEventListener('click', () => { names = id; save('names', id); drawNames(); drawCard(); applyFonts(cur); });
+      box.appendChild(b);
+    });
+  }
+  function drawCard() {
+    const f = FONTS[cur], title = names === 'same' ? f.name : NAMES, card = $('card');
+    card.replaceChildren();
+    const face = mk('p', 'face', f.name); face.style.fontFamily = stack(f.name);
+    const sample = mk('div');
+    sample.style.fontFamily = stack(f.name);
+    const t = mk('p', 's-title', 'Plan your week.'); t.style.fontFamily = stack(title);
+    sample.append(t,
+      mk('p', 's-line', 'Tacos · 6 to 6:45 pm · Sam is making it'),
+      mk('p', 's-line s-soft', '12 to-dos due this week. 3 h 30 min open.'),
+      mk('p', 's-check', 'Il1 O0 rn m · 0123456789 · 10:45 am'));
+    const dl = mk('dl');
+    [['By', f.by], ['On Google Fonts', 'since ' + f.since], ['How common', ordinal(f.rank) + ' most used (1 is the most)'], ['Weights', f.weights], ['Cost', 'Free, SIL Open Font License']].forEach(([k, v]) => { dl.append(mk('dt', '', k), mk('dd', '', v)); });
+    const acts = mk('div', 'acts');
+    const star = mk('button', 'btn', stars.has(f.name) ? '★ Starred' : '☆ Star it'); star.type = 'button';
+    star.setAttribute('aria-pressed', String(stars.has(f.name)));
+    star.addEventListener('click', () => toggleStar());
+    const hold = mk('button', 'btn', 'Hold to see ' + (FONTS[last].short || FONTS[last].name)); hold.type = 'button';
+    hold.disabled = last === cur; if (last === cur) hold.textContent = 'Hold to see the last one';
+    const on = () => compare(true), off = () => compare(false);
+    hold.addEventListener('pointerdown', on); hold.addEventListener('pointerup', off); hold.addEventListener('pointerleave', off); hold.addEventListener('pointercancel', off);
+    acts.append(star, hold);
+    card.append(face, sample, dl, mk('p', 'why', f.why), acts);
+  }
+  function drawCaption() {
+    const f = FONTS[showing];
+    $('caption').replaceChildren(mk('b', '', f.short || f.name), document.createTextNode(' for words · ' + (names === 'same' ? (f.short || f.name) : NAMES) + ' for names'));
+  }
+  function drawScreens() {
+    const box = $('screens');
+    box.replaceChildren();
+    SCREENS.forEach((name, i) => {
+      const b = mk('button', '', name); b.type = 'button';
+      b.setAttribute('aria-pressed', String(screen === i));
+      b.addEventListener('click', () => show(i));
+      box.appendChild(b);
+    });
+    drawSteps();
+  }
+  function drawSteps() {
+    const on = screen === 2 && ready && W.SR.view.reset;
+    $('steps').hidden = !on;
+    if (!on) return;
+    const steps = W.SR.stepsNow(), at = W.SR.view.reset.step;
+    $('stepName').textContent = 'Step ' + (at + 1) + ' of ' + steps.length + ' · ' + (steps[at].title || steps[at].key);
+  }
+
+  /* == picking, starring, and seeing the last one again == */
+  function pick(i) {
+    if (i === cur) return;
+    last = cur; cur = i; save('font', FONTS[i].name);
+    drawTags(); drawCard(); applyFonts(i);
+  }
+  function flip(d) {
+    const list = FONTS.map((f, i) => i).filter((i) => !onlyStars || !stars.size || stars.has(FONTS[i].name));
+    const at = list.indexOf(cur), n = list.length;
+    pick(list[((at < 0 ? 0 : at) + d + n) % n]);
+  }
+  function toggleStar() {
+    const n = FONTS[cur].name;
+    if (stars.has(n)) stars.delete(n); else stars.add(n);
+    save('stars', [...stars]);
+    if (!stars.size) onlyStars = false;
+    drawTags(); drawCard();
+  }
+  let comparing = false;
+  function compare(on) {
+    if (on === comparing || last === cur) return;
+    comparing = on;
+    const c = $('comparing');
+    c.hidden = !on;
+    c.textContent = on ? 'Showing ' + (FONTS[last].short || FONTS[last].name) + ', the last one' : '';
+    applyFonts(on ? last : cur);
+  }
+
+  /* == the screens: put away what the last one opened, then open this one == */
+  async function show(n) {
+    screen = n; save('screen', n); drawScreens();
+    if (!ready) return;
+    const SR = W.SR, K = W.Kit;
+    try {
+      if (K.v7.closeMenu) K.v7.closeMenu();
+      if (SR.closeDrawer) SR.closeDrawer();
+      if (K.closeSheet) K.closeSheet();
+      if (K.v7.closeMat) K.v7.closeMat(true);
+      if (SR.view.reset && n !== 2) SR.leaveReset();
+      if (SR.inToday()) SR.setMode('planner');
+      if (n === 0) { if (SR.view.zoom !== 'week') SR.setZoom('week'); await wait(350); if (K.v7.openMenu) K.v7.openMenu(); }
+      else if (n === 1) { if (SR.view.zoom !== 'week') SR.setZoom('week'); await wait(200); SR.openDrawer('overview'); }
+      else {
+        if (!SR.view.reset) SR.startReset(SR.M.weekStart(SR.today));
+        const steps = SR.stepsNow();
+        if (step == null) step = Math.max(0, steps.findIndex((s) => s.key === 'todo'));
+        SR.goStep(Math.min(step, steps.length - 1));
+      }
+    } catch (e) { console.error(e); }
+    await wait(60);
+    quiet();
+    drawSteps();
+  }
+  function goStep(d) {
+    if (!ready || !W.SR.view.reset) return;
+    const n = W.SR.stepsNow().length;
+    step = Math.max(0, Math.min(n - 1, W.SR.view.reset.step + d));
+    save('step', step);
+    W.SR.goStep(step);
+    setTimeout(() => { quiet(); drawSteps(); }, 60);
+  }
+  /* the made up board's own notes (the preview bar, Dev, toasts) stay out of the picture */
+  function quiet() {
+    ['preview-bar', 'toasts'].forEach((id) => { const x = D.getElementById(id); if (x) x.style.display = 'none'; });
+    D.querySelectorAll('.c-devchip, .c-devmenu').forEach((x) => { x.style.display = 'none'; });
+    if (W.SR.layoutInsets) W.SR.layoutInsets();
+  }
+
+  /* == V11 in the frame: same site, so the panel can reach in; a made up board, so nothing is saved == */
+  async function boot() {
+    W = $('app').contentWindow; D = $('app').contentDocument;
+    const ok = await until(() => W.SR && W.SR.state && W.Kit && W.Kit.v7 && W.World);
+    if (!ok) { $('loading').textContent = 'V11 didn’t open here. Open this page from the V11 site.'; return; }
+    const link = D.createElement('link'); link.rel = 'stylesheet'; link.href = GF; D.head.appendChild(link);
+    try { await W.SR.devBoard('sample'); } catch (e) { console.error(e); }
+    await wait(400);
+    ready = true;
+    quiet();
+    await applyFonts(cur);
+    await show(screen);
+    $('loading').classList.add('gone');
+    /* when the made up board redraws its notes, keep them out of the picture */
+    new MutationObserver(() => quiet()).observe(D.getElementById('preview-bar') || D.body, { attributes: true });
+  }
+
+  /* on a wide screen V11 fills the stage at its real size; on a narrow one it's a laptop sized V11, scaled */
+  function fit() {
+    const fr = $('frame'), view = $('view');
+    if (window.innerWidth >= 900) { fr.style.width = '100%'; fr.style.height = '100%'; fr.style.transform = 'none'; view.style.height = ''; return; }
+    const w = 1280, h = 800, s = view.clientWidth / w;
+    fr.style.width = w + 'px'; fr.style.height = h + 'px'; fr.style.transformOrigin = '0 0'; fr.style.transform = 'scale(' + s + ')';
+    view.style.height = Math.round(h * s) + 'px';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('input, textarea')) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); flip(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); flip(-1); }
+    else if (e.key === '1' || e.key === '2' || e.key === '3') show(+e.key - 1);
+    else if (e.key === 's' || e.key === 'S') toggleStar();
+    else if (e.key === ' ' && !e.repeat) { e.preventDefault(); compare(true); }
+  });
+  document.addEventListener('keyup', (e) => { if (e.key === ' ') compare(false); });
+  $('onlyStars').addEventListener('click', () => { onlyStars = !onlyStars; drawTags(); });
+  $('stepBack').addEventListener('click', () => goStep(-1));
+  $('stepNext').addEventListener('click', () => goStep(1));
+  window.addEventListener('resize', fit);
+  drawTags(); drawNames(); drawCard(); drawScreens(); drawCaption(); fit();
+  $('app').addEventListener('load', boot, { once: true });
+  $('app').src = '../?desk';
+})();
+</script>
+</body>
+</html>

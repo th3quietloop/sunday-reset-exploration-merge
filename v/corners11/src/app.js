@@ -8662,7 +8662,9 @@
   /* == the phone: Today ==
      On a phone, or opened from the Home Screen, Sunday Reset opens to Today: the now strip, the day as
      a column of blocks, the dinner question from 3 pm, and a line to add things. The desk is a tap away. */
-  const phoneWidth = () => Math.min(window.innerWidth, window.screen ? window.screen.width : window.innerWidth) <= 600;
+  /* ?desk keeps the desk at any width, so a tool (V11's type tester) can show a laptop sized board on a phone */
+  const deskAlways = new URLSearchParams(location.search).has('desk');
+  const phoneWidth = () => !deskAlways && Math.min(window.innerWidth, window.screen ? window.screen.width : window.innerWidth) <= 600;
   function setPhone() {
     /* a phone's day left on a window that grew is the desk again, as it was before */
     if (view.phoneFrom && !phoneDay()) { leavePhoneDay(); view.phoneDesk = false; }
@@ -9480,7 +9482,7 @@
      change it through commit like everything else */
   window.SR = {
     get state() { return state; }, get view() { return view; }, get today() { return today; }, get nowMin() { return nowMin; },
-    M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
+    M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, closeDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
     trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay, shift, openSel, openQuick, redo,
     barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
     /* a version can open a Dev board by id and leave it again */
