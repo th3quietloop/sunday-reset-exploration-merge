@@ -374,6 +374,9 @@
     return { base, ink, h };
   }
 
+  let focusFn = null, dimMat = null;
+  function setFocus(fn) { focusFn = typeof fn === 'function' ? fn : null; if (!dimMat) dimMat = lam('#A9845C'); }
+
   /* == a block on a day row == */
   const haloGeo = new T.PlaneGeometry(1, 1); haloGeo.rotateX(-Math.PI / 2);
   let haloMat = null;
@@ -448,8 +451,11 @@
     const sub = b.sub != null ? b.sub : '';
     const sig = [themeV, b.label || b.name, sub, b.icon, lk.base, lk.ink, h, w.toFixed(3), dU, b.fixed && !b.sleep ? 1 : 0, b.done ? 1 : 0, b.soft ? 1 : 0, opts.grip ? 1 : 0, b.stack ? 1 : 0, b.free ? 1 : 0, b.piece ? b.pieceS || 1 : 0, b.contL ? 1 : 0, b.contR ? 1 : 0].join('|');
     u.block = b; u.h = h; u.hMul = hMul;
-    if (sig === u.sig) return;
-    u.sig = sig; u.w = w;
+    /* a version can dim every block a moment isn't about (setFocus): plain darker wood, no print, same size */
+    const dim = !!(focusFn && !b.free && !b.piece && !focusFn(b));
+    const sig2 = sig + (dim ? '|dim' : '');
+    if (sig2 === u.sig) return;
+    u.sig = sig2; u.w = w;
     u.dU = dU;
     if (b.free) {
       /* no brick: only the printing on the board, still there to tap */
@@ -483,6 +489,8 @@
       u.grip.position.set(w / 2 - gs * 0.55, h + 0.012, 0);
     }
     u.pin.visible = !!(b.fixed && !b.sleep && w > 0.3);
+    face.visible = !dim;
+    if (dim) { u.body.material = dimMat; u.pin.visible = false; u.canGrip = false; }
     const lockS = dU > 1.5 ? 2.0 : 1.15;
     u.pin.scale.setScalar(lockS);
     u.pin.position.set(-w / 2 + Math.min(0.22 * lockS, w * 0.28), lk.h * (u.hMul || 1), -dU / 2 + 0.16 * lockS);
@@ -2315,7 +2323,10 @@
      a panel, steps down into the desk instead. Decided for the framed view, so nothing flickers. */
   const propList = [];
   /* which props the camera would show whole (at least 0.8 of each, on screen and clear of the panels) */
+  let propsAway = false;
+  function setPropsAway(on) { on = !!on; if (on === propsAway) return; propsAway = on; camSig = ''; maybeSolve(); }
   function seenProps(cam, W, H) {
+    if (propsAway) return propList.map(() => false);
     const blockers = insets.blockers || [];
     return propList.map((p) => {
       const dx = TF[p.side === 'L' ? 'propsL' : 'propsR'].x;
@@ -2651,7 +2662,9 @@
   function parallax(nx, ny) { if (quality === 'low' || reduced || phoneDay) { parTarget.set(0, 0, 0); return; } parTarget.set(nx * 0.35, -ny * 0.2, 0); }
   /* The player's own zoom and pan on top of the framed view, and a small lean toward
      whatever is being dragged so placing a block feels precise. */
-  const user = { zoom: 1, zoomTo: 1, pan: new T.Vector3(), panTo: new T.Vector3(), lean: 0, leanTo: 0, leanAt: new T.Vector3() };
+  const user = { zoom: 1, zoomTo: 1, pan: new T.Vector3(), panTo: new T.Vector3(), lean: 0, leanTo: 0, leanAt: new T.Vector3(), away: 0, awayTo: 0 };
+  /* slide the camera sideways by a share of the screen's width (1 is a whole screen to the right) */
+  function setAway(f) { user.awayTo = +f || 0; }
   const ZOOM_MAX = 2.6;
   function groundAt(px, py) {
     setNdc(px, py);
@@ -2695,7 +2708,7 @@
   function stepCamera(dt) {
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6.5);
     if (cam.look.distanceToSquared(camTo.look) > 1e-6 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05
-      || Math.abs(user.zoomTo - user.zoom) > 0.001 || user.pan.distanceToSquared(user.panTo) > 1e-6 || Math.abs(user.leanTo - user.lean) > 0.002 || par.distanceToSquared(parTarget) > 1e-6) moving = true;
+      || Math.abs(user.zoomTo - user.zoom) > 0.001 || user.pan.distanceToSquared(user.panTo) > 1e-6 || Math.abs(user.leanTo - user.lean) > 0.002 || Math.abs(user.awayTo - user.away) > 0.0005 || par.distanceToSquared(parTarget) > 1e-6) moving = true;
     cam.look.lerp(camTo.look, k);
     cam.elev += (camTo.elev - cam.elev) * k;
     cam.dist += (camTo.dist - cam.dist) * k;
@@ -2705,12 +2718,15 @@
     user.zoom += (user.zoomTo - user.zoom) * ku;
     user.pan.lerp(user.panTo, ku);
     user.lean += (user.leanTo - user.lean) * kl;
+    user.away += (user.awayTo - user.away) * (reduced ? 1 : 1 - Math.exp(-dt * 3.2));
+    if (Math.abs(user.awayTo - user.away) < 0.0005) user.away = user.awayTo;
     par.lerp(parTarget, 1 - Math.exp(-dt * 2.5));
     const el = renderer.domElement.parentElement;
     const W = el.clientWidth || root.innerWidth, H = el.clientHeight || root.innerHeight;
     camera.setViewOffset(W, H, cam.offX, cam.offY, W, H);
     camera.updateProjectionMatrix();
     const look = cam.look.clone().add(user.pan);
+    if (user.away) look.x += user.away * 2 * (cam.dist / user.zoom) * Math.tan((camera.fov * Math.PI / 180) / 2) * (W / H);
     if (user.lean > 0.001) look.lerp(new T.Vector3(user.leanAt.x, look.y, user.leanAt.z), 0.14 * user.lean);
     const dist = cam.dist / (user.zoom * (1 + 0.1 * user.lean));
     const dir = new T.Vector3(0, Math.sin(cam.elev), Math.cos(cam.elev));
@@ -3287,7 +3303,7 @@
   /* every call that changes the desk says so, and the next frames are drawn; asking the desk a
      question (what's under the pointer, where a block is on screen) doesn't */
   const changes = { fit, setNow, setDaylight, setWeek, setMonth, setYear, setDay, setBench, setBenchOpen, showLayout, rippleWeek, beginNavigation, setZoom, setPhoneDay, setInsets, snapCamera, setSelected, showDayGhost,
-    startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces,
+    startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces, setFocus, setPropsAway, setAway,
     setLamp, setLight, setNotepad, setDayOnly, setAlone, setTheme, setDesk, setClock24, setQuality, wake, setTight, setHours };
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
