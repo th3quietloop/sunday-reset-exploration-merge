@@ -8668,6 +8668,8 @@
     M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
     trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay, shift, openSel, openQuick, redo,
     barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
+    /* a version can open a Dev board by id and leave it again */
+    devBoard(id) { return loadScenarios().then(() => openScenario(id)); }, endPreview,
     openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
     closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {

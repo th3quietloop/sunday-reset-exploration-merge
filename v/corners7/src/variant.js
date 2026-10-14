@@ -336,7 +336,7 @@
     }
     pomo.append(h('i', 'c-pdot'), h('b', 'c-pt'), h('span', 'c-pl', 'Pomodoro'));
     setInterval(tick, 500);
-    window.addEventListener('resize', () => requestAnimationFrame(place));
+    window.addEventListener('resize', () => requestAnimationFrame(() => { place(); sync(); }));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && card) { e.preventDefault(); e.stopImmediatePropagation(); closeTimer(); } }, true);
 
     /* == the Sunday Reset, a moment and not a tab ==
@@ -490,8 +490,9 @@
       stepsBar.hidden = !r;
       const rack = document.getElementById('rack');
       /* the panel stands on the left while it runs; the board measures its room again as soon as it moves */
-      if (rack && (rack.dataset.edge || '') !== (r ? 'left' : '')) {
-        if (r) rack.dataset.edge = 'left'; else delete rack.dataset.edge;
+      const side = window.innerWidth < 760 ? 'bottom' : 'left';
+      if (rack && (rack.dataset.edge || '') !== (r ? side : '')) {
+        if (r) rack.dataset.edge = side; else delete rack.dataset.edge;
         requestAnimationFrame(() => requestAnimationFrame(() => SR.layoutInsets()));
         /* and once more after the panel and the board have settled */
         setTimeout(() => SR.layoutInsets(), 450); setTimeout(() => SR.layoutInsets(), 1100);
@@ -741,7 +742,7 @@
     function deskSurfaces() {
       if (surfaces || !World.surface) return;
       const set = (name, k) => { const u = World.surface(k); if (u) document.body.style.setProperty(name, 'url(' + u + ')'); };
-      set('--s-board', 'board'); set('--s-groove', 'groove'); set('--s-leather', 'leather');
+      set('--s-board', 'board'); set('--s-groove', 'groove'); set('--s-leather', 'leather'); set('--s-desk', 'desk');
       surfaces = true;
     }
     function closeMat(quiet) {
@@ -1033,7 +1034,7 @@
     function closeDock() { if (!dock) return; dock.remove(); dock = null; document.body.classList.remove('c-docked'); drawStackBar(); requestAnimationFrame(() => SR.layoutInsets()); }
     function openDock(build) {
       closeDock(); Kit.closeSheet(); closeMenu();
-      dock = h('aside', 'k c-dock'); dock.dataset.edge = 'left'; dock.setAttribute('aria-label', 'To-dos');
+      dock = h('aside', 'k c-dock'); if (window.innerWidth >= 760) dock.dataset.edge = 'left'; dock.setAttribute('aria-label', 'To-dos');
       const x = Kit.btn('k-x', '', closeDock, 'x'); x.setAttribute('aria-label', 'Close To-dos');
       dock.appendChild(x);
       build(dock);
@@ -1071,7 +1072,7 @@
       if (!rack || !SR.view.reset) { peek.hidden = true; document.body.classList.remove('c-panel-off'); return; }
       const st = SR.stepsNow()[SR.view.reset.step];
       document.body.classList.toggle('c-panel-off', panelOff);
-      if (panelOff) delete rack.dataset.edge; else rack.dataset.edge = 'left';
+      if (panelOff) delete rack.dataset.edge; else rack.dataset.edge = window.innerWidth < 760 ? 'bottom' : 'left';
       peek.hidden = !panelOff;
       peek.replaceChildren(SR.icon('right', 7, Kit.ink), h('b', '', stepName(st.key)), h('span', '', 'Show steps'));
       const top = rack.querySelector('.rack-top');
@@ -1280,12 +1281,17 @@
       dragTile(t);
       return t;
     }
+    const narrow = () => window.innerWidth < 760;
     function drawRack() {
-      const busy = !!(SR.view.reset || mat || detail || SR.inToday() || SR.view.phone);
-      const on = (rackShown || hello) && !busy;
+      const phone = !!(SR.view.phone || SR.phoneDay());
+      const busy = !!(SR.view.reset || mat || detail || SR.inToday() || phone);
+      /* the welcome plays anywhere, a phone included; the rack itself is a desk toy for wide screens */
+      const on = !!hello || (rackShown && !busy && !narrow());
       rackWrap.hidden = !on;
       if (on) deskSurfaces();
-      deskLayer.hidden = busy;
+      deskLayer.hidden = !hello && busy;
+      document.body.classList.toggle('c-hello-on', !!hello);
+      document.body.classList.toggle('c-narrow', narrow());
       slots.forEach((s, i) => {
         const want = rack[i];
         const have = s.firstChild && s.firstChild.dataset.ch;
@@ -1297,11 +1303,15 @@
     function scatter(letters) {
       const r = rackWrap.getBoundingClientRect(), W = window.innerWidth;
       const rnd = (a, b) => a + Math.random() * (b - a);
+      const tile = parseFloat(getComputedStyle(document.body).getPropertyValue('--slot')) || 48;
+      /* on a narrow screen the letters land between the rack and the card, across the whole width */
+      const cardTop = !helloCard.hidden ? helloCard.getBoundingClientRect().top : window.innerHeight * 0.7;
       letters.forEach((ch, i) => {
         const t = tileEl(ch);
         const left = i % 2 === 0;
-        const x = left ? rnd(Math.max(40, r.left - 360), r.left - 70) : rnd(r.right + 30, Math.min(W - 80, r.right + 320));
-        const y = rnd(r.bottom - 40, r.bottom + 140);
+        let x, y;
+        if (narrow()) { x = rnd(14, W - tile - 14); y = rnd(r.bottom + 18, Math.max(r.bottom + 30, cardTop - tile - 18)); }
+        else { x = left ? rnd(Math.max(40, r.left - 360), r.left - 70) : rnd(r.right + 30, Math.min(W - 80, r.right + 320)); y = rnd(r.bottom - 40, r.bottom + 140); }
         putAt(t, x, y, rnd(-14, 14));
         deskLayer.appendChild(t);
         deskTiles.push(t);
@@ -1436,11 +1446,53 @@
       if (!pv) { helloPreview = null; if (realRack) { rack = realRack; realRack = null; putBack(); drawRack(); } }
       if (hello && hello.preview && !pv) { hello = null; helloCard.hidden = true; putBack(); }
       let met = true; try { met = localStorage.getItem('sundayreset.v7.met') === '1'; } catch (e) { /* fine */ }
-      if (!met && !hello && !pv && !SR.view.phone) startHello(false);
+      if (!met && !hello && !pv && !devStored()) startHello(false);
     }
 
-    /* == V7: Dev mode, always there on this link, for seeing the board as other people would == */
+    /* == V7: Dev mode, always there on this link, for seeing the board as other people would ==
+       A made up board stays open across reloads until you go back to yours (Brand new plays once). The big
+       preview bar gives way to a small chip beside your name. */
     try { localStorage.setItem('sundayreset.dev', '1'); } catch (e) { /* fine */ }
+    const DEV_BOARD = 'sundayreset.v7.devBoard';
+    const devStored = () => { try { return localStorage.getItem(DEV_BOARD) || ''; } catch (e) { return ''; } };
+    let devBooted = false, devWas = null;
+    function devKeep() {
+      const pv = SR.view.preview, id = pv && pv.id;
+      if (!devBooted) {
+        devBooted = true;
+        const want = devStored();
+        if (want && !pv && SR.devBoard) { SR.devBoard(want); return; }
+      }
+      if (id && id !== 'firstrun') { try { localStorage.setItem(DEV_BOARD, id); } catch (e) { /* fine */ } }
+      /* going back to your own board, from anywhere, ends it */
+      if (devWas && !pv) { try { localStorage.removeItem(DEV_BOARD); } catch (e) { /* fine */ } }
+      devWas = pv || null;
+      drawDevChip();
+    }
+    const devChip = h('button', 'k-chip c-devchip'); devChip.type = 'button'; devChip.hidden = true;
+    devChip.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); toggleDevMenu(); });
+    tl.appendChild(devChip);
+    let devMenu = null;
+    function drawDevChip() {
+      const pv = SR.view.preview;
+      devChip.hidden = !pv;
+      document.body.classList.toggle('c-dev-on', !!pv);
+      if (!pv) { if (devMenu) { devMenu.remove(); devMenu = null; } return; }
+      const name = (pv.label || '').replace(/, a made up board$/, '');
+      devChip.replaceChildren(h('i', 'c-devdot'), h('b', '', 'Dev'), h('span', 'c-devname', name), SR.icon('down', 7, '#B8B0A3'));
+      devChip.title = name + ' is a made up board. Nothing here is saved.';
+    }
+    function toggleDevMenu() {
+      if (devMenu) { devMenu.remove(); devMenu = null; return; }
+      const pv = SR.view.preview; if (!pv) return;
+      devMenu = h('div', 'k c-menu c-devmenu'); devMenu.setAttribute('role', 'menu');
+      devMenu.appendChild(h('div', 'c-devnote', (pv.label || 'A made up board') + '. Nothing here is saved, and it stays open until you go back.'));
+      const it = (label, ic, fn) => { const b = Kit.btn('c-mi', label, () => { devMenu.remove(); devMenu = null; fn(); }, ic, CREAM); b.setAttribute('role', 'menuitem'); return b; };
+      devMenu.append(it('Switch boards', 'sliders', () => Kit.settings('dev')), it('Back to my board', 'left', () => { try { localStorage.removeItem(DEV_BOARD); } catch (e) { /* fine */ } SR.endPreview(); }));
+      app.appendChild(devMenu);
+      const r = devChip.getBoundingClientRect(); devMenu.style.left = r.left + 'px'; devMenu.style.top = (r.bottom + 10) + 'px';
+    }
+    document.addEventListener('pointerdown', (e) => { if (devMenu && !devMenu.contains(e.target) && !devChip.contains(e.target)) { devMenu.remove(); devMenu = null; } }, true);
 
     /* == keeping the corners in step == */
     function sync() {
@@ -1468,7 +1520,7 @@
         if (key === 'dinners') shapeMeals(body);
       }
       checkDetail();
-      drawStackBar(); drawKindChips(); drawRack(); maybeHello();
+      drawStackBar(); drawKindChips(); drawRack(); devKeep(); maybeHello();
       if (v.reset && SR.stepsNow()[v.reset.step].key === 'done') shareBox(document.getElementById('rack-body'), v.reset.week);
       const ag = document.getElementById('agenda');
       listBtn.setAttribute('aria-pressed', String(!!(ag && !ag.hidden)));

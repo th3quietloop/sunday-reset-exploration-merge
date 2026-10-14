@@ -476,7 +476,7 @@ body.c-resetting .rack.resetting, .c-dock, .side, .k-chip, .c-menu, .c-timer { b
 .c-lrack[hidden] { display: none !important; }
 .c-lbar { position: relative; display: flex; gap: 6px; padding: 8px 14px 14px; border-radius: 10px 10px 14px 14px; background: linear-gradient(180deg, rgba(255, 240, 214, 0.1), rgba(70, 36, 8, 0.18)), var(--s-board, none) #C9965C; background-size: auto, 520px; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), 0 6px 0 #8E6236, 0 16px 22px -10px rgba(30, 15, 4, 0.7); }
 .c-lbar::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 6px; height: 7px; border-radius: 4px; background: rgba(90, 52, 20, 0.35); box-shadow: inset 0 2px 2px rgba(60, 30, 8, 0.4); }
-.c-lslot { position: relative; z-index: 1; width: 48px; height: 50px; border-radius: 7px; display: grid; place-items: end center; transition: background 0.12s, box-shadow 0.12s; }
+.c-lslot { position: relative; z-index: 1; width: var(--slot); height: calc(var(--slot) + 2px); border-radius: 7px; display: grid; place-items: end center; transition: background 0.12s, box-shadow 0.12s; }
 .c-lslot:empty { background: rgba(110, 66, 24, 0.14); box-shadow: inset 0 2px 4px rgba(80, 45, 15, 0.25); }
 .c-lslot.want:empty { background: rgba(255, 236, 190, 0.32); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
 .c-lslot.c-over { background: rgba(242, 207, 122, 0.6) !important; box-shadow: inset 0 0 0 3px #F2CF7A !important; }
@@ -491,8 +491,8 @@ body.c-resetting .rack.resetting, .c-dock, .side, .k-chip, .c-menu, .c-timer { b
 /* the tiles */
 .c-desktiles { position: absolute; inset: 0; z-index: 33; pointer-events: none; }
 .c-desktiles[hidden] { display: none; }
-.c-ltile { position: absolute; width: 44px; height: 44px; border-radius: 6px; display: grid; place-items: center; background: linear-gradient(160deg, #F6E7C6, #E8D2A6); color: #3A2A18; box-shadow: inset 0 -3px 0 rgba(150, 110, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 10px -4px rgba(30, 15, 4, 0.55); transform: rotate(var(--r, 0deg)); cursor: grab; touch-action: none; pointer-events: auto; user-select: none; -webkit-user-select: none; transition: transform 0.14s, box-shadow 0.14s; }
-.c-ltile b { font-family: 'Gabarito', var(--k-font); font-size: 25px; font-weight: 800; line-height: 1; margin-top: -2px; }
+.c-ltile { position: absolute; width: calc(var(--slot) - 4px); height: calc(var(--slot) - 4px); border-radius: 6px; display: grid; place-items: center; background: linear-gradient(160deg, #F6E7C6, #E8D2A6); color: #3A2A18; box-shadow: inset 0 -3px 0 rgba(150, 110, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 10px -4px rgba(30, 15, 4, 0.55); transform: rotate(var(--r, 0deg)); cursor: grab; touch-action: none; pointer-events: auto; user-select: none; -webkit-user-select: none; transition: transform 0.14s, box-shadow 0.14s; }
+.c-ltile b { font-family: 'Gabarito', var(--k-font); font-size: calc(var(--slot) * 0.52); font-weight: 800; line-height: 1; margin-top: -2px; }
 .c-ltile small { position: absolute; right: 4px; bottom: 3px; font-size: 9px; font-weight: 700; }
 .c-ltile:hover { transform: rotate(var(--r, 0deg)) translateY(-2px); }
 .c-ltile.c-up { z-index: 5; cursor: grabbing; transform: scale(1.14) rotate(-3deg); box-shadow: inset 0 -3px 0 rgba(150, 110, 60, 0.35), 0 20px 22px -10px rgba(30, 15, 4, 0.6); transition: none; }
@@ -519,3 +519,84 @@ body.c-resetting .rack.resetting, .c-dock, .side, .k-chip, .c-menu, .c-timer { b
 .c-hello .c-go { margin-top: 16px; }
 .c-hform .c-go { margin-top: 0; }
 .k .c-skip { margin-top: 14px; font-size: 13px; color: var(--cream-2); text-decoration: underline; text-underline-offset: 3px; }
+
+/* == V7: Dev in a small chip beside your name, not a bar across the board == */
+body.previewing #preview-bar { display: none !important; }
+.k .c-devchip { display: flex; align-items: center; gap: 7px; height: 50px; padding: 0 12px; border-radius: 18px; font-size: 13px; color: var(--cream); cursor: pointer; }
+.c-devchip[hidden] { display: none !important; }
+.c-devchip b { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; color: var(--k-gold); }
+.c-devname { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-devchip canvas { width: 12px !important; height: 12px !important; }
+.c-devdot { width: 8px; height: 8px; border-radius: 50%; background: var(--k-gold); }
+.c-devmenu { width: 290px; }
+.c-devnote { padding: 10px 12px 12px; font-size: 13px; line-height: 1.45; color: var(--cream-2); }
+/* on the phone's own views, the chip sits low on the left, above the add line */
+body.phone.c-dev-on .c-tl { display: flex !important; top: auto; left: 12px; bottom: 84px; }
+body.phone .c-tl > .c-me { display: none !important; }
+body.phone .k .c-devchip, body.phone .c-devchip { height: 40px; }
+body.phone .c-devmenu { display: flex !important; flex-direction: column; top: auto !important; bottom: 132px; }
+
+/* == V7: small screens. Everything fits the width; nothing runs off the edge == */
+body { --slot: 48px; }
+/* the welcome plays on a phone too, over the phone's own views */
+body.c-hello-on .c-lrack { display: flex !important; }
+body.c-hello-on .c-hello { display: block !important; }
+body.c-hello-on .c-desktiles { display: block !important; }
+.c-lrack { z-index: 36; }
+.c-hello { z-index: 37; }
+@media (max-width: 1000px) {
+  .c-br .k-pill > span:not(.k-count) { display: none; }
+  .c-br .k-pill { padding: 10px 12px; }
+  .c-me-name, .c-devname { display: none; }
+  .k .c-me { padding: 0 10px 0 8px; }
+}
+@media (max-width: 759px) {
+  body { --slot: clamp(30px, calc((100vw - 40px) / 9 - 5px), 44px); }
+  /* the zoom row first, full width; you and the date under it, so the day's date card grows into open desk */
+  .c-tl { top: 68px; left: 12px; }
+  .c-me > canvas { display: none; }
+  .k .c-me { padding: 0 8px; height: 46px; }
+  .k .c-devchip { height: 46px; }
+  .c-tc { top: 68px; max-width: calc(100vw - 150px); left: auto; right: 12px; transform: none; }
+  .c-tc .k-title { font-size: 15px; }
+  .c-tc .k-sub { display: none; }
+  .k-arrow { width: 34px; height: 34px; }
+  .c-tr { top: 12px; left: 12px; right: 12px; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+  .c-tr .k-seg button, .k .c-listbtn { padding: 8px 10px; font-size: 13px; }
+  .c-nowsplit button:first-child { margin-right: 8px; }
+  .c-br { left: 12px; right: 12px; bottom: 12px; justify-content: space-between; }
+  .k .c-rchip { padding: 0 12px; min-width: 0; max-width: 52vw; overflow: hidden; }
+  .c-rchip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c-rchip .c-rmeta { display: none; }
+  .c-bl { display: none !important; }
+  .c-stackbar { top: 120px; left: 12px; right: 12px; transform: none; }
+  .c-kindchips { max-width: calc(100vw - 110px); }
+  /* the reset stands along the bottom, the week above it */
+  body.c-resetting .rack.resetting { top: auto !important; left: 8px !important; right: 8px !important; bottom: 8px !important; width: auto !important; height: 58vh !important; padding: 18px 16px 14px; }
+  body.c-resetting .rack.resetting .reset-title { font-size: 26px; }
+  .c-steps { display: none !important; }
+  .k-chip.c-peek { top: auto; bottom: 12px; left: 12px; }
+  body.c-resetting.c-panel-off .rack.resetting { transform: translateY(calc(100% + 30px)); }
+  /* panels that would sit beside the board cover the screen instead */
+  .c-dock { left: 8px; right: 8px; top: 8px; bottom: 8px; width: auto; }
+  body.c-docked .c-tl { left: 12px; }
+  .c-mat { width: calc(100vw - 12px); height: calc(100vh - 12px); padding: 10px; border-radius: 22px; }
+  .c-mat-in { padding: 14px 12px; overflow: auto; }
+  .c-mat-head h2 { font-size: 24px; }
+  .c-mealgrid { min-width: 620px; grid-template-columns: 70px repeat(7, minmax(0, 1fr)); padding: 10px; }
+  .c-mat.c-detail .c-mat-in { padding-right: 12px; }
+  body.c-detail #side { left: 14px !important; right: 14px !important; width: auto !important; top: auto !important; bottom: 14px !important; max-height: 48vh !important; }
+  .k-sheet { width: calc(100vw - 16px) !important; padding: 26px 18px !important; }
+  .k-sheet.c-intro .c-intro-h { font-size: 38px; }
+  .c-plan-grid { grid-template-columns: 1fr; }
+  .c-plan-acts { flex-wrap: wrap; }
+  /* the welcome: the rack across the top, the letters on the desk below it, the card along the bottom */
+  .c-lrack { top: 16px; gap: 0; max-width: calc(100vw - 16px); }
+  .c-lbar { padding: 6px 8px 11px; gap: 4px; }
+  .c-bag, .k .c-lx { display: none !important; }
+  body.c-hello-on .c-desktiles { background: linear-gradient(rgba(40, 20, 6, 0.08), rgba(40, 20, 6, 0.28)), var(--s-desk, none) #C8955E; background-size: auto, 720px; z-index: 35; }
+  .c-hello { left: 8px; right: 8px; bottom: max(12px, env(safe-area-inset-bottom)); width: auto; transform: none; padding: 20px 18px; }
+  .c-hello h2 { font-size: 24px; }
+  .c-hform { flex-direction: column; }
+  .c-hform .c-go { width: 100%; }
+}
