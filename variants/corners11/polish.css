@@ -1,0 +1,392 @@
+/* == V11: the finishing pass on spacing, alignment, and contrast (docs/CORNERS-V11.md) ==
+   Loads after variant.css. */
+
+/* == one surface for every panel and chip (Oct 14) ==
+   Russell: "look at the black and grey that is used for this app, i want that for the colors" (the
+   ChatGPT app, dark). Every chip, menu, panel, card, and sheet is one neutral near black, mostly opaque,
+   with a little glass: a 16 px blur, so the desk only moves softly behind it. It replaces two surfaces
+   that had drifted apart: warm brown glass on the chips, the menu, Now's band, and the panels
+   (rgba(44, 38, 33) at 0.8 to 0.9), and near opaque charcoal on Settings, the sheets, quick add, and
+   the kinds of day (rgba(37, 41, 40, 0.96)).
+   The base leans a touch blue (#18191D at 92 percent), so the 8 percent of orange desk that shows
+   through lands on neutral grey: #222020 over the desk by the corners, #292828 over the palest board,
+   #201F20 over a sheet's dimmed desk. Nothing on it is brown and nothing is green.
+   Inside a surface, steps of white: raised rows and cards 6 percent, hover 10, pressed 14, and a
+   hairline of 10 (#38383A) around anything that floats. White means selected, with near black words
+   (#1C1C1E). Gold is the one call to action: a gold fill with near black words for the main button,
+   gold words on a soft gold edge for the quieter call (the bottom bar's Sunday Reset).
+   Words, measured on the surface over the palest board (rgb(240, 215, 170)), on a raised row there, and
+   on a hovered row there: white 14.66, 12.21, 10.71; #CDCDCD 9.22, 7.68, 6.74; #AFAFAF 6.68, 5.57,
+   4.88; #A2A2A6 (words that can't be used yet, and placeholders, which never hover) 5.76, 4.80. The
+   ChatGPT grey, #98989F, falls to 4.26 on a raised row there (its #8D8D93 to 3.70, its placeholder
+   #909090 to 3.82), so the quiet grey is #AFAFAF, its grey for section headers.
+   A list that hangs inside a chip (the kinds of day) can't blur the desk: the chip's own blur is the
+   only backdrop it gets, so at 92 percent the board's words ghost through it, sharp. It and the hover
+   note are solid instead, #232325, what the glass looks like over the desk. */
+:root {
+  --sf: rgba(24, 25, 29, 0.92);
+  --sf-solid: #232325;
+  --sf-blur: blur(16px);
+  --sf-edge: rgba(255, 255, 255, 0.1);
+  --sf-raised: rgba(255, 255, 255, 0.06);
+  --sf-hover: rgba(255, 255, 255, 0.1);
+  --sf-press: rgba(255, 255, 255, 0.14);
+  --sf-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.55);
+  --sf-float: inset 0 0 0 1px var(--sf-edge), var(--sf-shadow);
+  --sf-ink: #1C1C1E;
+  --tx: #FFFFFF; --tx-2: #CDCDCD; --tx-3: #AFAFAF; --tx-4: #A2A2A6;
+  --badge: rgba(255, 255, 255, 0.14); --badge-light: rgba(28, 28, 30, 0.1);
+  --gold-hi: #F7DA93;
+  --cta-edge: rgba(242, 207, 122, 0.55); --cta-fill: rgba(242, 207, 122, 0.08); --cta-hover: rgba(242, 207, 122, 0.16);
+  /* the names the board, the kit, and V11 already use, pointed at the system */
+  --ink: #FFFFFF; --cream: #FFFFFF; --cream-2: var(--tx-3); --soft: var(--tx-2); --muted: var(--tx-3); --faint: var(--tx-4);
+  --esp: var(--sf-ink); --esp-2: #262628; --esp-3: #303032; --esp-glass: var(--sf);
+  --panel: var(--sf); --panel-2: var(--sf-raised); --panel-3: var(--sf-hover);
+}
+
+/* sheets sit on the scrim, which already blurs and dims the desk, so they take the surface without a
+   second blur. The scrims dim in plain black. */
+.k-sheet, .k-sheet.c-intro, .sheet { background: var(--sf) !important; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--sf-float) !important; }
+.k-scrim, .scrim { background: rgba(0, 0, 0, 0.32) !important; }
+.c-hellodim { background: rgba(0, 0, 0, 0.4); }
+
+/* floating, over the desk: the corners and their menus, the panels, the reset, To-dos, Now's band and its
+   question, the timer, toasts, the tools over a block, quick add, and the cards that come and go */
+.k-chip, .k .c-me, .k .c-lx, .c-menu, .side, .drawer, body.c-resetting .rack.resetting, .c-dock, .c-timer, .c-bagpop,
+.c-hello, .c-coach, .coach-card, .quick, .toast, .btools, .preview-bar, .c-mpop, .c-mpop.sheet, .c-more,
+.band-in, .moment, body.k-today .band-in, body.k-today .moment, body.k-today .c-bandkick {
+  background: var(--sf) !important;
+  -webkit-backdrop-filter: var(--sf-blur); backdrop-filter: var(--sf-blur);
+  box-shadow: var(--sf-float) !important;
+}
+/* the phone desk's round Add is Add in the bottom bar, gone round: the surface with its white plus (it was
+   the board's teal) */
+.pd-add { background: var(--sf); -webkit-backdrop-filter: var(--sf-blur); backdrop-filter: var(--sf-blur); box-shadow: var(--sf-float); }
+/* the same surface where what's behind is flat or already blurred (the list's desk is hidden, the phone's
+   cards sit on a smooth gradient, the meal library sits on leather), so a blur would cost and show nothing */
+.agenda, .td-head, .td-now, .td-card, .c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt, .k .c-su-x {
+  background: var(--sf) !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.agenda, .td-head, .td-now, .td-card { box-shadow: var(--sf-float) !important; }
+.c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt:not(.on), .k .c-su-x { box-shadow: inset 0 0 0 1px var(--sf-edge); }
+/* solid, where nothing should show through: the list inside the date chip, the hover note (it follows the
+   pointer, so no blur), the tray's arrows, and the phone's two bars */
+.kinds-row, .chip, .rack-more, .phonebar, .td-foot {
+  background: var(--sf-solid) !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  box-shadow: var(--sf-float) !important;
+}
+.td-foot { box-shadow: 0 -1px 0 var(--sf-edge), 0 -12px 28px -12px rgba(0, 0, 0, 0.45) !important; }
+.btools::after { background: var(--sf-solid); }
+/* the Dev chip inside the phone's list is a raised pill on its card, not a chip of its own */
+.td-top .c-devchip.c-devchip-list { background: var(--sf-hover) !important; box-shadow: none !important; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* toasts say how it went with their edge, not a colored card */
+.toast.good { box-shadow: inset 0 0 0 1.5px rgba(143, 211, 177, 0.6), var(--sf-shadow) !important; }
+.toast.bad { box-shadow: inset 0 0 0 1.5px rgba(255, 158, 140, 0.65), var(--sf-shadow) !important; }
+/* the phone's two cards that ask something (tonight's dinner, an overlap) wear the gold edge of a question */
+.td-card.dinner, .td-card.clash { box-shadow: inset 0 0 0 1.5px var(--cta-edge), var(--sf-shadow) !important; }
+
+/* inside a surface: one raised step for cards and rows, one for hover, one for pressed */
+.c-pcard, .c-pcard.kept { background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-pcard.kept .c-kick { color: var(--good); }
+.c-pcard.kept p { color: var(--tx-2); }
+.c-changed, .c-sum, .c-aheadnote, .c-filter, .c-tpre, .c-mealseg, .k-sheet .c-fix, .c-mi.first, .k .c-kchip, .c-find, .c-mat .c-leave .c-find { background: var(--sf-raised); }
+.k-sheet .c-fix:hover, .c-mi:hover, .c-mi:focus-visible, .c-mi.first:hover, .k .c-kchip:hover { background: var(--sf-hover); }
+.k-place { background: var(--sf-raised) !important; }
+.k-place:hover { background: var(--sf-hover) !important; }
+.k-arrow:hover, .k-when:hover, .k-seg button:hover, .k-pill:hover, .k .c-stack:hover, .k .c-listbtn:hover, .k .c-sbtn:hover, .c-pomo:hover,
+.k .c-rchip.plan:hover, .k .c-rchip.quiet:hover, .c-mpop-off:hover, .k-sheet .c-ghost:hover { background: var(--sf-hover); }
+.k-reset, .kinds-allbtn, .c-mpop-x, .k .c-spreadsave { background: var(--sf-hover); }
+.k-reset:hover, .kinds-allbtn:hover, .c-mpop-x:hover, .k .c-spreadsave:hover { background: var(--sf-press); }
+.k-x, .c-tx, .c-hidepanel, .c-tq, .c-tstep { background: var(--sf-hover) !important; }
+.k-x:hover, .c-tx:hover, .c-hidepanel:hover, .c-tq:hover, .c-tstep:hover { background: var(--sf-press) !important; }
+/* the board's own buttons step the same way */
+.small:hover:not(:disabled), .tool:hover, .band-btn:hover:not(.off):not(:disabled) { background: var(--sf-press); }
+/* edges and lines that were cream are white, at the same strength */
+.c-again, .k .c-leavebtn, .k .c-opt, .k .c-libedit, .k .c-mpart, .c-leavebtn, .c-opt, .c-libedit, .c-mpart { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); }
+.c-again:hover, .c-leavebtn:hover, .c-opt:hover, .c-libedit:hover { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.c-mpart:disabled { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.14); }
+.c-leavebtn.on { box-shadow: inset 0 0 0 1.5px var(--cta-edge); }
+.c-leavebtn[aria-expanded="true"], .c-opt[aria-pressed="true"], .c-libedit[aria-pressed="true"], .c-mpart.on { box-shadow: none; color: var(--sf-ink); }
+/* the not cooking pieces are pieces, not chrome: they keep their own bevel */
+.k .c-opt.c-way, .c-opt.c-way { box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
+.k .c-pill.c-check:not(.on) { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28); }
+.k .c-pill.c-check:not(.on):hover { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5); }
+.c-libdiv::after { background: rgba(255, 255, 255, 0.14); }
+.c-pwrap.editing .c-piece { outline-color: rgba(255, 255, 255, 0.6); }
+.c-shopline { background: rgba(255, 255, 255, 0.08); }
+.c-shopline:hover { background: rgba(255, 255, 255, 0.14); }
+.c-meal-scroll { scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
+.c-mat .c-find { background: var(--sf); }
+/* words on the leather keep the mat's own light cream (#E9D4B8 passes there, the grey wouldn't); words on
+   the surfaces inside the mat take the system's */
+.c-mat { --cream-2: #E9D4B8; }
+.c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt { --cream-2: var(--tx-3); }
+.k .c-su-x, .c-su-sv, .k .c-su-opt { color: var(--tx); }
+/* the setup's Next that can't be used yet was the gold faded to 45 percent (its words faded with it); a
+   button that can't be used is the surface with quiet words, as everywhere else */
+.c-su-acts .c-su-next:disabled { opacity: 1; background: var(--sf); color: var(--tx-3); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-su-steph, .c-su-sl, .k .c-su-opt small { color: var(--tx-3); }
+
+/* the one call to action: gold, with near black words. The board's main button was teal; it is gold too */
+.k .c-go, .c-mat .c-go, .k-sheet .c-go, .c-mpop .c-go, .k .c-rchip.sunday, .k .c-ownweek, .c-me-dot { color: var(--sf-ink); }
+.c-tgo, .k-reset.due { color: var(--sf-ink) !important; }
+.go, .small.primary, .tool.go { background: var(--k-gold); color: var(--sf-ink); box-shadow: none; }
+.go:hover:not(:disabled), .small.primary:hover:not(:disabled), .tool.go:hover { background: var(--gold-hi); }
+.go:not(.gold) canvas, .small.primary canvas, .tool.go canvas { filter: brightness(0) invert(0.11); }
+/* the quieter call: gold words on a soft gold edge (the bottom bar's Sunday Reset, while it's a call) */
+.k .c-rchip.midweek, .k .c-rchip.progress, .k .c-rchip.snoozed { background: var(--cta-fill); color: var(--k-gold); box-shadow: inset 0 0 0 1.5px var(--cta-edge); }
+.k .c-rchip.midweek:hover, .k .c-rchip.progress:hover, .k .c-rchip.snoozed:hover { background: var(--cta-hover); }
+.k-sheet .c-plink, .k .c-plink { box-shadow: inset 0 0 0 1.5px var(--cta-edge); }
+.k .c-plink { background: var(--cta-fill); }
+.k .c-plink:hover { background: var(--cta-hover); }
+.kind.kind-all { box-shadow: inset 0 0 0 1.5px var(--cta-edge); }
+
+/* counts: one badge everywhere. A white step on the surface; on white (a pressed pill, the open stack, an
+   open Leave out) a dark step with near black figures; on the stacks' paper cards, near black */
+.k-count, .c-sn, .c-n, .c-leavebtn .k-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center; font: 600 12px/1 var(--k-font); font-variant-numeric: tabular-nums; background: var(--badge); color: var(--tx); }
+.k-pill[aria-pressed="true"] .k-count, .k .c-stack.on .c-sn, .c-leavebtn[aria-expanded="true"] .k-count { background: var(--badge-light); color: var(--sf-ink); }
+.c-n { background: var(--sf-ink); color: #FFFFFF; }
+
+/* the coach's spotlight and the board's tour dim in plain black too */
+.c-coach-ring { box-shadow: 0 0 0 3px var(--k-gold), 0 0 0 9999px rgba(0, 0, 0, 0.3); }
+@keyframes cring { 50% { box-shadow: 0 0 0 6px rgba(242, 207, 122, 0.7), 0 0 0 9999px rgba(0, 0, 0, 0.3); } }
+.coach-ring { box-shadow: 0 0 0 3px var(--gold), 0 0 0 9999px rgba(0, 0, 0, 0.5); }
+/* things that matched the old panel by hand: the board's sticky buttons and the setup's foot fade into the surface */
+.side .go.wide { box-shadow: 0 -10px 18px rgba(35, 35, 37, 0.95); }
+.sheet.onb > .actions { background: linear-gradient(rgba(32, 31, 32, 0), rgba(32, 31, 32, 0.98) 30%); }
+.onb-from, .onb-face-now { background: var(--sf-raised); }
+
+/* a night with its dinner decided: the day on green reads in the soft white, not the grey */
+.slot.set .dy { color: var(--soft); }
+
+/* == the corners: one height for every chip ==
+   You, the date, the zoom, the bottom bar, the stack strip, and the reset's steps are all 50 tall:
+   38 tall buttons inside 6 of padding. */
+.c-tr .k-seg button, .k .c-listbtn { height: 38px; padding-top: 0; padding-bottom: 0; }
+.c-br .k-pill { height: 38px; padding-top: 0; padding-bottom: 0; border-radius: 12px; }
+.k .c-rchip { height: 38px; border-radius: 12px; }
+.c-tc .k-back { height: 38px; padding: 0 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
+.c-tc .k-back:hover { background: rgba(255, 255, 255, 0.16); }
+/* in Now the date and the clock sit on one baseline, 38 tall like the arrows they replace (34 on a narrow
+   window, where the chips beside it are 46) */
+.c-tc .k-in-today .k-when { padding-top: 8px; padding-bottom: 9px; }
+@media (max-width: 759px) { .c-tc .k-in-today .k-when { padding-top: 7px; padding-bottom: 7px; } }
+
+/* the zoom switch: Now stands apart from the calendar again (the sliding white became the first child,
+   so the old :first-child rule lost its button), and List gets the same line, centered in its gap */
+.c-nowsplit button:first-of-type { margin-right: 11px; position: relative; }
+.c-nowsplit button:first-of-type::after { content: ""; position: absolute; right: -7px; top: 10px; bottom: 10px; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; }
+.k .c-listbtn { margin-left: 9px; border-radius: 12px; box-shadow: none; position: relative; }
+.k .c-listbtn::before { content: ""; position: absolute; left: -7px; top: 10px; bottom: 10px; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; }
+
+/* your name: the second line is on the type scale (12, not 11), and the big circle in the menu stays round */
+.k .c-me.c-sample .c-me-name::after { font-size: 12px; line-height: 1.2; }
+.c-me-name { text-align: left; }
+.c-devchip b { font-size: 12px; }
+.c-menu-head .c-me-dot { flex: none; }
+
+/* your name while its menu is open: the chip turns white as its own rule says (the warm glass rule's
+   !important kept it dark, so the name went dark on dark, about 1.2 to 1, the inverse again), and the
+   chevron and Sample week turn dark with it */
+.k .c-me[aria-expanded="true"] { background: var(--cream) !important; color: var(--esp); }
+/* the chips that are buttons show a hover again (the same !important hid it): the surface a white step up */
+.k .c-me:not([aria-expanded="true"]):hover, .k .c-devchip:hover, .k-chip.c-peek:hover { background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf) !important; }
+.k .c-me[aria-expanded="true"] > canvas { filter: brightness(0); opacity: 0.86; }
+.k .c-me.c-sample[aria-expanded="true"] .c-me-name::after { color: #5A5A5F; }
+
+/* the bottom bar: what steps back takes a real color, never a fade; counts use even width figures, so
+   11 and 30 sit in the same size badge and the bar doesn't jump when one changes */
+.c-rchip .c-rmeta { opacity: 1; }
+.k-count, .c-sn, .c-n { font-variant-numeric: tabular-nums; }
+
+/* == the stack strip under the date ==
+   Same padding and button height as the chips around it, counts that read (3.24 to 1 before), one
+   badge size everywhere, and the line before the two actions instead of inside them */
+.c-stackbar { padding: 6px; }
+.k .c-stack { height: 38px; padding: 0 12px; gap: 8px; }
+.k .c-stackx { width: 38px; padding: 0; justify-content: center; }
+/* (the badge itself is the one count badge, at the top of this file) */
+.k .c-stackall { box-shadow: none; border-radius: 12px; margin-left: 0; }
+/* a long group name ("Home maintenance, repairs, and everything else around the house" took 524 px) ends in an ellipsis */
+.k .c-stack { max-width: 240px; }
+.k .c-stack > span:not(.c-sn) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k .c-stacknew { margin-left: 11px; position: relative; }
+.k .c-stacknew::before { content: ""; position: absolute; left: -7px; top: 10px; bottom: 10px; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; }
+
+/* == Now: the band and its question ==
+   The band hangs under the date chip "in the same chip" (V8), so it wears the same surface (top of this
+   file); the question under it too. One radius (18), one button shape (38 tall, 12 round), one icon gap (8). */
+/* between a laptop and a phone the date rides on the band's top edge: the same surface, flush, so the two
+   read as one card (overlapping two see through layers drew a darker 6 px strip). The hairline runs round
+   the pair, not between them, and only the band casts the shadow */
+body.k-today .c-bandkick { margin-bottom: 0; }
+@media (min-width: 760px) and (max-width: 1139px) {
+  body.k-today .c-bandkick { box-shadow: inset 0 1px 0 var(--sf-edge), inset 1px 0 0 var(--sf-edge), inset -1px 0 0 var(--sf-edge) !important; }
+  body.k-today .c-bandkick + .band-in { box-shadow: inset 0 -1px 0 var(--sf-edge), inset 1px 0 0 var(--sf-edge), inset -1px 0 0 var(--sf-edge), var(--sf-shadow) !important; }
+}
+body.k-today .band-pin::before { box-shadow: 0 0 0 2px var(--sf-solid), inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
+body.k-today .moment { border-radius: 18px; }
+body.k-today .moment-x { width: 38px; height: 38px; border-radius: 12px; }
+body.k-today .band-btn, body.k-today .band-idea, body.k-today .moment-kind, body.k-today .moment-go, body.k-today .moment-later { gap: 8px; }
+/* asleep there are no buttons, so the foot doesn't hold their room open (19.5 under the line, 14 over it) */
+.band-foot:has(> .band-acts:empty) { min-height: 0; }
+
+/* == the day view's date chip: one radius inside it (18 outside, 8 of padding, so 10 and 12) == */
+.c-days .daypill { border-radius: 10px; }
+.c-kinds .kinds-pick { min-height: 38px; border-radius: 12px; }
+/* See all sits beside the kind, as its own rule says, not on a line of its own (#kinds isn't a row by itself) */
+.c-tc #kinds { display: flex; align-items: center; }
+.c-tc .kinds-allbtn { width: 38px; height: 38px; border-radius: 12px; }
+
+/* == To-dos beside the board (the dock) ==
+   With the panel open, your name moves to its right edge (492 px) and the date, still centered on the
+   window, sat on top of it (and on the Dev chip). The date rides beside the zoom instead; between a
+   laptop and a phone it centers in the room right of the panel. Section labels match every other label
+   (12, not 13). */
+@media (min-width: 1140px) {
+  body.c-docked .c-tc { left: auto; right: calc(var(--c-tr-w, 409px) + 28px); transform: none; }
+  body.c-docked .c-devname { display: none; }
+}
+@media (min-width: 760px) and (max-width: 1139px) {
+  body.c-docked .c-tc { left: calc((476px + 100vw) / 2); }
+  /* 123 px between the panel and the zoom: room for your circle, not for the Dev chip as well (it ran under the zoom) */
+  body.c-docked .c-devchip { display: none !important; }
+  /* and the bottom bar folds to its marks, as it does under 1000 px, so Add isn't left under the panel */
+  body.c-docked .c-br .k-pill > span:not(.k-count) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body.c-docked .c-br .k-pill { padding: 0 12px; }
+}
+/* a pill folded to its mark keeps its name for a screen reader (display: none left To-dos named "6" and
+   Block library with no name at all) */
+@media (max-width: 1000px) {
+  .c-br .k-pill > span:not(.k-count) { display: inline; position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.c-br .k-pill { position: relative; }
+.c-sect { font-size: 12px; }
+
+/* == your account menu: a focused row shows a ring, not only a 9 percent tint == */
+.c-mi:focus-visible { box-shadow: inset 0 0 0 2px var(--k-gold); }
+.k .c-ownweek:focus-visible { box-shadow: inset 0 0 0 2px #FFFFFF; }
+
+/* == Settings on a wide window: the corners it covers step away ==
+   The date chip and the bottom bar's Add sat under the panel (it ends at 880 px on a 1440 window) and
+   showed through its glass. The board's own corner and tabs already hide here. */
+body.drawer-live .c-tl, body.drawer-live .c-tc, body.drawer-live .c-tr, body.drawer-live .c-bl, body.drawer-live .c-br,
+body.drawer-live .c-stackbar, body.drawer-live .c-steps, body.drawer-live .c-peek { visibility: hidden; }
+
+/* == Larger text: the corners grow with every other panel (the board zooms its panels 1.14) == */
+body.big-text .k-chip:not(.c-me):not(.c-devchip), body.big-text .c-tl, body.big-text .c-menu,
+body.big-text .c-dock, body.big-text .c-timer, body.big-text .c-coach, body.big-text .c-bagpop { zoom: 1.14; }
+/* a zoomed menu still ends above the window's bottom edge (its max height grows with the zoom) */
+body.big-text .c-menu { max-height: calc((100vh - 100px) / 1.14); }
+
+/* == the two intro pages (the setup's first page, the Sunday Reset's) ==
+   Both kickers on one line, and the main button never narrower than the one beside it */
+.k-sheet .c-intro-r { padding-top: 0; }
+.k-sheet.c-intro .c-go { min-width: 132px; }
+/* on a phone the first kicker runs the full width, so it leaves the close button its room */
+@media (max-width: 759px) {
+  .k-sheet.c-intro .c-intro-l > .c-kick:first-child { padding-right: 52px; }
+}
+
+/* == the meal board, a block's own mat, and the setup: words on wood and leather ==
+   Nothing steps back with alpha (the rule on the desk): each quiet line takes a real color that passes
+   4.5 to 1 on the wood it sits on. Before: a day that's over 3.05, the row hint 3.53 at 11 px, the line
+   under the title 4.32 on the leather, today's column head 3.78, a block's small line faded to 4.18. */
+.c-mathow { color: #E9D4B8; }
+.c-mcell.past { color: #3F2A12; }
+.c-mcell.off, .c-gempty { color: #4A3418; }
+.c-mplus { color: #5A4128; }
+.c-mrow-hint { font-size: 12px; color: #4A3418; }
+.c-mhead.today b, .c-mhead.today span { color: #134440; }
+.c-dblock small { opacity: 1; }
+.c-cook { font-size: 12px; }
+/* the setup on the desk: a question you haven't reached is quieter by weight, not by alpha (its label sat
+   at 55 percent, its groove at 45, and the question in the groove read 2.49 to 1) */
+.c-su-row.later .c-su-label, .c-su-row.later .c-su-slot { opacity: 1; }
+.c-su-row.later .c-su-label b { font-weight: 600; }
+.c-su-hint, .c-su-row:not(.on) .c-su-hint { color: #3A2710; }
+.c-su-n { background: #7A5A36; }
+.c-su-row.done .c-su-n { background: #3C7846; }
+.c-su-lb small { opacity: 1; }
+/* a row's groove centers what's in it, on the line of its label (the question sat 7 px from the groove's top) */
+.c-su-slot { align-content: center; }
+/* More below: hidden is hidden, so a keyboard never lands on it while it's faded out */
+.c-more { visibility: hidden; transition: opacity 0.18s ease-out, transform 0.18s var(--f-out), visibility 0s linear 0.18s; }
+.c-more.on { visibility: visible; transition-delay: 0s; }
+
+/* == the Pomodoro timer ==
+   The round you're in sat 12 px under the others with a rule over it (its dot took the board's .now
+   strip). The red kicker read 3.36 to 1; the board's own coral passes at 5.56. Its buttons came in four
+   heights (47, 41.5, 33.5, 30); now 44 for the actions, 32 for the presets and the steppers. */
+.c-tdots i { flex: none; display: block; margin: 0; padding: 0; border: 0; }
+.c-tkick { color: #FF8B78; }
+.c-timer.rest .c-tkick { color: #8FD3B1; }
+.c-tgo, .c-tq { min-height: 44px; padding-top: 0; padding-bottom: 0; border-radius: 12px; }
+.c-tpre button { min-height: 32px; padding-top: 0; padding-bottom: 0; border-radius: 8px; }
+.c-town { grid-template-columns: auto 32px 1fr 32px; }
+.c-town .c-tstep { width: 32px; height: 32px; border-radius: 10px; }
+/* while it runs, its chip on the bottom left is 50 tall like the bar beside it (it was 60) */
+.c-bl .c-pomo { height: 38px; padding-top: 0; padding-bottom: 0; }
+.c-pt { line-height: 1; }
+
+/* == the place panel: the day strip's hours never print on top of each other ==
+   Its last label reads "midnight +1 day" (92 px, set right) and covered 6 pm and 9 pm on a 306 px strip.
+   The two labels before the last step aside (the ticks on the strip stay). */
+.ds-ticks span:has(+ span.last), .ds-ticks span:has(+ span + span.last) { visibility: hidden; }
+
+/* == the tools over a picked block, the hover note, and toasts: the corners' shapes ==
+   Buttons 38 tall and 12 round with 8 between mark and word, like the band's; the hover note on the 4 px
+   scale with the same 12 round; a toast's button a 32 px target instead of 27. */
+.btools { padding: 8px; border-radius: 20px; }
+.btools .tool, .btools .tool-more { min-height: 38px; border-radius: 12px; gap: 8px; }
+.btools .tool-sw { border-radius: 10px; }
+.chip { padding: 8px 12px; border-radius: 12px; }
+.toast { padding: 10px 16px; }
+.toast.act { padding: 6px 6px 6px 16px; }
+.toast-act { min-height: 32px; padding: 0 12px; border-radius: 9px; }
+
+/* == This week's plan ==
+   The link under To-dos was styled only inside .k, and the sheet isn't, so it fell back to a bare 22 px
+   line of text; it gets its gold row. Every night is one height (48 without a cook's badge, 51 with). */
+.k-sheet .c-plink { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--cta-fill); color: var(--k-gold); font-size: 13px; font-weight: 600; text-align: left; }
+.k-sheet .c-plink:hover { background: var(--cta-hover); }
+.k-sheet .c-prow { min-height: 51px; }
+
+/* == round buttons that close or hide: one size (36), and a 44 px target on a phone == */
+.k-x { width: 36px; height: 36px; }
+.k-x canvas { width: 14px; height: 14px; }
+.c-tx, .c-hidepanel { width: 36px; height: 36px; }
+@media (max-width: 759px) {
+  .k-x, .c-hidepanel { width: 44px; height: 44px; }
+  .k-sheet .k-x { top: 14px; right: 14px; }
+}
+
+/* == the phone's Today ==
+   What's already over folds into one line, but at 366 px its ending ("and 2 more") was cut to "and ...";
+   it takes a second line instead */
+.td-earlier { white-space: normal; text-overflow: clip; text-wrap: balance; }
+
+/* == the Sunday Reset while it runs == */
+/* the line of steps across the top is a 50 tall chip like the rest */
+.c-steps { padding-top: 8px; padding-bottom: 8px; }
+/* Show steps, with the panel put aside: it took the To-dos card's .c-peek line (full width, dark brown
+   type at 1.19 to 1, a top rule, two-line clamp), so it ran across the whole top of the screen */
+.k-chip.c-peek { display: flex; width: auto; height: 50px; margin: 0; padding: 0 16px 0 12px; border-top: 0; color: var(--cream); line-height: 1.2; overflow: visible; -webkit-line-clamp: none; }
+/* what's due, in one line, wraps inside the panel (it ran 490 px wide in a 392 px panel and was cut) */
+body.c-resetting .rack.resetting .rack-body > .c-aheadnote { flex: 1 1 100%; min-width: 0; }
+/* tiles fill the panel two to a row, as the To-dos step does (136 and 168 wide left 46 to 108 px ragged) */
+body.c-resetting .rack.resetting .rack-body > .tile { flex: 0 0 calc(50% - 6px); width: auto; max-width: calc(50% - 6px); min-width: 0; }
+body.c-resetting .rack.resetting .rsec-row > .tile { flex: 0 0 calc(50% - 5px); width: auto; max-width: calc(50% - 5px); min-width: 0; }
+body.c-resetting .rack.resetting .rsec-row > .tile.stack { flex-basis: calc(50% - 13px); max-width: calc(50% - 13px); }
+/* the week's dinners: every night one height (they were 40, 42, and 46) */
+body.c-resetting .rack.resetting .slot { min-height: 46px; }
+/* the recap: the share card, what's still open, the grocery list, and the picture all span the panel */
+body.c-resetting .rack.resetting .rack-body > .c-share, body.c-resetting .rack.resetting .rack-body > .recap-box { flex: 1 1 100%; min-width: 0; }
+body.c-step-done .rack.resetting .rack-body > .cta-card, body.c-step-done .rack.resetting .rack-body > .small { flex: 1 1 100%; width: auto; }
+body.c-step-done .rack.resetting .rack-body > .small { justify-content: center; min-height: 40px; }
+/* the recap's four numbers two by two, so what's still open and the grocery list show without scrolling */
+body.c-step-done .rack.resetting .rack-body > .stat { flex: 0 0 calc(50% - 6px); min-width: 0; }
+/* what's still open starts on the left edge with its heading (it was centered under a left aligned heading) */
+body.c-resetting .rack.resetting .recap-open { align-self: flex-start; }

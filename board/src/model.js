@@ -802,18 +802,25 @@
   function groceries(state, dates) {
     const byId = new Map(state.pantry.map((p) => [p.id, p]));
     const out = new Map();
-    for (const d of dates) {
-      const dn = state.dinners[d];
-      if (!dn || ['out', 'order', 'skip', 'leftovers'].includes(dn.cook)) continue;
-      for (const id of dn.items || []) {
+    const NOT = ['out', 'order', 'skip', 'leftovers'];
+    const add = (ids, d) => {
+      for (const id of ids || []) {
         const p = byId.get(id);
         if (!p) continue;
         if (!out.has(id)) out.set(id, { id, name: p.name, kind: p.kind, days: [] });
-        out.get(id).days.push(d);
+        const x = out.get(id);
+        if (!x.days.includes(d)) x.days.push(d);
       }
+    };
+    for (const d of dates) {
+      const dn = state.dinners[d];
+      if (dn && !NOT.includes(dn.cook)) add(dn.items, d);
+      /* breakfast and lunch, where a version plans them on the board too (state.meals) */
+      const ml = state.meals && state.meals[d];
+      if (ml) for (const k of ['breakfast', 'lunch']) { const m = ml[k]; if (m && typeof m === 'object' && !NOT.includes(m.how)) add(m.items, d); }
     }
     const order = { protein: 0, veg: 1, base: 2, extra: 3 };
-    return Array.from(out.values()).sort((a, b) => (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name));
+    return Array.from(out.values()).sort((a, b) => ((order[a.kind] ?? 3) - (order[b.kind] ?? 3)) || a.name.localeCompare(b.name));
   }
   /* How far the shopping is: the list as it stands, and how many of those are checked. A check for
      something that left the list (a dinner changed) is kept, in case it comes back, and never counted. */

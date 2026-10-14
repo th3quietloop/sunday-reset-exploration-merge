@@ -206,13 +206,17 @@
      Pieces in your rack (piece) share one type size, with their mark above the name. */
   function faceTex(sp) {
     const dU = sp.dU || BLOCK_D;
-    const key = [sp.label, sp.sub, sp.icon, sp.ink, sp.wU.toFixed(2), dU, sp.done ? 1 : 0, sp.soft ? 1 : 0, sp.grip ? 1 : 0, sp.stack ? 1 : 0, sp.piece ? sp.pieceS || 1 : 0, sp.contL ? 1 : 0, sp.contR ? 1 : 0].join('|');
+    const key = [sp.label, sp.sub, sp.icon, sp.ink, sp.wU.toFixed(2), dU, sp.done ? 1 : 0, sp.soft ? 1 : 0, sp.grip ? 1 : 0, sp.stack ? 1 : 0, sp.piece ? sp.pieceS || 1 : 0, sp.contL ? 1 : 0, sp.contR ? 1 : 0, sp.floorU ? sp.floorU.toFixed(3) : 0].join('|');
     if (faceCache.has(key)) { const t = faceCache.get(key); faceCache.delete(key); faceCache.set(key, t); return t; }
     const k = dU > 1.5 ? 0.8 : 1;
     /* one scale across and down, so a long block's name is never stretched: a face too wide for a
        texture is drawn smaller in both directions */
     let PX = 170 * k;
     if (sp.wU * PX > 2048) PX = 2048 / sp.wU;
+    /* V11: on the day board nothing prints smaller than it reads (sp.floorU is the size of 12 screen pixels
+       on the desk as it's framed): a time that would print smaller is left off, and a name that would gives
+       way to the block's mark. The block's panel says both */
+    const minS = sp.floorU ? sp.floorU * PX : 0;
     const Wc = Math.max(8, Math.round(sp.wU * PX)), Hc = Math.round(dU * PX);
     const cv = document.createElement('canvas'); cv.width = Wc; cv.height = Hc;
     const g = cv.getContext('2d');
@@ -260,7 +264,7 @@
       const withIcon = W > H * 2.1, room = withIcon ? iconRoom : W - 2 * pad;
       const ns = sizeFor(g, label, room, H * 0.25);
       const subS = Math.min(H * 0.19, sizeFor(g, sp.sub, room, H * 0.19, 700, true));
-      if (subS >= 14 && ns >= H * 0.14) cand.push({ k: withIcon ? 'stackI' : 'stack', s: ns, subS, bonus: 1.5 });
+      if (subS >= Math.max(14, minS) && ns >= H * 0.14) cand.push({ k: withIcon ? 'stackI' : 'stack', s: ns, subS, bonus: 1.5 });
     }
     cand.push({ k: 'text1', s: sizeFor(g, label, W - 2 * pad, H * 0.28), bonus: 1 });
     if (two) cand.push({ k: 'text2', s: size2(W - 2 * pad, H * 0.24), bonus: 0.97 });
@@ -271,7 +275,7 @@
       let sub = null;
       if (sp.stack && sp.sub) {
         const sf = wrapFit(g, sp.sub, room, Math.min(nm.s * 0.74, H * 0.16), 2, 700, true);
-        if (sf.s >= 13) sub = sf;
+        if (sf.s >= Math.max(13, minS)) sub = sf;
       }
       const tall = (s) => nm.lines.length * nm.s * 1.08 + (s ? H * 0.05 + s.lines.length * s.s * 1.18 : 0);
       if (sub && tall(sub) > H - 2 * pad) sub = null;
@@ -280,6 +284,13 @@
     if (W < H * 0.9) {
       cand.push({ k: 'vert1', s: Math.min(sizeFor(g, label, H * 0.88, H * 0.3), W * 0.62), bonus: 0.92 });
       if (two && W > H * 0.34) cand.push({ k: 'vert2', s: Math.min(size2(H * 0.88, H * 0.26), W * 0.34), bonus: 0.9 });
+    }
+    if (minS) {
+      for (let i = cand.length - 1; i >= 0; i--) if (cand[i].s < minS) cand.splice(i, 1);
+      if (!cand.length) {
+        if (W > 8) Icons.draw(g, icon, W / 2, H / 2, Math.min(W * 0.6, H * 0.36), sp.ink);
+        return keep(key, cv);
+      }
     }
     cand.sort((x, y) => y.s * y.bonus - x.s * x.bonus);
     let best = cand[0];
@@ -298,7 +309,7 @@
         else {
           const subS = sp.sub ? Math.min(fs * 0.72, sizeFor(g, sp.sub, iconRoom, H * 0.2, 700, true)) : 0;
           setFont(g, fs, 800);
-          if (subS >= 12) {
+          if (subS >= Math.max(12, minS)) {
             g.fillText(label, x0, H * 0.4);
             setFont(g, subS, 700, true); g.fillText(sp.sub, x0, H * 0.72);
           } else g.fillText(label, x0, H / 2);
@@ -341,7 +352,7 @@
      and its time, so it reads as time kept open on purpose, not a gap nobody filled. */
   function freeTex(sp) {
     const dU = sp.dU || BLOCK_D;
-    const key = ['free', sp.label, sp.sub, sp.icon, sp.wU.toFixed(2), dU, ink.free].join('|');
+    const key = ['free', sp.label, sp.sub, sp.icon, sp.wU.toFixed(2), dU, ink.free, sp.floorU ? sp.floorU.toFixed(3) : 0].join('|');
     if (faceCache.has(key)) { const t = faceCache.get(key); faceCache.delete(key); faceCache.set(key, t); return t; }
     const k = dU > 1.5 ? 0.8 : 1;
     let PX = 170 * k;
@@ -354,9 +365,13 @@
     rr(g, g.lineWidth, g.lineWidth, W - 2 * g.lineWidth, H - 2 * g.lineWidth, H * 0.12); g.stroke(); g.restore();
     g.fillStyle = pen; g.textBaseline = 'middle';
     const label = sp.label || '';
-    if (W > H * 1.6) {
+    /* V11: as on a block, nothing on the day board prints smaller than it reads */
+    const minS = sp.floorU ? sp.floorU * PX : 0;
+    const big = W > H * 1.6 && (!minS || Math.min(H * 0.26, sizeFor(g, label, W - H * 1.1, H * 0.26)) >= minS);
+    if (big) {
       const ns = Math.min(H * 0.26, sizeFor(g, label, W - H * 1.1, H * 0.26));
-      const subS = sp.sub ? Math.min(H * 0.17, sizeFor(g, sp.sub, W - H * 1.1, H * 0.17, 700, true)) : 0;
+      let subS = sp.sub ? Math.min(H * 0.17, sizeFor(g, sp.sub, W - H * 1.1, H * 0.17, 700, true)) : 0;
+      if (subS < minS) subS = 0;
       setFont(g, ns, 800);
       const lw = Math.max(g.measureText(label).width, subS ? (setFont(g, subS, 700, true), g.measureText(sp.sub).width) : 0);
       const iconS = H * 0.36, gap = H * 0.14, total = iconS + gap + lw, x0 = Math.max(H * 0.14, (W - total) / 2);
@@ -475,8 +490,10 @@
     const hMul = opts.hMul || 1, h = lk.h * hMul;
     const w = Math.max(0.05, wU - GAP * 2);
     const sub = b.sub != null ? b.sub : '';
-    const sig = [themeV, b.label || b.name, sub, b.icon, lk.base, lk.ink, h, w.toFixed(3), dU, b.fixed && !b.sleep ? 1 : 0, b.done ? 1 : 0, b.soft ? 1 : 0, opts.grip ? 1 : 0, b.stack ? 1 : 0, b.free ? 1 : 0, b.piece ? b.pieceS || 1 : 0, b.contL ? 1 : 0, b.contR ? 1 : 0].join('|');
-    u.block = b; u.h = h; u.hMul = hMul;
+    /* V11: a day board block prints nothing smaller than it reads (dayPrintU, from the camera) */
+    const floorU = FEEL && u.kind === 'dblock' ? dayPrintU : 0;
+    const sig = [themeV, b.label || b.name, sub, b.icon, lk.base, lk.ink, h, w.toFixed(3), dU, b.fixed && !b.sleep ? 1 : 0, b.done ? 1 : 0, b.soft ? 1 : 0, opts.grip ? 1 : 0, b.stack ? 1 : 0, b.free ? 1 : 0, b.piece ? b.pieceS || 1 : 0, b.contL ? 1 : 0, b.contR ? 1 : 0, floorU].join('|');
+    u.block = b; u.h = h; u.hMul = hMul; u.wU = wU; u.gripOpt = !!opts.grip;
     /* a version can dim every block a moment isn't about (setFocus): plain darker wood, no print, same size */
     const dim = !!(focusFn && !b.free && !b.piece && !focusFn(b));
     const sig2 = sig + (dim ? '|dim' : '');
@@ -499,7 +516,7 @@
       u.face.scale.set(Math.max(0.02, w - 0.06), 1, dU - 0.06);
       u.face.position.y = 0.026;
       u.halo.scale.set(w + 0.9, 1, dU + 0.9); u.halo.position.y = 0.012;
-      const ft = freeTex({ label: b.label || b.name, sub, icon: b.icon, wU: Math.round(w * 20) / 20, dU });
+      const ft = freeTex({ label: b.label || b.name, sub, icon: b.icon, wU: Math.round(w * 20) / 20, dU, floorU });
       if (u.face.material.map !== ft) { u.face.material.map = ft; u.face.material.needsUpdate = true; }
       u.pin.visible = false;
       return;
@@ -514,7 +531,7 @@
     const grip = !!opts.grip && !b.soft && !b.sleep && !b.fixed && !b.done;
     /* a version can print only the mark on a week block too narrow for its name (window.SR_iconOnly); hovering names it */
     const thin = !!(window.SR_iconOnly && !opts.hMul && !b.piece && w < 0.42 && !b.free);
-    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink: lk.ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR });
+    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink: lk.ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR, floorU });
     if (face.material.map !== tex) { face.material.map = tex; face.material.needsUpdate = true; }
     u.canGrip = grip && w > dU * 0.9;
     if (u.canGrip) {
@@ -547,10 +564,12 @@
     const wdW = g.measureText(wd).width;
     setFont(g, 96, 900);
     g.fillText(String(r.num), 34 + wdW + 18, 110);
-    const line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : r.due ? r.due + (r.due === 1 ? ' thing due' : ' things due') : '';
+    /* feel: a day that isn't your usual says what kind it is, when nothing more pressing is there */
+    const kindLine = !r.trip && !(r.markers && r.markers.length) && !r.due && r.kind;
+    const line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : r.due ? r.due + (r.due === 1 ? ' thing due' : ' things due') : kindLine ? r.kind : '';
     if (line) {
-      const col = r.today ? '#FFE3A6' : r.trip ? '#2A4B90' : r.markers && r.markers.length ? '#983A5E' : '#963A28';
-      const icon = r.trip ? 'plane' : r.markers && r.markers.length ? r.markerIcon || 'cake' : 'flag';
+      const col = r.today ? '#FFE3A6' : r.trip ? '#2A4B90' : r.markers && r.markers.length ? '#983A5E' : kindLine ? '#5C4426' : '#963A28';
+      const icon = r.trip ? 'plane' : r.markers && r.markers.length ? r.markerIcon || 'cake' : kindLine ? r.kindIcon || 'calendar' : 'flag';
       Icons.draw(g, icon, 56, 186, 50, col);
       g.fillStyle = col; setFont(g, 42, 700, true);
       g.fillText(ellipsize(g, line, W - 110), 92, 202);
@@ -744,7 +763,8 @@
       shown++;
     }
     if (shown < m.list.length) { g.fillStyle = '#6A5440'; setFont(g, 30, 800); g.fillText('and ' + (m.list.length - shown) + ' more', lx, y - 8); }
-    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual && !window.SR_starYours ? '~' : '') + m.yours, lx, H - 64); setFont(g, 30, 700, true); g.fillText(m.usual ? (window.SR_starYours ? 'to yourself, usually' : 'usually, to yourself') : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); }
+    /* V11: a month after the first usual one shows its number alone (m.quiet); the words were said once */
+    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual && !window.SR_starYours ? '~' : '') + m.yours, lx, m.quiet ? H - 40 : H - 64); if (!m.quiet) { setFont(g, 30, 700, true); g.fillText(m.usual ? (window.SR_starYours ? 'to yourself, usually' : 'usually, to yourself') : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); } }
     return canvasTex(cv);
   }
 
@@ -864,7 +884,7 @@
     }
     rows.forEach((r, i) => {
       const row = week.rows[i];
-      const sig = [r.date, r.wd, r.num, r.today, r.focus, (r.markers || []).join(','), r.trip || '', r.due || 0, r.markerIcon || ''].join('|');
+      const sig = [r.date, r.wd, r.num, r.today, r.focus, (r.markers || []).join(','), r.trip || '', r.due || 0, r.markerIcon || '', r.kind || ''].join('|');
       if (row.userData.sig !== sig) {
         row.userData.sig = sig;
         const old = row.userData.tabFace.material.map;
@@ -1043,6 +1063,186 @@
     month.firstDate = cells[0].date;
   }
 
+  /* == kinds of day, laid out (feel) ==
+     Every kind this day could be, as cards on a board under the day: the day as each kind would make it,
+     morning, afternoon, and evening, with its hours to yourself. Tap one and the day becomes it. */
+  const kinds = { group: null, base: null, title: null, cards: [], on: false, box: null, date: null, sig: '' };
+  /* V11: a card is drawn at twice the size it will have on the screen (L.px, the room's estimate of screen
+     pixels to a unit of the desk), with its words set in screen sizes: the name 16 to 19, the rest 13, nothing
+     under 12, so a card reads at whatever size the room makes it. The lanes are named by their marks
+     (sunrise, sun, moon), and a block's name prints only where most of it fits */
+  function kindTexture(c, L) {
+    const px = Math.max(6, L.px || 30), S = 2 * px, k = S / px;
+    const W = Math.round(L.w * S), H = Math.round(L.d * S), cw = L.w * px;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const paper = c.current ? '#FFF7E8' : '#F4EAD8', inkD = '#3A2C1E', inkS = '#6A5440';
+    const r = 12 * k;
+    g.fillStyle = paper; rr(g, 2 * k, 2 * k, W - 4 * k, H - 4 * k, r); g.fill();
+    if (c.current) { g.strokeStyle = '#1D5B56'; g.lineWidth = 3 * k; rr(g, 3.5 * k, 3.5 * k, W - 7 * k, H - 7 * k, r - 1.5 * k); g.stroke(); }
+    const pad = 12 * k, nameS = Math.max(16, Math.min(19, cw * 0.075)) * k, smallS = 13 * k;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    /* the top line: its mark, its name, and its hours to yourself (which step down to the next line when the
+       name needs the room: the name is what's read first) */
+    const y1 = pad + nameS * 0.6;
+    Icons.draw(g, c.icon || 'star', pad + 9 * k, y1, 18 * k, inkD);
+    setFont(g, nameS, 900);
+    const nameW = g.measureText(c.name).width;
+    setFont(g, smallS, 800, true);
+    const yt = c.yours ? '★ ' + c.yours : '', yw = yt ? g.measureText(yt).width + 8 * k : 0;
+    const yoursTop = !!yt && nameW + 26 * k + yw <= W - pad * 2;
+    let right = 0;
+    if (yoursTop) { right = yw; g.fillStyle = '#6B4F0C'; g.textAlign = 'right'; g.fillText(yt, W - pad, y1); g.textAlign = 'left'; }
+    setFont(g, nameS, 900); g.fillStyle = inkD;
+    g.fillText(ellipsize(g, c.name, W - pad * 2 - 26 * k - right), pad + 26 * k, y1);
+    /* the line under it: what it would take off (in red), or what it's for, with this weekday's usual kind tagged */
+    const y2 = y1 + nameS * 0.6 + 6 * k + smallS * 0.6;
+    let x = pad;
+    if (yt && !yoursTop) { setFont(g, smallS, 800, true); g.fillStyle = '#6B4F0C'; g.fillText(yt, x, y2); x += yw + 4 * k; }
+    if (c.often && !c.warn) {
+      setFont(g, 12 * k, 800, true);
+      const ow = g.measureText(c.often).width + 14 * k, oh = 20 * k;
+      g.fillStyle = '#F2CF7A'; rr(g, x, y2 - oh / 2, ow, oh, oh / 2); g.fill();
+      g.fillStyle = '#4B3A18'; g.textAlign = 'center'; g.fillText(c.often, x + ow / 2, y2 + 0.5 * k); g.textAlign = 'left';
+      x += ow + 8 * k;
+    }
+    setFont(g, smallS, 700, true); g.fillStyle = c.warn ? '#963A28' : inkS;
+    let lines = [];
+    if (c.warn) { lines = wrapWords(g, c.warn, W - pad - x).slice(0, 2); if (lines[1]) lines[1] = ellipsize(g, lines[1], W - pad - x); }
+    else if (c.line) lines = [ellipsize(g, c.line, W - pad - x)];
+    lines = lines.filter((t) => t && t.replace('…', '').length >= 4);
+    lines.forEach((t, i) => g.fillText(t, x, y2 + i * smallS * 1.25));
+    const textEnd = y2 + Math.max(0, lines.length - 1) * smallS * 1.25 + smallS * 0.6;
+    /* three lanes: the day, as this kind would make it */
+    const n = (c.lanes || []).length || 3, gapL = 5 * k, laneTop = textEnd + 10 * k;
+    const laneH = Math.max(12 * k, (H - pad - laneTop - gapL * (n - 1)) / n), lx = pad + 20 * k, lw = W - lx - pad;
+    const nameF = (laneH >= 28 * k ? 13 : 12) * k;
+    (c.lanes || []).forEach((Ln, i) => {
+      const y = laneTop + i * (laneH + gapL);
+      Icons.draw(g, Ln.icon || ['sunrise', 'sun', 'moon'][i] || 'moon', pad + 7 * k, y + laneH / 2, 14 * k, inkS);
+      g.save(); rr(g, lx, y, lw, laneH, 6 * k); g.clip();
+      g.fillStyle = 'rgba(120, 90, 50, 0.14)'; g.fillRect(lx, y, lw, laneH);
+      const per = lw / Math.max(60, Ln.to - Ln.from);
+      Ln.blocks.forEach((b) => {
+        const a = Math.max(b.start, Ln.from), z = Math.min(b.start + b.dur, Ln.to);
+        if (z - a < 5) return;
+        const bx = lx + (a - Ln.from) * per + k, bw = Math.max(2, (z - a) * per - 2 * k);
+        const base = b.sleep ? '#5C6272' : b.soft ? mix(CAT(b.cat), paper, 0.42) : CAT(b.cat);
+        g.fillStyle = base; rr(g, bx, y + 2 * k, bw, laneH - 4 * k, 4 * k); g.fill();
+        if (b.fresh) { g.strokeStyle = '#B5862A'; g.lineWidth = 1.5 * k; rr(g, bx + k, y + 3 * k, bw - 2 * k, laneH - 6 * k, 3.5 * k); g.stroke(); }
+        if (!b.sleep && laneH >= 16 * k) {
+          setFont(g, nameF, 800);
+          const t = ellipsize(g, b.name || '', bw - 10 * k);
+          if (t && t.replace('…', '').length >= 4) { g.fillStyle = b.soft ? inkD : pickInk(base, '#FFFFFF'); g.fillText(t, bx + 5 * k, y + laneH / 2 + 0.5 * k); }
+        }
+      });
+      g.restore();
+    });
+    g.textBaseline = 'alphabetic';
+    return canvasTex(cv);
+  }
+  /* V11: the cards are laid out by the room the camera has, in whichever number of columns makes each card
+     the biggest (a card is read across, so its width counts most, and a row left short counts against it):
+     two rows of four on a wide screen, two across on a tall one. Each card is as deep as the room's shape
+     allows. px is about how many screen pixels a unit of the desk takes there, a little under, so print
+     errs bigger (the far row is the smallest) */
+  function kindsLayout(n) {
+    const el = renderer && renderer.domElement.parentElement;
+    const SW = (el && el.clientWidth) || root.innerWidth || 1280, SH = (el && el.clientHeight) || root.innerHeight || 800;
+    const rw = Math.max(240, SW - insets.left - insets.right), rh = Math.max(200, SH - insets.top - insets.bottom);
+    const W = DAY_BOX.x1 - DAY_BOX.x0, pad = 0.6, gap = 0.45, head = 1.1, edge = 2.4, lean = 0.92;
+    const plan = (cols) => {
+      const rows = Math.max(1, Math.ceil(n / cols)), w = (W - pad * 2 - gap * (cols - 1)) / cols;
+      const wantD = (W + edge) * (rh / rw) / lean - edge;
+      const d = Math.max(w * 0.5, Math.min(w * 0.95, (wantD - head - pad * 2 - gap * (rows - 1)) / rows));
+      const D = head + pad + rows * d + (rows - 1) * gap + pad;
+      const px = Math.min(rw / (W + edge), rh / ((D + edge) * lean)), cw = w * px, ch = d * px * lean;
+      return { cols, rows, w, d, D, px, score: cw * Math.min(ch, cw * 0.7) * Math.pow(0.75, rows * cols - n) };
+    };
+    let best = null;
+    for (let cols = 1; cols <= Math.max(1, Math.min(4, n)); cols++) { const p = plan(cols); if (!best || p.score > best.score) best = p; }
+    /* it takes the day's place on the desk */
+    const x0 = TF.day.x + DAY_BOX.x0, z0 = TF.day.z + (DAY_BOX.z0 + DAY_BOX.z1) / 2 - best.D / 2;
+    return { cols: best.cols, rows: best.rows, w: best.w, d: best.d, W, D: best.D, x0, z0, pad, gap, head, px: 0.88 * best.px };
+  }
+  function setKinds(sp) {
+    if (!sp) {
+      if (!kinds.on) return;
+      kinds.on = false;
+      popItems([{ obj: kinds.base }, { obj: kinds.title }].concat(kinds.cards.filter((c) => c.visible).map((c) => ({ obj: c }))), false, null);
+      kinds.cards.forEach((c) => { c.userData.pickable = false; });
+      applyMode();
+      maybeSolve();
+      return;
+    }
+    const L = kindsLayout(sp.cards.length);
+    /* kept, so the cards can be laid out again when the room changes (setInsets) */
+    kinds.lastSp = sp;
+    if (!kinds.group) {
+      kinds.group = new T.Group(); world.add(kinds.group);
+      kinds.base = mesh(slab(rrShape(1, 1, 0.08), BOARD_Y, 0.05, 0), woodMat());
+      kinds.title = new T.Mesh(new T.PlaneGeometry(1, 1), printMat({ transparent: true, depthWrite: false }));
+      kinds.title.rotation.x = -Math.PI / 2;
+      kinds.group.add(kinds.base, kinds.title);
+    }
+    const fresh = !kinds.on;
+    kinds.on = true; kinds.date = sp.date;
+    /* the board: as wide as the day, deep enough for its rows, with its question cut into the wood */
+    const dim = L.W.toFixed(2) + 'x' + L.D.toFixed(2);
+    if (kinds.base.userData.dim !== dim) { kinds.base.userData.dim = dim; kinds.base.geometry.dispose(); kinds.base.geometry = slab(rrShape(L.W, L.D, 0.6), BOARD_Y, 0.05, 0); }
+    kinds.base.position.set(L.x0 + L.W / 2, 0, L.z0 + L.D / 2);
+    kinds.base.userData.baseY = 0;
+    const tsig = sp.title + '|' + (sp.sub || '') + '|' + themeV;
+    if (kinds.title.userData.sig !== tsig) {
+      kinds.title.userData.sig = tsig;
+      const TW = 2400, TH = Math.round(TW * L.head / (L.W - L.pad * 2));
+      const cv = document.createElement('canvas'); cv.width = TW; cv.height = TH;
+      const g = cv.getContext('2d'); g.textBaseline = 'middle'; g.textAlign = 'left';
+      g.fillStyle = ink.name; setFont(g, TH * 0.5, 900); cutText(g, sp.title, 0, TH * 0.5, 3);
+      if (sp.sub) { const tw = g.measureText(sp.title).width; setFont(g, TH * 0.3, 700, true); g.fillStyle = ink.note || ink.name; cutText(g, sp.sub, tw + TH * 0.4, TH * 0.54, 2); }
+      const old = kinds.title.material.map; kinds.title.material.map = canvasTex(cv); kinds.title.material.needsUpdate = true; if (old) old.dispose();
+    }
+    /* its size lives in baseScale, so the rise out of the desk keeps it */
+    kinds.title.userData.baseScale = new T.Vector3(L.W - L.pad * 2, L.head, 1);
+    if (!kinds.title.userData.pop) kinds.title.scale.copy(kinds.title.userData.baseScale);
+    kinds.title.position.set(L.x0 + L.W / 2, BOARD_Y + 0.006, L.z0 + L.pad + L.head / 2);
+    kinds.title.userData.baseY = BOARD_Y + 0.006;
+    while (kinds.cards.length < sp.cards.length) {
+      const c = new T.Group();
+      const body = mesh(blockGeo(1, 1, 0.16), mat('#E9D8B8', { roughness: 0.8 }));
+      const face = new T.Mesh(new T.PlaneGeometry(1, 1), printMat({ transparent: true, alphaTest: 0.02 }));
+      face.geometry.rotateX(-Math.PI / 2); face.position.y = 0.165; face.receiveShadow = true;
+      c.add(body, face);
+      c.userData = { kind: 'kindcard', body, face, lift: 0, baseY: BOARD_Y };
+      body.userData.owner = c; face.userData.owner = c;
+      kinds.group.add(c);
+      kinds.cards.push(c);
+    }
+    kinds.cards.forEach((c, i) => {
+      const it = sp.cards[i], u = c.userData;
+      if (!it) { if (c.visible && !u.pop) popItems([{ obj: c }], false, null); u.pickable = false; return; }
+      u.id = it.id; u.pickable = true; u.baseY = BOARD_Y;
+      const col = i % L.cols, row = Math.floor(i / L.cols);
+      c.position.x = L.x0 + L.pad + L.w / 2 + col * (L.w + L.gap);
+      c.position.z = L.z0 + L.pad + L.head + L.d / 2 + row * (L.d + L.gap);
+      const gsig = L.w.toFixed(3) + ':' + L.d.toFixed(3);
+      if (u.gsig !== gsig) { u.gsig = gsig; u.body.geometry = blockGeo(L.w, L.d, 0.16); u.face.scale.set(L.w - 0.08, 1, L.d - 0.08); }
+      const sig = JSON.stringify(it) + gsig + themeV + '|' + Math.round(L.px);
+      if (u.sig !== sig) { u.sig = sig; const old = u.face.material.map; u.face.material.map = kindTexture(it, L); u.face.material.needsUpdate = true; if (old) old.dispose(); }
+    });
+    kinds.box = { x0: L.x0, x1: L.x0 + L.W, z0: L.z0, z1: L.z0 + L.D };
+    if (fresh) {
+      /* they rise out of the desk, from the day outward, the way every board does */
+      const origin = new T.Vector3(L.x0 + L.W / 2, 0, L.z0);
+      /* a beat after the day sinks, so the two never stand in each other's place */
+      const items = [{ obj: kinds.base, delay: 0.12 }, { obj: kinds.title, delay: 0.12 }].concat(kinds.cards.slice(0, sp.cards.length).map((c, i) => ({ obj: c, delay: 0.16 + 0.03 * i })));
+      items.forEach((it) => { const u = it.obj.userData; if (!u.pop) { u.popK = 0; it.obj.position.y = (u.baseY || 0) - 1.1; } it.obj.visible = true; });
+      popItems(items, true, origin);
+      applyMode();
+    }
+    maybeSolve();
+  }
+
   const year = { group: null, base: null, cards: [] };
   function ycardPos(i) {
     const col = i % 4, row = Math.floor(i / 4);
@@ -1103,15 +1303,46 @@
     return i >= 0 ? i : min < RAIL0 ? 0 : LANES.length - 1;
   };
   const dayb = { lanes: [], group: null, base: null, header: null, headerSig: '', blocks: new Map(), gapMarks: [], ghosts: [], date: null, pawn: null, now: null, onLand: null };
+  /* V11: the size of 12 screen pixels on the day board as the camera frames it (the player's zoom counted,
+     in steps), so nothing on the board prints smaller than it reads; 0 until the day has been framed.
+     dayScale is screen pixels to a unit of the board at the framed view */
+  let dayPrintU = 0, dayScale = 0;
+  function printWatch() {
+    if (!FEEL || !dayScale || directOn || drag.obj || zoomName !== 'day') return;
+    const s = dayScale * Math.max(1, user.zoom || 1), q = Math.floor(Math.log2(Math.max(1, s)) * 4) / 4;
+    const u = +(12 / Math.pow(2, q)).toFixed(4);
+    if (u === dayPrintU) return;
+    dayPrintU = u;
+    /* the day's faces, its open time labels, and its header print again at the new size */
+    dayb.blocks.forEach((m) => { const v = m.userData; if (v.block && v.wU && v.shrink == null) dressBlock(m, v.block, v.wU, v.dU, { hMul: v.hMul, grip: v.gripOpt }); });
+    if (dayb.gapSp) setDayGaps(dayb.gapSp);
+    if (dayb.headSp && dayb.header) { const old = dayb.header.material.map; dayb.header.material.map = dayHeaderTexture(dayb.headSp); dayb.header.material.needsUpdate = true; if (old) old.dispose(); }
+    if (dayb.nowArgs) setNow.apply(null, dayb.nowArgs);
+    const ru =Math.min(0.5, Math.max(0.3, Math.ceil(u * 100) / 100));
+    if (ru !== rulerU) {
+      rulerU = ru;
+      dayb.lanes.forEach((x, i) => {
+        const len = (x.l.to - x.l.from) / 60 * DU;
+        replaceGeometry(x.ruler, new T.PlaneGeometry(len, rulerDepth()));
+        const old = x.ruler.material.map; x.ruler.material.map = laneRulerTexture(x.l); x.ruler.material.needsUpdate = true; if (old) old.dispose();
+        x.ruler.position.z = laneZ(i) - DB_D / 2 - rulerZ();
+      });
+    }
+    touch();
+  }
   /* The day board's shape. Wide is the desk's: Morning, Afternoon, and Evening side by side, named on
      the left. Tall is a portrait phone's: lanes of four hours stacked, no names (each lane's ruler
      says its hours), so the board is about as tall as it is wide and every block is about twice the
      size on the screen. docs/MOBILE-PASS.md. */
   let laneShape = 'wide';
-  function setDayShape(shape) {
+  /* V11: how long a tall board's lanes are. Four hours on a phone; a portrait tablet's Now takes five, which
+     fills its room with the day (laneMin, set by the app) */
+  let tallMin = 240;
+  function setDayShape(shape, laneMin) {
     shape = shape === 'tall' ? 'tall' : 'wide';
-    if (shape === laneShape) return;
-    laneShape = shape;
+    const lm = FEEL && shape === 'tall' && laneMin >= 120 ? Math.round(laneMin / 60) * 60 : 240;
+    if (shape === laneShape && lm === tallMin) return;
+    laneShape = shape; tallMin = lm;
     layLanes();
   }
   function setHours(hours) {
@@ -1125,7 +1356,7 @@
   }
   function tallLanes(start, end) {
     const out = [];
-    for (let a = start; a < end; a += 240) out.push({ from: a, to: Math.min(end, a + 240), name: '', icon: 'sun' });
+    for (let a = start; a < end; a += tallMin) out.push({ from: a, to: Math.min(end, a + tallMin), name: '', icon: 'sun' });
     /* a last lane under an hour and a half rides with the one before it */
     if (out.length > 1 && out[out.length - 1].to - out[out.length - 1].from < 90) { const last = out.pop(); out[out.length - 1].to = last.to; }
     out.forEach((l) => { l.span = timeText(l.from, false) + ' to ' + timeText(l.to, false); l.span24 = l.span; });
@@ -1214,23 +1445,29 @@
     g.fillStyle = '#2F2418'; setFont(g, 70, 900);
     g.fillText(sp.title, x, 88);
     x += g.measureText(sp.title).width + 80;
-    /* the day's facts sit at the right end, so the name reads first and the facts read as notes on it */
-    setFont(g, tall ? 48 : 54, 700, true);
-    const ICON = 56, GAP = tall ? 36 : 50, room = W - 56 - x;
+    /* the day's facts sit at the right end, so the name reads first and the facts read as notes on it.
+       V11: they never print smaller than they read (dayPrintU); fewer fit, and the first ones step out */
+    if (FEEL) dayb.headSp = sp;
+    const fs0 = tall ? 48 : 54, fs = FEEL && dayPrintU ? Math.min(72, Math.max(fs0, Math.ceil(dayPrintU * H / 1.28))) : fs0, fk = fs / fs0;
+    setFont(g, fs, 700, true);
+    const ICON = 56 * fk, GAP = (tall ? 36 : 50) * fk, room = W - 56 - x;
     const said = (b) => (tall && b.short ? b.short : b.text);
     const bits = (sp.bits || []).map((b) => ({ b, t: said(b), w: g.measureText(said(b)).width }));
     const total = () => bits.reduce((a, it) => a + ICON + it.w, 0) + GAP * Math.max(0, bits.length - 1);
     while (bits.length && total() > room) {
       const wide = bits.reduce((m, it) => (it.w > m.w ? it : m), bits[0]);
-      if (wide.w <= 160) { bits.shift(); continue; }
-      wide.t = ellipsize(g, said(wide.b), Math.max(160, wide.w - (total() - room)));
+      if (wide.w <= 160 * fk) { bits.shift(); continue; }
+      const cut = ellipsize(g, said(wide.b), Math.max(160 * fk, wide.w - (total() - room)));
+      /* V11: a fact cut down to a stub ("Left…") says nothing; the first one steps out instead */
+      if (FEEL && cut.replace('…', '').length < 7 && cut !== said(wide.b)) { bits.shift(); continue; }
+      wide.t = cut;
       wide.w = g.measureText(wide.t).width;
     }
     let bx = W - 56 - total();
     for (const it of bits) {
       const c = it.b.color || '#4A3A2A';
       g.fillStyle = c;
-      Icons.draw(g, it.b.icon || 'star', bx + 22, 88, 46, c);
+      Icons.draw(g, it.b.icon || 'star', bx + 22 * fk, 88, 46 * fk, c);
       g.fillText(it.t, bx + ICON, 90);
       bx += ICON + it.w + GAP;
     }
@@ -1241,6 +1478,16 @@
     const W = 460, H = 410;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
+    /* V11: the ruler beside the lane already says its hours, and their span printed under the name came out
+       too small to read, so the name and its mark stand alone (a lane past midnight still says Next day) */
+    if (FEEL) {
+      cutIcon(g, l.icon, W / 2, 130, 116, ink.mark, 4);
+      g.fillStyle = ink.name; g.textAlign = 'center'; g.textBaseline = 'middle';
+      fitFont(g, l.name, W - 40, 84, 900);
+      cutText(g, l.name, W / 2, 268, 4);
+      if (l.from >= 1440) { g.fillStyle = ink.note; setFont(g, 50, 700, true); cutText(g, 'Next day', W / 2, 346, 3); }
+      return canvasTex(cv);
+    }
     cutIcon(g, l.icon, W / 2, 110, 116, ink.mark, 4);
     g.fillStyle = ink.name; g.textAlign = 'center'; g.textBaseline = 'middle';
     fitFont(g, l.name, W - 40, 84, 900);
@@ -1254,9 +1501,14 @@
   /* The ruler over each lane. Drawn at one scale across and down (it used to be drawn at 125 px to
      a unit across and 262 down, which stretched its type to twice its width), and cut into the wood. */
   const RULER_D = 0.52, RULER_PX = 200;
+  /* V11: the ruler's hours print at least as big as they read on the screen (rulerU, set from dayPrintU),
+     in a strip that grows into the room between lanes to hold them */
+  let rulerU = 0.3;
+  const rulerDepth = () => (rulerU > 0.3 ? rulerU + 0.22 : RULER_D);
+  const rulerZ = () => (rulerU > 0.3 ? 0.11 + rulerDepth() / 2 : 0.37);
   function laneRulerTexture(l) {
     const hours = (l.to - l.from) / 60, hourPx = DU * RULER_PX;
-    const W = Math.round(hours * hourPx), H = Math.round(RULER_D * RULER_PX);
+    const W = Math.round(hours * hourPx), H = Math.round(rulerDepth() * RULER_PX);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     g.fillStyle = ink.ruler; g.textBaseline = 'middle';
@@ -1267,9 +1519,9 @@
         /* each label sits right over its own tick, so it reads as that hour and not the space after it */
         /* the Night lane's name already says next day, so its hours read as plain hours, full size */
         const lab = hourLabel(min / 60, true).replace(' +1 day', '');
-        fitFont(g, lab, hourPx - 40, 60, 800, true);
+        fitFont(g, lab, hourPx - 40, Math.round(rulerU * RULER_PX), 800, true);
         g.textAlign = x === 0 ? 'left' : 'center';
-        cutText(g, lab, x === 0 ? x + 4 : x, H * 0.31, 3.5);
+        cutText(g, lab, x === 0 ? x + 4 : x, rulerU > 0.3 ? (rulerU / 2 + 0.03) * RULER_PX : H * 0.31, 3.5);
       }
     }
     return canvasTex(cv);
@@ -1299,8 +1551,8 @@
       face.rotation.x = -Math.PI / 2; face.position.set(LX0 - 1.35, BOARD_Y + 0.004, laneZ(i)); face.receiveShadow = true;
       face.visible = laneShape !== 'tall';
       /* the ruler is cut into the board and lit by the same light, like the grooves under it */
-      const ruler = new T.Mesh(new T.PlaneGeometry(len, RULER_D), printMat({ map: laneRulerTexture(l), transparent: true, depthWrite: false }));
-      ruler.rotation.x = -Math.PI / 2; ruler.position.set(LX0 + len / 2, BOARD_Y + 0.006, laneZ(i) - DB_D / 2 - 0.37); ruler.receiveShadow = true;
+      const ruler = new T.Mesh(new T.PlaneGeometry(len, rulerDepth()), printMat({ map: laneRulerTexture(l), transparent: true, depthWrite: false }));
+      ruler.rotation.x = -Math.PI / 2; ruler.position.set(LX0 + len / 2, BOARD_Y + 0.006, laneZ(i) - DB_D / 2 - rulerZ()); ruler.receiveShadow = true;
       g.add(track, face, ruler);
       dayb.lanes.push({ l, track, face, ruler });
     });
@@ -1399,6 +1651,7 @@
     setDayGaps(sp);
   }
   function setDayGaps(sp) {
+    dayb.gapSp = sp;
     const list = [];
     if (sp) (sp.gaps || []).forEach((gp) => {
       for (let li = 0; li < LANES.length; li++) {
@@ -1420,6 +1673,8 @@
       const tex = gapTex((hh % 1 ? hh.toFixed(1) : String(hh)) + ' h open');
       if (m.material.map !== tex) { m.material.map = tex; m.material.needsUpdate = true; }
       const w = Math.min(3.2, (it.b - it.a) / 60 * DU - 0.2);
+      /* V11: "1 h open" shows only where it prints at a size it reads (its words are 46 of the label's 420) */
+      if (FEEL && dayPrintU && w * 46 / 420 < dayPrintU) { m.visible = false; return; }
       m.scale.set(w, w * 110 / 420, 1);
       m.position.set(dayX(it.li, (it.a + it.b) / 2), BOARD_Y + 0.022, laneZ(it.li));
     });
@@ -1434,6 +1689,8 @@
     while (dayb.ghosts.length < LANES.length) {
       const g = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ transparent: true, depthWrite: false }));
       g.rotation.x = -Math.PI / 2;
+      /* V11: an outline stays hidden until it has a slot (ghostAim shows it) */
+      if (FEEL) g.visible = false;
       dayb.group.add(g);
       dayb.ghosts.push(g);
     }
@@ -1445,7 +1702,8 @@
       ghostD = DB_D;
       const key = w.toFixed(2) + valid;
       if (!dayGhostTex.has(key)) dayGhostTex.set(key, ghostTexture(w, valid));
-      g.material.map = dayGhostTex.get(key); g.material.needsUpdate = true;
+      /* V11: the material is marked changed only when its picture changes, not on every move */
+      if (!FEEL || g.material.map !== dayGhostTex.get(key)) { g.material.map = dayGhostTex.get(key); g.material.needsUpdate = true; }
       /* feel: a part that stays in its lane glides; one that moved to another lane starts there */
       if (FEEL) { if (g.userData.lane !== sg.li) g.userData.on = false; g.userData.lane = sg.li; ghostAim(g, dayX(sg.li, sg.a) + w / 2, BOARD_Y + 0.03, laneZ(sg.li), w - GAP, DB_D); return; }
       g.scale.set(w - GAP, DB_D, 1);
@@ -2243,7 +2501,7 @@
     obj.userData.shown = on;
     if (on && !obj.userData.pop) { obj.visible = true; obj.userData.popK = 0; obj.position.y = (obj.userData.baseY || 0) - 1.1; }
     popItems([{ obj }], on, origin, onTick);
-    if (!on && obj === dayb.group && dayb.blocks.size && !reduced) obj.userData.pop.delay = 0.46;
+    if (!on && obj === dayb.group && dayb.blocks.size && !reduced && !kinds.on) obj.userData.pop.delay = 0.46;
   }
   /* Week, day, and bench share the desk: in the day view the week slides right and shrinks into a map. */
   function applyMode(origin, onTick) {
@@ -2266,7 +2524,7 @@
     placeProps();
     if (wl && !dayOn && !week.group.userData.shown) cascadeWeek(dayb.blocks.size ? dayb.leaving : null);
     shown(week.group, wl && !dayOn, origin, onTick);
-    shown(dayb.group, dayOn, null, onTick);
+    shown(dayb.group, dayOn && !kinds.on, null, onTick);
     shown(bench.group, bOn, null, onTick);
   }
   /* The desk mat: dark leather with a stitched edge, sized to whatever boards are showing, so the
@@ -2286,7 +2544,8 @@
     const wl = layout === 'week', dayOn = wl && zoomName === 'day', bOn = wl && (benchOn || (dayOn && !alone));
     const list = [];
     if (wl && !dayOn) list.push(placeBox(WEEK_BOX, TF.week));
-    if (dayOn) list.push(placeBox(DAY_BOX, TF.day));
+    if (dayOn && !(kinds.on && kinds.box)) list.push(placeBox(DAY_BOX, TF.day));
+    if (dayOn && kinds.on && kinds.box) list.push(kinds.box);
     if (bOn) list.push(placeBox(benchBox(), TF.bench));
     if (layout === 'month') { const rows = month.rows || 5, d = rows * CARD.d + (rows - 1) * CARD.gap; list.push({ x0: -13.1, x1: 13.1, z0: -d / 2 - 0.9, z1: d / 2 + 0.7 }); }
     if (layout === 'year') list.push({ x0: -13.3, x1: 13.3, z0: -7.2, z1: 7.2 });
@@ -2432,9 +2691,12 @@
   const propList = [];
   /* which props the camera would show whole (at least 0.8 of each, on screen and clear of the panels) */
   let propsAway = false;
+  /* V11: while a stack is framed close on the bench, the things on the desk step out, so the work is
+     all there is (they come back when it's put away) */
+  let benchAway = false;
   function setPropsAway(on) { on = !!on; if (on === propsAway) return; propsAway = on; camSig = ''; maybeSolve(); }
   function seenProps(cam, W, H) {
-    if (propsAway) return propList.map(() => false);
+    if (propsAway || benchAway) return propList.map(() => false);
     const blockers = insets.blockers || [];
     return propList.map((p) => {
       const dx = TF[p.side === 'L' ? 'propsL' : 'propsR'].x;
@@ -2581,7 +2843,9 @@
     const grow = (b) => ({ x0: b.x0 - 1.2, x1: b.x1 + 1.2, z0: b.z0 - 1.2, z1: b.z1 + 1.2 });
     if (zoomName === 'day') {
       if (alone && !benchOn && phoneDay) { const b = placeBox(DAY_BOX, TF.day); return { x0: b.x0 - 0.35, x1: b.x1 + 0.35, z0: b.z0 - 0.35, z1: b.z1 + 0.35, y1: 1.0, elev: laneShape === 'tall' ? 1.46 : 1.3 }; }
-      if (alone && !benchOn) return Object.assign(grow(placeBox(DAY_BOX, TF.day)), { y1: 1.0, elev: 1.13 });
+      if (kinds.on && kinds.box) return Object.assign(grow(kinds.box), { y1: 1.0, elev: 1.16 });
+      /* V11: a tall board on a portrait tablet's Now is seen from a little higher, so its far lanes read flat too */
+      if (alone && !benchOn) return Object.assign(grow(placeBox(DAY_BOX, TF.day)), { y1: 1.0, elev: FEEL && laneShape === 'tall' ? 1.3 : 1.13 });
       const bb = placeBox(benchBox(), TF.bench);
       if (dayOnly && bench.arrange === 'below') bb.z1 = Math.min(bb.z1, bb.z0 + 2.4);
       return Object.assign(grow(union([placeBox(DAY_BOX, TF.day), bb])), { y1: 1.0, elev: 1.13 });
@@ -2597,7 +2861,129 @@
   let tight = false;
   function setTight(on) { on = !!on; if (on === tight) return; tight = on; maybeSolve(); }
   const tmpCam = new T.PerspectiveCamera(30, 1, 1, 400);
+  /* V11 (feel): a stack laid out on the bench in the week view is framed close, so its pieces read and
+     grab. The bench grows where it sits, as far as the room allows (a third at most), and the week stays
+     in view beside it. Picking a piece up eases back out to the week and the bench side by side, zooming
+     around the piece in your hand so it stays under the pointer; a beat after it lands, the camera eases
+     back in while pieces remain. The zoom is a scale around a point on the desk (`at`) on top of the
+     framed view, like the lean; `pan` keeps the view still when that point moves. Calmer motion and the
+     system's reduced motion never zoom here, so nothing travels. */
+  /* only as close as reading needs: a desk unit about 48 px across (a piece's name near 14 px), and never
+     more than 1.7 times the framed view (the To-dos panel beside it leaves the desk the least room) */
+  const BENCH_ZMAX = 1.7, BENCH_PX = 48;
+  /* slack: how far (in desk units) the carried view may shift each way before the week or the bench would
+     leave the room; the piece in hand stays put up to that, and the view gives way past it */
+  const benchCam = { want: false, s: 1, q: new T.Vector3(), at: new T.Vector3(), z: 1, zTo: 1, zV: 0, pan: new T.Vector3(), panTo: new T.Vector3(), panV: new T.Vector3(), carry: false, back: 0, slack: { l: 0, r: 0, t: 0, b: 0 } };
+  const benchTmp = new T.PerspectiveCamera(30, 1, 1, 400);
+  const benchReady = () => { for (const m of bench.pieces.values()) if (m.userData.shrink == null && m.userData.piece && m.userData.piece.drag) return true; return false; };
+  /* (not while a side panel is open: it's about one thing, and the week shows where that goes) */
+  const benchWanted = () => FEEL && !reduced && layout === 'week' && zoomName === 'week' && benchOn && !alone && !phoneDay && !kinds.on && !insets.hold && benchReady();
+  /* the zoom's center moves to p without the view jumping: the difference goes into the pan */
+  function benchCenter(p) {
+    const b = benchCam;
+    b.pan.x += (b.z - 1) * (b.at.x - p.x); b.pan.z += (b.z - 1) * (b.at.z - p.z);
+    b.at.set(p.x, 0, p.z);
+  }
+  /* in close on the bench, or out to the whole desk when there's nothing there to place */
+  function aimBench() {
+    const b = benchCam;
+    if (b.want && b.s > 1.001) { benchCenter(b.q); b.zTo = b.s; } else b.zTo = 1;
+    b.panTo.set(0, 0, 0);
+  }
+  /* a piece off the bench is in hand (obj), or let go (null; o.placed: it landed somewhere) */
+  function benchCarry(obj, o) {
+    const b = benchCam;
+    if (!FEEL) return;
+    if (obj) {
+      if (!b.want || b.carry) return;
+      b.carry = true; b.back = 0;
+      benchCenter(obj.getWorldPosition(new T.Vector3()));
+      b.panV.set(0, 0, 0);
+      b.panTo.set(Math.max(-b.slack.r, Math.min(b.slack.l, b.pan.x)), 0, Math.max(-b.slack.b, Math.min(b.slack.t, b.pan.z)));
+      b.zTo = 1;
+      return;
+    }
+    if (!b.carry) return;
+    b.carry = false;
+    /* a beat to see it land, then back in */
+    b.back = nowMs() + (o && o.placed ? 650 : 240);
+  }
+  function stepBenchCam(dt) {
+    const b = benchCam;
+    if (b.back && !b.carry && nowMs() >= b.back) { b.back = 0; aimBench(); }
+    if (reduced) { b.z = b.zTo = 1; b.zV = 0; b.pan.set(0, 0, 0); b.panTo.set(0, 0, 0); b.panV.set(0, 0, 0); return; }
+    const r = spring(b.z, b.zV, b.zTo, 9, dt); b.z = r[0]; b.zV = r[1];
+    springV(b.pan, b.panV, b.panTo, 9, dt);
+    if (Math.abs(b.z - b.zTo) > 0.0005 || Math.abs(b.zV) > 0.003 || b.pan.distanceToSquared(b.panTo) > 1e-6 || b.panV.lengthSq() > 1e-5) {
+      moving = true;
+      /* the piece in hand stays where it is on screen while the view moves under it (the pointer hasn't) */
+      if (b.carry && drag.obj && drag.target) b.keep = drag.target.clone().project(camera);
+    } else { b.z = b.zTo; b.zV = 0; b.pan.copy(b.panTo); b.panV.set(0, 0, 0); }
+  }
+  /* after the camera moved: the piece in hand back on the spot of the screen it was on (see stepBenchCam) */
+  function keepBenchHand() {
+    const b = benchCam, k = b.keep;
+    b.keep = null;
+    if (!k || !drag.obj || !drag.target) return;
+    camera.updateMatrixWorld();
+    const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(k.x, k.y), camera);
+    const hit = new T.Vector3();
+    if (rc.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -drag.target.y), hit)) drag.target.set(hit.x, drag.target.y, hit.z);
+  }
+  /* How close the bench can be framed from the framed view in tmpCam: its box on screen grows around its
+     own middle (or, when that runs into an edge, around the point that keeps its gaps to the room's edges
+     in proportion), as far as it still fits, up to BENCH_ZMAX. Returns a camera at that framing, or null. */
+  function benchClose(W, H, sx0, sx1, sy0, sy1) {
+    const b = benchCam;
+    b.want = benchWanted();
+    if (!b.want) { b.s = 1; aimBench(); return null; }
+    const box = (bx, y1) => { const out = []; for (const x of [bx.x0, bx.x1]) for (const z of [bx.z0, bx.z1]) for (const y of [0, y1]) out.push(new T.Vector3(x, y, z)); return out; };
+    const bb = placeBox(benchBox(), TF.bench), pts = box(bb, BOARD_Y + 0.4);
+    const shot = (cam, list) => {
+      const r = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      for (const c of list || pts) { const p = c.clone().project(cam), px = (p.x + 1) / 2 * W, py = (1 - p.y) / 2 * H; r.x0 = Math.min(r.x0, px); r.x1 = Math.max(r.x1, px); r.y0 = Math.min(r.y0, py); r.y1 = Math.max(r.y1, py); }
+      return r;
+    };
+    const m = 12, room = { x0: sx0 + m, x1: sx1 - m, y0: sy0 + m, y1: sy1 - m }, b0 = shot(tmpCam);
+    /* the carried view's slack: the week and the bench together on screen, against the room, in desk units */
+    {
+      const all = shot(tmpCam, box(union([placeBox(WEEK_BOX, TF.week), bb]), BOARD_Y + 0.4));
+      const c = new T.Vector3((bb.x0 + bb.x1) / 2, 0, (bb.z0 + bb.z1) / 2), at = (v) => { const p = v.project(tmpCam); return { x: (p.x + 1) / 2 * W, y: (1 - p.y) / 2 * H }; };
+      const o = at(c.clone()), kx = Math.max(1, Math.abs(at(c.clone().setX(c.x + 1)).x - o.x)), kz = Math.max(1, Math.abs(at(c.clone().setZ(c.z + 1)).y - o.y));
+      b.slack = { l: Math.max(0, all.x0 - room.x0) / kx, r: Math.max(0, room.x1 - all.x1) / kx, t: Math.max(0, all.y0 - room.y0) / kz, b: Math.max(0, room.y1 - all.y1) / kz };
+      b.need = BENCH_PX / kx;
+    }
+    /* where a scale by s around a point leaves the bench's gaps to the room in the same proportion */
+    const fixed = (s, lo, hi, a0, a1) => { const g0 = Math.max(0, a0 - lo), g1 = Math.max(0, hi - a1), left = (hi - lo) - s * (a1 - a0); return (lo + (g0 + g1 > 0 ? left * g0 / (g0 + g1) : left / 2) - s * a0) / (1 - s); };
+    const ground = new T.Plane(new T.Vector3(0, 1, 0), 0), rc = new T.Raycaster(), c0 = tmpCam.position.clone();
+    benchTmp.copy(tmpCam); benchTmp.updateProjectionMatrix();
+    const place = (s, q) => { benchTmp.position.copy(q).addScaledVector(c0.clone().sub(q), 1 / s); benchTmp.updateMatrixWorld(); };
+    /* the bench's middle first, so a piece carried off it moves the view the least */
+    const closeAt = (s) => {
+      for (const [px, py] of [[(b0.x0 + b0.x1) / 2, (b0.y0 + b0.y1) / 2], [fixed(s, room.x0, room.x1, b0.x0, b0.x1), fixed(s, room.y0, room.y1, b0.y0, b0.y1)]]) {
+        rc.setFromCamera(new T.Vector2(px / W * 2 - 1, 1 - py / H * 2), tmpCam);
+        const q = new T.Vector3();
+        if (!rc.ray.intersectPlane(ground, q)) continue;
+        place(s, q);
+        const r = shot(benchTmp);
+        if (r.x0 >= room.x0 - 1 && r.x1 <= room.x1 + 1 && r.y0 >= room.y0 - 1 && r.y1 <= room.y1 + 1) return q;
+      }
+      return null;
+    };
+    let lo = 1, hi = Math.min(BENCH_ZMAX, b.need || BENCH_ZMAX, (room.x1 - room.x0) / Math.max(1, b0.x1 - b0.x0), (room.y1 - room.y0) / Math.max(1, b0.y1 - b0.y0)), s = 1, q = null;
+    if (hi > 1.06) {
+      q = closeAt(hi);
+      if (q) s = hi;
+      else for (let k = 0; k < 12; k++) { const mid = (lo + hi) / 2, at = closeAt(mid); if (at) { lo = mid; s = mid; q = at; } else hi = mid; }
+    }
+    if (!q || s < 1.06) { b.s = 1; aimBench(); return null; }
+    b.s = s; b.q.set(q.x, 0, q.z);
+    place(s, b.q);
+    if (!b.carry && !b.back) aimBench();
+    return benchTmp;
+  }
   function solveCamera() {
+    benchAway = false;
     const el = renderer.domElement.parentElement;
     const W = el.clientWidth || root.innerWidth, H = el.clientHeight || root.innerHeight;
     let sx0 = insets.left, sx1 = W - insets.right, sy0 = insets.top, sy1 = H - insets.bottom;
@@ -2728,6 +3114,15 @@
     aimProps();
     camTo.look.copy(pick.look); camTo.elev = pick.box.elev; camTo.dist = pick.d * 1.02; camTo.offX = offX; camTo.offY = offY;
     tmpCam.position.copy(pick.look).addScaledVector(pick.dir, camTo.dist); tmpCam.lookAt(pick.look); tmpCam.updateMatrixWorld();
+    /* V11: how big the day board prints on the screen, across and down, for its smallest words (printWatch) */
+    if (FEEL && layout === 'week' && zoomName === 'day') {
+      const c = placeBox(DAY_BOX, TF.day), mx = (c.x0 + c.x1) / 2, mz = (c.z0 + c.z1) / 2;
+      const at = (x, z) => world.localToWorld(new T.Vector3(x, BOARD_Y, z)).project(tmpCam);
+      const a = at(mx - 0.5, mz), b = at(mx + 0.5, mz), c0 = at(mx, mz - 0.5), c1 = at(mx, mz + 0.5);
+      dayScale = Math.min(Math.abs(b.x - a.x) / 2 * W, Math.abs(c1.y - c0.y) / 2 * H);
+    }
+    /* V11: with a stack framed close on the bench, the things on the desk step out */
+    benchAway = FEEL && !!benchClose(W, H, sx0, sx1, sy0, sy1);
     decideProps(tmpCam, W, H);
     if (phoneDay && focus.pt) aimFocus(W, sx1 - sx0);
   }
@@ -2757,7 +3152,7 @@
   function maybeSolve() {
     const el = renderer.domElement.parentElement;
     if (!el.clientWidth || !el.clientHeight) { camSig = ''; return; }
-    const sig = [layout, zoomName, benchOn, alone, phoneDay, tight, RAIL0, RAIL1, bench.depth, bench.width, bench.arrange, month.rows, insets.top, insets.bottom, insets.left, insets.right, insets.hold, dayOnly, JSON.stringify(insets.blockers || []), el.clientWidth, el.clientHeight].join('|');
+    const sig = [layout, zoomName, benchOn, alone, phoneDay, tight, RAIL0, RAIL1, bench.depth, bench.width, bench.arrange, month.rows, insets.top, insets.bottom, insets.left, insets.right, insets.hold, dayOnly, JSON.stringify(insets.blockers || []), el.clientWidth, el.clientHeight, FEEL && benchWanted(), FEEL && kinds.on && kinds.box ? JSON.stringify(kinds.box) : '', laneShape, tallMin].join('|');
     if (sig === camSig) return;
     camSig = sig;
     solveCamera();
@@ -2770,7 +3165,12 @@
     maybeSolve();
   }
   function setBenchOpen(on) { benchOn = !!on; applyMode(); maybeSolve(); }
-  function setInsets(v) { insets = Object.assign({}, insets, v); maybeSolve(); }
+  function setInsets(v) {
+    insets = Object.assign({}, insets, v);
+    /* V11: the kinds of day are laid out by the room the camera has, so a new room lays them out again */
+    if (FEEL && kinds.on && kinds.lastSp) setKinds(kinds.lastSp);
+    maybeSolve();
+  }
   function snapCamera() { cam.look.copy(camTo.look); cam.elev = camTo.elev; cam.dist = camTo.dist; cam.offX = camTo.offX; cam.offY = camTo.offY; camV.look.set(0, 0, 0); camV.elev = camV.dist = camV.offX = camV.offY = 0; }
   /* The desk was hidden and shows again: measure, frame, and let every rise finish at once, so the
      board is there the moment you look. */
@@ -2838,10 +3238,21 @@
   function resetView() { focus.pt = null; user.zoomTo = 1; user.panTo.set(0, 0, 0); user.panVel.set(0, 0, 0); }
   /* lean in toward a point on the desk (null to settle back); k is how strongly */
   function lean(p, k) {
-    if (!p) { user.leanTo = 0; return; }
+    if (!p) { user.leanTo = 0; user.leaning = false; return; }
+    /* feel: with calmer motion the camera doesn't lean at all, rather than jump */
+    if (FEEL && reduced) { user.leanTo = 0; return; }
+    /* V11: a piece carried off the bench keeps the week and the bench side by side, so no lean in */
+    if (FEEL && benchCam.carry) { user.leanTo = 0; return; }
     user.leanAt.set(p.x, 0, p.z);
     user.leanTo = k == null ? 1 : k;
+    user.leaning = true;
   }
+  /* feel: how far in the lean goes while it lasts (1 all the way, 0 none); near the screen's edge the app
+     eases it back, so a day at the far side of the week is never out of reach */
+  function leanAmount(k) { if (!FEEL || !user.leaning || reduced) return; user.leanTo = Math.max(0, Math.min(1, k)); }
+  /* feel: the lean zooms in about a fifth, around the point you picked up, so that point stays where it
+     is on screen while the rest of the desk grows (the least sweep of motion, the least to feel queasy at) */
+  const LEAN_Z = FEEL ? 0.18 : 0.1;
   /* feel: the camera rides springs too: it eases off, eases in, and a new aim mid move keeps its speed */
   const camV = { look: new T.Vector3(), elev: 0, dist: 0, offX: 0, offY: 0, zoom: 0, pan: new T.Vector3(), lean: 0, away: 0 };
   function feelCamera(dt) {
@@ -2867,7 +3278,7 @@
       one('zoom', user.zoomTo, 15, user);
       springV(user.pan, camV.pan, user.panTo, 15, dt);
     }
-    one('lean', user.leanTo, 13, user);
+    one('lean', user.leanTo, 9, user);
     one('away', user.awayTo, 8, user);
     const busy = cam.look.distanceToSquared(camTo.look) > 1e-6 || camV.look.lengthSq() > 1e-5 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camV.dist) > 0.01
       || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camV.elev) > 1e-3 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05 || Math.abs(camV.offX) + Math.abs(camV.offY) > 0.5
@@ -2877,7 +3288,7 @@
     else { user.away = user.awayTo; camV.away = 0; }
   }
   function stepCamera(dt) {
-    if (FEEL) feelCamera(dt);
+    if (FEEL) { feelCamera(dt); stepBenchCam(dt); printWatch(); }
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6.5);
     if (cam.look.distanceToSquared(camTo.look) > 1e-6 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05
       || Math.abs(user.zoomTo - user.zoom) > 0.001 || user.pan.distanceToSquared(user.panTo) > 1e-6 || Math.abs(user.leanTo - user.lean) > 0.002 || Math.abs(user.awayTo - user.away) > 0.0005 || par.distanceToSquared(parTarget) > 1e-6) moving = true;
@@ -2901,11 +3312,18 @@
     camera.updateProjectionMatrix();
     const look = cam.look.clone().add(user.pan);
     if (user.away) look.x += user.away * 2 * (cam.dist / user.zoom) * Math.tan((camera.fov * Math.PI / 180) / 2) * (W / H);
-    if (user.lean > 0.001) look.lerp(new T.Vector3(user.leanAt.x, look.y, user.leanAt.z), 0.14 * user.lean);
-    const dist = cam.dist / (user.zoom * (1 + 0.1 * user.lean));
+    /* V11: the bench's close framing, a scale around a point on the desk (benchCam) */
+    let bz = 1;
+    if (FEEL && (benchCam.z > 1.0005 || benchCam.pan.lengthSq() > 1e-8)) {
+      bz = benchCam.z;
+      look.add(benchCam.pan).lerp(new T.Vector3(benchCam.at.x, look.y, benchCam.at.z), 1 - 1 / bz);
+    }
+    if (user.lean > 0.001) look.lerp(new T.Vector3(user.leanAt.x, look.y, user.leanAt.z), FEEL ? 1 - 1 / (1 + LEAN_Z * user.lean) : 0.14 * user.lean);
+    const dist = cam.dist / (user.zoom * bz * (1 + LEAN_Z * user.lean));
     const dir = new T.Vector3(0, Math.sin(cam.elev), Math.cos(cam.elev));
     camera.position.copy(look).addScaledVector(dir, dist).add(par.clone().multiplyScalar(dist / 40));
     camera.lookAt(look);
+    if (FEEL && benchCam.keep) keepBenchHand();
   }
 
   /* == per frame == */
@@ -3136,7 +3554,9 @@
     if (!o || drag.surface == null || reduced) { blob.visible = false; return; }
     const u = o.userData, h = Math.max(0, o.position.y - drag.surface), grow = 1 + h * 0.35;
     blob.visible = true;
-    blob.position.set(o.position.x, drag.surface + 0.015, o.position.z);
+    /* V11: the shadow sits just above the grooves. Level with a groove's top (0.015 up), it won the depth test on
+       some frames and lost on others while the camera settled, so it blinked under a lifted block for a few seconds. */
+    blob.position.set(o.position.x, drag.surface + 0.03, o.position.z);
     blob.scale.set(((u.w || 1) + 0.5) * grow, 1, ((u.dU || BLOCK_D) + 0.5) * grow);
     blob.material.opacity = 0.4 * Math.max(0.25, 1 - h / 3);
   }
@@ -3237,6 +3657,7 @@
     });
     if (layout === 'month') hoverCard(month.cards);
     if (layout === 'year') hoverCard(year.cards);
+    if (kinds.on) hoverCard(kinds.cards.filter((c) => c.visible));
     stepPops(dt);
     for (let i = puffs.length - 1; i >= 0; i--) {
       const m = puffs[i], u = m.userData;
@@ -3376,6 +3797,8 @@
     }
   }
   function setNow(min, todayRow, soon, projected) {
+    /* V11: kept, so the tag can be sized again when the board's print size changes (printWatch) */
+    if (FEEL) dayb.nowArgs = [min, todayRow, soon, projected];
     projected = projected || {};
     const weekMin = Object.prototype.hasOwnProperty.call(projected, 'weekMin') ? projected.weekMin : min;
     const dayMin = Object.prototype.hasOwnProperty.call(projected, 'dayMin') ? projected.dayMin : min;
@@ -3406,6 +3829,15 @@
       const below = li < LANES.length - 1;
       u.tag.scale.setScalar(below ? 0.85 : 1);
       u.tag.position.set(below ? 0.82 : 0.95, 0.02, DB_D / 2 + (below ? 0.17 : 0.42));
+      /* V11: the time on the tag prints at a size it reads (its words are about 0.21 of a unit at full
+         size): a little bigger where that's enough, and left off where it would have to grow over the
+         next lane's hours; the pin and its line still say now */
+      if (FEEL && dayPrintU) {
+        const s0 = below ? 0.85 : 1, need = dayPrintU / 0.206, s = s0 * Math.min(1.6, Math.max(1, need));
+        u.tag.visible = need <= 1.6;
+        u.tag.scale.setScalar(s);
+        u.tag.position.set((below ? 0.82 : 0.95) + 0.75 * (s - s0), 0.02, DB_D / 2 + (below ? 0.17 : 0.42) + 0.225 * (s - s0));
+      } else if (u.tag) u.tag.visible = true;
     }
     setSpent(dayMin);
     setWeekSpent(weekMin, todayRow);
@@ -3487,19 +3919,23 @@
       if (o.hand) { drag.target.x += (o.hand.x - x) * 0.3; drag.target.z += (o.hand.z - z) * 0.3; }
       if (o.surface != null) drag.surface = o.surface;
     }
-    drag.tilt = Math.max(-0.22, Math.min(0.22, (tilt || 0) * -0.035));
+    drag.tilt = FEEL && reduced ? 0 : Math.max(-0.22, Math.min(0.22, (tilt || 0) * -0.035));
   }
   function showGhost(row, start, durMin, valid) {
     if (!drag.ghost) {
       drag.ghost = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ transparent: true, depthWrite: false }));
       drag.ghost.rotation.x = -Math.PI / 2;
+      /* V11: hidden until it has a slot (ghostAim shows it) */
+      if (FEEL) drag.ghost.visible = false;
       week.group.add(drag.ghost);
     }
     const gh = drag.ghost;
     if (row == null) { if (FEEL) gh.userData.on = false; else gh.visible = false; return; }
     const w = durMin / 60;
     ghostD = BLOCK_D;
-    gh.material.map = ghostTexture(w, valid); gh.material.needsUpdate = true;
+    const gt = ghostTexture(w, valid);
+    /* V11: marked changed only when its picture changes */
+    if (!FEEL || gh.material.map !== gt) { gh.material.map = gt; gh.material.needsUpdate = true; }
     if (FEEL) { ghostAim(gh, xOf(start) + w / 2, BOARD_Y + 0.026, rowZ(row), w - GAP, BLOCK_D); return; }
     gh.visible = true;
     gh.scale.set(w - GAP, BLOCK_D, 1);
@@ -3726,6 +4162,7 @@
       if (dayOn) dayb.blocks.forEach((m) => { if (live(m) && !m.userData.fly) list.push(m); });
       if (week.group.userData.shown) { week.blocks.forEach((m) => { if (live(m)) list.push(m); }); week.rows.forEach((r) => list.push(r.userData.tabFace)); }
       if (bench.group.userData.shown) bench.pieces.forEach((m) => { if (live(m)) list.push(m); });
+      if (kinds.on) kinds.cards.forEach((c) => { if (c.userData.pickable && c.visible && !c.userData.pop) list.push(c); });
     } else if (layout === 'month') list = month.cards.filter((c) => c.userData.present && live(c));
     else list = year.cards.filter(live);
     [lampRig.body, pad.obj].concat(thingLights.map((t) => t.owner), propList.filter((p) => p.obj && p.obj.userData.pickKind === 'clock').map((p) => p.obj)).forEach((o) => { if (o && o.visible && o.scale.x > 0.5) list.push(o); });
@@ -3736,6 +4173,7 @@
       const u = o.userData;
       if (u.pickKind) return { kind: u.pickKind, obj: o };
       if (u.kind === 'bench') return { kind: 'bench', obj: o, piece: u.piece };
+      if (u.kind === 'kindcard') return { kind: 'kindcard', obj: o, id: u.id };
       if (u.kind === 'dblock') {
         const local = dayb.group.worldToLocal(h.point.clone());
         const min = LANES[u.lane].from + (local.x - LX0) / DU * 60;
@@ -3815,6 +4253,10 @@
     const v = new T.Vector3(); hit.getWorldPosition(v);
     return projectWorld(v);
   }
+  function kindCardScreen(id) {
+    const c = kinds.cards.find((x) => x.userData.id === id && x.visible);
+    return c ? projectWorld(c.getWorldPosition(new T.Vector3())) : null;
+  }
   function cardWorld(date) {
     const c = month.cards.find((x) => x.userData.date === date);
     return c ? c.position.clone() : null;
@@ -3843,12 +4285,12 @@
      question (what's under the pointer, where a block is on screen) doesn't */
   const changes = { fit, setNow, setDaylight, setWeek, setMonth, setYear, setDay, setBench, setBenchOpen, showLayout, rippleWeek, beginNavigation, setZoom, setPhoneDay, setInsets, snapCamera, setSelected, showDayGhost,
     startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces, setFocus, setPropsAway, setAway,
-    press, land, holdBack, weekSet, direct,
+    press, land, holdBack, weekSet, direct, leanAmount, setKinds, benchCarry,
     setLamp, setLight, setNotepad, setDayOnly, setAlone, setTheme, setDesk, setClock24, setQuality, wake, setTight, setHours };
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
     init, render, step, parallax, touch, setWeekStart, setDayShape,
-    pick, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    pick, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, kindCardScreen, get kindsOn() { return kinds.on; }, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
     /* true when nothing on the desk is moving and nothing changed lately: the frame can be skipped.
        lazy: only something slow is moving (steam), so a few frames a second are plenty */
     get idle() { return stillFrames > 12; }, get lazy() { return lazyOnly && !moving && nowMs() >= activeUntil; },
@@ -3873,6 +4315,8 @@
     get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size } }; },
     get hours() { return { start: RAIL0, end: RAIL1 }; },
     get benchOn() { return benchOn; },
+    /* V11: the bench's close framing, for checking by hand: wanted, how close, where it is now, in hand */
+    get benchView() { const b = benchCam; return { want: b.want, s: +b.s.toFixed(3), z: +b.z.toFixed(3), zTo: +b.zTo.toFixed(3), carry: b.carry, back: !!b.back, at: [+b.at.x.toFixed(2), +b.at.z.toFixed(2)], pan: [+b.pan.x.toFixed(2), +b.pan.z.toFixed(2)] }; },
     get stats() { return renderer ? { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, calls: renderer.info.render.calls } : null; },
     get props() { return { mode: propMode, cost: propCost, list: propList.map((p) => ({ id: p.id, side: p.side, to: p.to, keep: p.keep, rides: !!p.rides, foot: [p.foot0.x0, p.foot0.z0, p.foot0.x1, p.foot0.z1].map((v) => +v.toFixed(1)), tall: +tallOf(p).toFixed(1), k: +p.k.toFixed(2), dropped: !!p.dropped, box: p.box && [p.box.min.x, p.box.min.z, p.box.max.x, p.box.max.z].map((v) => +v.toFixed(1)), tf: TF[p.side === 'L' ? 'propsL' : 'propsR'].x })) }; }
   };

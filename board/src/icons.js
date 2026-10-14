@@ -452,20 +452,31 @@
      caps, and kept for the next time the same mark, size, and color are asked for. */
   const PAD = 2, GRID = 24 + PAD * 2;
   const cache = new Map();
-  function paint(g, fn, color) {
+  /* A version that loads src/icon-paths.js (Phosphor Icons, MIT) draws each mark it has from its vector
+     path instead, on the same 24 unit grid, so it's sharp at any size. */
+  const paths = new Map();
+  function vector(name) {
+    const P = root.IconPaths;
+    if (!P || !P[name] || typeof Path2D === 'undefined') return null;
+    let p = paths.get(name);
+    if (!p) { p = new Path2D(P[name]); paths.set(name, p); }
+    return p;
+  }
+  function paint(g, fn, color, vp) {
     g.fillStyle = color; g.strokeStyle = color;
     g.lineWidth = 2.4; g.lineCap = 'round'; g.lineJoin = 'round';
+    if (vp) { g.save(); g.scale(24 / 256, 24 / 256); g.fill(vp); g.restore(); return; }
     fn(g);
   }
   function draw(ctx, name, cx, cy, size, color) {
-    const fn = ICONS[name];
-    if (!fn || !(size > 0)) return;
+    const fn = ICONS[name], vp = vector(name);
+    if ((!fn && !vp) || !(size > 0)) return;
     const doc = typeof document !== 'undefined' ? document : null;
     if (!doc || !ctx.drawImage) {
       ctx.save();
       ctx.translate(cx - size / 2, cy - size / 2);
       ctx.scale(size / 24, size / 24);
-      paint(ctx, fn, color);
+      paint(ctx, fn, color, vp);
       ctx.restore();
       return;
     }
@@ -473,7 +484,7 @@
     const k = Math.max(Math.hypot(t.a, t.b), Math.hypot(t.c, t.d)) || 1;
     const out = size * GRID / 24;
     const px = Math.min(1024, Math.max(8, Math.ceil(out * k)));
-    const key = name + '|' + px + '|' + color;
+    const key = name + '|' + px + '|' + color + (vp ? '|v' : '');
     let src = cache.get(key);
     if (src) { cache.delete(key); cache.set(key, src); }
     else {
@@ -482,12 +493,12 @@
       const g = src.getContext('2d');
       g.scale(px / GRID, px / GRID);
       g.translate(PAD, PAD);
-      paint(g, fn, color);
+      paint(g, fn, color, vp);
       cache.set(key, src);
       if (cache.size > 300) cache.delete(cache.keys().next().value);
     }
     ctx.drawImage(src, cx - out / 2, cy - out / 2, out, out);
   }
 
-  root.Icons = { draw, names: Object.keys(ICONS) };
+  root.Icons = { draw, names: Object.keys(ICONS), get vector() { return !!root.IconPaths; } };
 })(typeof window !== 'undefined' ? window : globalThis);

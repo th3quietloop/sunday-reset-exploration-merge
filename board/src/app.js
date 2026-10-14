@@ -47,6 +47,8 @@
      Only a version whose page carries the class `feel` has it; every other version is as it was. */
   const FEEL = document.body.classList.contains('feel');
   const OUT_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)', IN_EASE = 'cubic-bezier(0.4, 0, 1, 1)';
+  /* V11: what's next reads as its own line ("Next: Work at 10:45 am"), not a fragment in lower case */
+  const NEXT_WORD = FEEL ? 'Next: ' : 'then ';
   const feelMoves = () => { if (!FEEL || view.calm) return false; try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return true; } };
   const stage = $('stage');
   /* moves into the tray bar on every render, so keep a handle on it */
@@ -100,18 +102,22 @@
      of them, and the clock redraws some every minute. */
   const iconCache = new Map();
   function icon(name, size, color) {
-    const px = Math.round((size || 24) * 2), key = name + '|' + px + '|' + (color || '#FFFFFF');
+    const px = Math.round((size || 24) * 2);
+    /* vector marks (Icons.vector) are drawn four times over and shown at their old size unless a stylesheet
+       says otherwise, so a mark stays sharp however big it's shown, on any screen */
+    const vec = !!Icons.vector, back = vec ? Math.max(48, px * 4) : px, key = name + '|' + back + '|' + (color || '#FFFFFF');
     let src = iconCache.get(key);
     if (!src) {
       src = document.createElement('canvas');
-      src.width = px; src.height = px;
-      Icons.draw(src.getContext('2d'), name, px / 2, px / 2, px * 0.92, color || '#FFFFFF');
+      src.width = back; src.height = back;
+      Icons.draw(src.getContext('2d'), name, back / 2, back / 2, back * 0.92, color || '#FFFFFF');
       if (iconCache.size > 400) iconCache.clear();
       iconCache.set(key, src);
     }
     const c = document.createElement('canvas');
-    c.width = px; c.height = px;
+    c.width = back; c.height = back;
     c.setAttribute('aria-hidden', 'true');
+    if (vec) { c.className = 'ic'; c.style.setProperty('--ic', px + 'px'); }
     c.getContext('2d').drawImage(src, 0, 0);
     return c;
   }
@@ -194,7 +200,8 @@
     const box = $('toasts');
     const t = el('div', 'toast feel' + (kind ? ' ' + kind : '') + (act ? ' act' : ''), text);
     const still = !feelMoves();
-    /* the toasts already showing slide to make room instead of jumping (first, last, invert, play) */
+    /* the toasts already showing slide to make room instead of jumping (first, last, invert, play); with
+       calmer motion nothing slides, and a toast fades in and out in place */
     const slide = (change) => {
       const was = new Map(Array.from(box.children).map((x) => [x, x.getBoundingClientRect().top]));
       change();
@@ -204,16 +211,15 @@
     const leave = (x, quick) => {
       if (!x || x._gone) return;
       x._gone = true; clearTimeout(x._timer);
-      if (still) { x.remove(); return; }
       x.style.pointerEvents = 'none';
-      const a = x.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.98)' }], { duration: quick ? 110 : 170, easing: IN_EASE, fill: 'forwards' });
+      const a = x.animate(still ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.98)' }], { duration: still ? 100 : quick ? 110 : 170, easing: IN_EASE, fill: 'forwards' });
       const done = () => { if (x.isConnected) slide(() => x.remove()); };
       a.onfinish = done;
       setTimeout(done, 450);
     };
     if (act) t.appendChild(button(act.label, 'toast-act', () => { leave(t, true); act.fn(); }));
     slide(() => box.appendChild(t));
-    if (!still) t.animate([{ opacity: 0, transform: 'translateY(12px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: OUT_EASE });
+    t.animate(still ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(12px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: still ? 120 : 220, easing: OUT_EASE });
     const life = act ? 6300 : 3300;
     t._timer = setTimeout(() => leave(t), life);
     if (act) {
@@ -344,7 +350,8 @@
     return {
       date, wd: M.DAY_SHORT[d.wd], num: M.parts(date).d, today: date === today, focus: view.zoom === 'day' && date === view.focus,
       markers: d.markers.map((m) => m.name), markerIcon: d.markers[0] ? d.markers[0].icon : '', trip: d.trip ? d.trip.name : '',
-      due: d.due.length, blocks: d.blocks.map((b) => decorate(b, date)), gaps: M.gaps(d)
+      due: d.due.length, blocks: d.blocks.map((b) => decorate(b, date)), gaps: M.gaps(d),
+      kind: FEEL ? kindOn(date) : '', kindIcon: FEEL ? kindOn(date, true) : ''
     };
   }
   const aheadMode = () => !!(view.reset && stepsNow()[view.reset.step].key === 'ahead' && view.zoom === 'month');
@@ -401,6 +408,12 @@
   }
   function yearMonths(focus) {
     const first = M.monthStart(focus);
+    /* V11: the words under a month's hours ("to yourself, usually") are said once, on the first month that
+       carries them; the months after it show their number alone (quiet) */
+    if (FEEL) { let said = false; return yearMonths0(first).map((m) => { if (m.yours && m.usual) { if (said) m.quiet = true; said = true; } return m; }); }
+    return yearMonths0(first);
+  }
+  function yearMonths0(first) {
     return Array.from({ length: 12 }, (_, i) => {
       const ms = M.addMonths(first, i), p = M.parts(ms), n = M.daysInMonth(p.y, p.m), off = (M.weekday(ms) - M.weekStartDay() + 7) % 7, mk = M.monthKey(ms);
       const days = [];
@@ -469,7 +482,10 @@
     let row = 0;
     if (b.tab === 'todo') {
       const pl = M.placements(state);
-      const list = b.level === 'soon' ? M.dueSoon(state, today, 21, nowMin).map((x) => x.task) : state.tasks.filter((t) => t.group === b.level && !t.done && !t.archived).sort((x, y) => ((x.due || 'z') < (y.due || 'z') ? -1 : 1));
+      /* V11 (feel): Due soon holds what the To-dos count counts, due this week, or the next three weeks
+         when nothing is, the same as the notepad */
+      const soon = b.level !== 'soon' ? null : FEEL ? dueList() : { list: M.dueSoon(state, today, 21, nowMin), when: '' };
+      const list = soon ? soon.list.map((x) => x.task) : state.tasks.filter((t) => t.group === b.level && !t.done && !t.archived).sort((x, y) => ((x.due || 'z') < (y.due || 'z') ? -1 : 1));
       list.forEach((t) => {
         const where = pl.get(t.id) || [];
         const plan = M.taskPlan(t, where, today, nowMin);
@@ -483,6 +499,10 @@
         row++;
       });
       const g = state.groups.find((x) => x.id === b.level);
+      if (FEEL) {
+        const week = soon && soon.when === 'this week';
+        return { title: soon ? (week ? 'Due this week' : 'Due soon') : g ? g.name : 'To-dos', sub: list.length ? (soon && !week ? 'Nothing this week. The next three weeks.' : plural(list.length, 'to-do', 'to-dos') + '. Drag a piece onto a day.') : soon ? 'Nothing due in the next three weeks.' : 'Nothing open here.', icon: soon ? 'flag' : g ? g.icon : 'check', items };
+      }
       return { title: b.level === 'soon' ? 'Due soon' : g ? g.name : 'To do', sub: list.length ? plural(list.length, 'to do', 'to dos') + '. Drag a step or a whole plate onto a day.' : 'Nothing open here.', icon: b.level === 'soon' ? 'flag' : g ? g.icon : 'check', items };
     }
     if (b.tab === 'dinners') {
@@ -507,7 +527,7 @@
       list.forEach((x) => items.push({ key: 'b:' + x.id, kind: 'brick', row, label: x.name, sub: M.dur(x.dur), icon: x.icon, cat: x.cat, dur: x.dur, drag: { kind: 'block', id: x.id } }));
       row++;
     });
-    return { title: 'Blocks', sub: 'Drag one onto any day.', icon: 'dumbbell', items };
+    return { title: FEEL ? 'Block library' : 'Blocks', sub: 'Drag one onto any day.', icon: 'dumbbell', items };
   }
   const benchable = () => view.zoom === 'week' || view.zoom === 'day';
   /* pieces laid out on the bench: Plan only, so in Do the day stays alone and a stack fans out in the tray */
@@ -581,7 +601,12 @@
   }
   function renderBoard(previewDays) {
     /* a portrait phone's desk gets the tall board: four hour lanes stacked, blocks about twice the size */
-    if (W.setDayShape) W.setDayShape(phoneDay() && window.innerHeight > window.innerWidth ? 'tall' : 'wide');
+    /* V11: Now on a portrait tablet stacks the day in five hour lanes too, so the day fills the room instead
+       of a wide board leaving half the screen as bare desk */
+    const tallNow = FEEL && inToday() && !view.phone && window.innerHeight > window.innerWidth * 1.1;
+    /* V11: Dev's phone view is a phone's column in a wide window, so its desk takes the phone's tall board too */
+    const tallPhone = phoneDay() && (window.innerHeight > window.innerWidth || (FEEL && devPhone));
+    if (W.setDayShape) W.setDayShape(tallPhone || tallNow ? 'tall' : 'wide', tallNow ? 300 : 240);
     W.setHours(M.visibleHours(state));
     W.setPhoneDay(phoneDay());
     const zoomDirection = lastZoom ? Math.sign(ZOOMS.indexOf(view.zoom) - ZOOMS.indexOf(lastZoom)) : 0;
@@ -595,12 +620,15 @@
         W.setDay(daySpec(view.focus, previewDays && previewDays[view.focus]), { fly, onLand: landTick });
       } else if (lastZoom === 'day') W.setDay(null);
       /* a version of the board can put the day's Block library away (window.SR_kitAway): the day then stands alone, as in Today */
-      const kitAway = view.zoom === 'day' && !view.bench && !!window.SR_kitAway;
+      const spread = FEEL && !!view.kindSpread && view.zoom === 'day' && !inToday() && !phoneDay();
+      if (FEEL && view.kindSpread && !spread) { view.kindSpread = false; W.setKinds(null); }
+      const kitAway = view.zoom === 'day' && !view.bench && (!!window.SR_kitAway || spread);
       W.setAlone(inToday() || phoneDay() || kitAway);
       const dayKit = view.zoom === 'day' && !inToday() && !phoneDay() && !kitAway;
       W.setBench(view.bench ? benchSpec() : dayKit ? kitSpec() : null);
       W.setBenchOpen(!!view.bench || dayKit);
       W.setZoom(view.zoom, M.weekday(view.focus));
+      if (FEEL) W.setKinds(spread ? kindSpec(view.focus) : null);
       if (W.layout !== 'week') W.showLayout('week', W.rowWorld(M.weekday(view.focus)), tick);
       else if (!previewDays && lastWeek && lastWeek !== ws && view.zoom === 'week') W.rippleWeek(ws > lastWeek ? 1 : -1);
       lastWeek = ws;
@@ -608,6 +636,7 @@
       W.setNow(nowMin, tr >= 0 ? tr : null, nowNow().soon, { weekMin: at.start, dayMin: view.focus === at.date ? at.start : null });
     } else {
       if (lastZoom === 'day') W.setDay(null);
+      if (FEEL && view.kindSpread) { view.kindSpread = false; W.setKinds(null); }
       W.setBenchOpen(false);
       W.setBench(null);
       if (view.zoom === 'month') {
@@ -753,10 +782,34 @@
     }
     pick.replaceChildren(icon(onP.icon || 'star', 9, UI.ink), el('span', '', (onP.usual ? 'Your usual' : onP.name) + ' ' + wdName), el('span', 'chev'));
     pick.lastChild.appendChild(icon('down', 6, UI.ink));
+    /* feel: beside it, the way to see every kind at once */
+    if (FEEL && !noDesk) {
+      let all = box.querySelector('.kinds-allbtn');
+      if (!all) {
+        all = el('button', 'kinds-allbtn');
+        all.type = 'button';
+        all.addEventListener('click', (e) => { e.stopPropagation(); Snd.init(); Snd.pick(); if (view.kindSpread) closeKinds(); else openKinds(); });
+        pick.after(all);
+      }
+      all.hidden = phoneDay();
+      all.replaceChildren(icon('tiles', 8, view.kindSpread ? UI.dark : UI.ink), el('span', '', view.kindSpread ? 'Done' : 'See all'));
+      all.setAttribute('aria-pressed', String(!!view.kindSpread));
+      all.setAttribute('aria-label', view.kindSpread ? 'Put the kinds of day away' : 'See every kind of ' + wdName);
+      all.title = view.kindSpread ? 'Put the kinds away (K)' : 'See every kind of ' + wdName + ' (K)';
+    }
     pick.title = 'What kind of ' + wdName + '?';
     pick.setAttribute('aria-expanded', String(box.classList.contains('open')));
     const menu = $('kinds-row');
     menu.replaceChildren(el('p', 'kinds-q', 'What kind of ' + wdName + '?'));
+    /* feel: every kind, laid out on the desk as this day would look */
+    if (FEEL && !noDesk && !phoneDay()) {
+      const all = el('button', 'kind kind-all');
+      all.type = 'button';
+      all.append(icon('tiles', 9, UI.gold), el('span', 'kind-words'));
+      all.lastChild.append(el('b', '', view.kindSpread ? 'Put them away' : 'See them all on the desk'), el('small', '', view.kindSpread ? 'Back to your ' + wdName : 'This ' + wdName + ' as every kind, side by side'));
+      all.addEventListener('click', () => { Snd.init(); Snd.pick(); if (view.kindSpread) closeKinds(); else openKinds(); });
+      menu.appendChild(all);
+    }
     const row = (p, mine) => {
       const on = p.id === cur;
       /* a kind you saved a moment ago pops in, so you can see where it went */
@@ -798,6 +851,77 @@
     save.addEventListener('click', () => { Snd.init(); Snd.pick(); box.classList.remove('open'); openSel({ type: 'savePreset', date: view.focus }); });
     menu.appendChild(save);
   }
+  /* == feel: every kind of day, laid out on the desk ==
+     The day zooms back and a board slides in under it with a card for each kind it could be: the day as
+     that kind would make it, morning, afternoon, and evening, its hours to yourself, and what's new outlined
+     in gold. Tap one and the day becomes it; tap one that would take off something you placed and it says
+     what first. Esc, the same button, or a tap on the day puts them away. */
+  let kindMemo = { sig: '', spec: null };
+  function kindSpec(date) {
+    const dd = state.dates[date] || {}, cur = dd.preset || 'usual', wdName = M.DAY_LONG[M.weekday(date)];
+    const arm = view.got.kindArm;
+    const sig = date + '|' + JSON.stringify(dd) + '|' + JSON.stringify(state.presets || []) + '|' + (arm ? arm.id : '') + '|' + JSON.stringify(state.palette.length) + '|' + themeSig();
+    if (kindMemo.sig === sig) return kindMemo.spec;
+    const now = day(date), nowKeys = new Set(now.blocks.map((b) => b.base));
+    const plannable = now.blocks.some((b) => b.cat === 'work' && b.soft);
+    const list = D.PRESETS.filter((p) => plannable || p.id === cur || !(p.items || []).some((it) => it.work)).concat(state.presets || []);
+    const lanes = (d) => W.LANES.map((L) => ({ name: L.name, icon: L.icon, from: L.from, to: L.to, blocks: d.blocks.filter((b) => !b.free && b.start < L.to && b.start + b.dur > L.from).map((b) => ({ start: b.start, dur: b.dur, cat: b.cat, name: b.label || b.name, soft: !!b.soft, sleep: !!b.sleep, fresh: !b.sleep && !nowKeys.has(b.base) })) }));
+    const often = oftenKind(date);
+    const cards = list.map((p) => {
+      let d = now;
+      if (p.id !== cur) { const tr = tryOn(() => M.applyPreset(state, date, p, state.palette)); if (tr.r && tr.r.ok !== false) d = daysWith(tr.dates, [date])[date]; }
+      const t = M.totals(d), armed = arm && arm.id === p.id;
+      return { id: p.id, name: p.usual ? 'Your usual' : p.name, line: p.usual ? 'How ' + wdName + ' goes most weeks' : p.line || '', icon: p.icon || 'star', current: p.id === cur, yours: t.yours ? M.hours(t.yours) : '', lanes: lanes(d), warn: armed ? 'Takes off ' + arm.names + '. Tap again to use it.' : '', often: often === p.id ? 'Often on ' + wdName + 's' : '' };
+    });
+    /* V11: the cards are the kinds and nothing else; saving this day as a kind is a plain button beside the
+       date (variant.js), and what a tap does is said by the note under the pointer */
+    kindMemo = { sig, spec: { date, title: 'What kind of ' + wdName + '?', sub: '', cards } };
+    return kindMemo.spec;
+  }
+  const themeSig = () => (view.desk ? view.desk.theme : '');
+  /* the name of the kind a day is, when it isn't your usual */
+  function kindOn(date, mark) {
+    const id = (state.dates[date] || {}).preset;
+    if (!id || id === 'usual') return '';
+    const p = D.PRESETS.concat(state.presets || []).find((x) => x.id === id);
+    return p ? (mark ? p.icon || 'star' : p.name) : '';
+  }
+  /* the kind picked most often on this weekday in the last twelve weeks, if it was picked at least twice */
+  function oftenKind(date) {
+    const wd = M.weekday(date), n = {};
+    for (let k = 1; k <= 12; k++) { const d = M.addDays(date, -7 * k), id = (state.dates[d] || {}).preset; if (id && id !== 'usual') n[id] = (n[id] || 0) + 1; }
+    const best = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
+    return best && n[best] >= 2 && M.weekday(date) === wd ? best : null;
+  }
+  function openKinds() {
+    if (!FEEL || noDesk || phoneDay()) return;
+    if (inToday()) setMode('planner');
+    $('kinds').classList.remove('open');
+    selectBlock(null); if (view.sel) closeSel();
+    view.kindSpread = true; view.got.kindArm = null;
+    if (view.zoom !== 'day') setZoom('day'); else { Snd.zoom(true); render(); }
+  }
+  function closeKinds(quiet) {
+    if (!view.kindSpread) return;
+    view.kindSpread = false; view.got.kindArm = null;
+    W.setKinds(null);
+    if (!quiet) Snd.zoom(false);
+    render();
+  }
+  function pickKindCard(id) {
+    if (id === '__save') { closeKinds(true); openSel({ type: 'savePreset', date: view.focus }); return; }
+    const p = D.PRESETS.concat(state.presets || []).find((x) => x.id === id);
+    if (!p) return;
+    const cur = (state.dates[view.focus] || {}).preset || 'usual';
+    if (p.id === cur) { closeKinds(); return; }
+    const armed = view.got.kindArm && view.got.kindArm.id === p.id;
+    if (!armed) { const lose = kindLoses(p); if (lose.length) { view.got.kindArm = { id: p.id, names: listText(lose) }; Snd.bad(); renderBoard(); return; } }
+    view.got.kindArm = null;
+    view.kindSpread = false;
+    W.setKinds(null);
+    applyRecipe(p);
+  }
+
   /* names in a line: Walk, Reading, and 2 more */
   const listText = (names) => (names.length <= 2 ? names.join(' and ') : names.slice(0, 2).join(', ') + ', and ' + (names.length - 2) + ' more');
   /* what a kind of day would take off that you put there yourself: blocks you placed, to dos, ideas */
@@ -948,7 +1072,8 @@
     const top = Math.max(headBottom() + 14, edges.top + 14);
     const rack = rackBox();
     let bottom = Math.max(window.innerHeight - rack.top + 12, edges.bottom + 12);
-    if (doMode && !fab.hidden) bottom = Math.max(bottom, window.innerHeight - $('fab-add').getBoundingClientRect().top + 12);
+    /* V11: a version that hides Add with its own CSS (V11's bottom bar has it) leaves no room for it */
+    if (doMode && !fab.hidden && (!FEEL || fab.offsetParent !== null)) bottom = Math.max(bottom, window.innerHeight - $('fab-add').getBoundingClientRect().top + 12);
     const right = Math.max($('side').hidden ? 16 : window.innerWidth - $('side').getBoundingClientRect().left + 12, edges.right + 12);
     const left = Math.max(16, edges.left + 12);
     /* A preview's bar sits on the tray's top edge, centered in the room beside an open panel; the board
@@ -958,7 +1083,8 @@
     else {
       pv.style.bottom = Math.round(bottom) + 'px';
       pv.style.left = Math.round((16 + window.innerWidth - right) / 2) + 'px';
-      if (pvOn) bottom += pv.offsetHeight + 10;
+      /* V11: the preview's bar can be hidden by a version's CSS (a Dev chip takes its place); a bar that isn't drawn takes no room */
+      if (pvOn && (!FEEL || pv.offsetHeight)) bottom += pv.offsetHeight + 10;
     }
     /* toasts sit on the tray's top edge, wherever that is, never over the middle of the board */
     $('toasts').style.setProperty('--toast-bottom', Math.round(bottom + 2) + 'px');
@@ -1132,7 +1258,7 @@
       sec.appendChild(ol);
       const acts = el('div', 'actions');
       acts.append(button('Add to ' + M.DAY_LONG[M.weekday(date)], 'small', () => { const g = M.gaps(d)[0]; openSel({ type: 'slot', date, start: g ? g[0] : d.wake }); }));
-      if (view.zoom === 'week') acts.append(button('Only this day', 'small quiet', () => setZoom('day', date)));
+      if (view.zoom === 'week') acts.append(button(FEEL ? 'Show only this day' : 'Only this day', 'small quiet', () => setZoom('day', date)));
       sec.appendChild(acts);
       box.appendChild(sec);
     });
@@ -1216,12 +1342,30 @@
     ]);
   }
 
+  /* feel, with calmer motion: the camera cuts to a new view instead of gliding, so the cut is softened by a
+     quick dissolve of the desk, the way a phone with reduced motion trades a zoom for a fade */
+  function dissolve() {
+    if (!FEEL || noDesk) return;
+    let calm = !!view.calm; try { calm = calm || window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* fine */ }
+    const c = stage.querySelector('canvas');
+    if (calm && c && c.animate) c.animate([{ opacity: 0.45 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+  }
+  /* feel: the lean toward the block in your hand eases back as you near the screen's edge, so the far side
+     of the week is never out of reach */
+  function edgeLean(e) {
+    if (!FEEL) return;
+    const r = stage.getBoundingClientRect(), m = Math.max(40, Math.min(r.width, r.height) * 0.16);
+    const d = Math.min(e.clientX - r.left, r.right - e.clientX, e.clientY - r.top, r.bottom - e.clientY);
+    W.leanAmount(d / m);
+  }
+
   /* == zoom and moving through time == */
   function setZoom(z, focus) {
     if (focus) view.focus = focus;
     if (z === view.zoom && !focus) return;
     const out = ZOOMS.indexOf(z) > ZOOMS.indexOf(view.zoom);
     view.zoom = z;
+    dissolve();
     Snd.zoom(out);
     saveView();
     render();
@@ -1234,6 +1378,7 @@
   function shift(dir) {
     const z = view.zoom;
     view.focus = z === 'day' ? M.addDays(view.focus, dir) : z === 'week' ? M.addDays(view.focus, 7 * dir) : z === 'month' ? M.addMonths(M.monthStart(view.focus), dir) : M.addMonths(M.monthStart(view.focus), 12 * dir);
+    dissolve();
     Snd.slide();
     render();
   }
@@ -1908,7 +2053,13 @@
     /* a version can count the steps without the recap (window.SR_recapApart): 3 of 6, then Your week */
     const apart = !!window.SR_recapApart, counted = apart ? steps.length - 1 : steps.length;
     const where = apart && st.key === 'done' ? 'All ' + counted + ' done' : (r.step + 1) + ' of ' + counted;
-    k.appendChild(el('div', 'reset-kicker', (r.catchup ? 'Catch up' : 'Sunday Reset') + ' · ' + where + ' · ' + (r.catchup ? catchSpan : M.spanText(r.week, left))));
+    if (FEEL) {
+      /* V11: where you are sits in its own span, so a version that shows the named steps across the top
+         doesn't say it twice (variant.css hides it there) */
+      const kick = el('div', 'reset-kicker');
+      kick.append(document.createTextNode(r.catchup ? 'Catch up' : 'Sunday Reset'), el('span', 'reset-where', ' · ' + where), document.createTextNode(' · ' + (r.catchup ? catchSpan : M.spanText(r.week, left))));
+      k.appendChild(kick);
+    } else k.appendChild(el('div', 'reset-kicker', (r.catchup ? 'Catch up' : 'Sunday Reset') + ' · ' + where + ' · ' + (r.catchup ? catchSpan : M.spanText(r.week, left))));
     k.appendChild(el('div', 'reset-title', st.key === 'done' ? recapTitle() : stepTitle(st)));
     head.appendChild(k);
     k.className = 'reset-words';
@@ -2298,7 +2449,11 @@
     }
   }
   function unaim() { W.showGhost(null); W.showDayGhost(null); aimKey = ''; }
-  function settle() { leaning = false; aimKey = ''; W.lean(null); }
+  /* V11: this was also called settle, and the preview's settle further down (which clears the bench, the
+     panel, the reset, and the toasts) took its name, so every drop ended a reset and put the bench away.
+     V11 calls this one by its own name; the other versions still get the preview's (unchanged) */
+  function settleDrag() { leaning = false; aimKey = ''; W.lean(null); }
+  const settleHand = () => (FEEL ? settleDrag() : settle());
   function moveTile(e) {
     const d = tdrag;
     if (!d.spec) return;
@@ -2306,6 +2461,8 @@
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
       d.started = true;
       if (FEEL) W.press(null);
+      /* V11: a piece off a bench framed close: the camera eases back out to the week beside it */
+      if (FEEL && d.obj3 && W.benchCarry) W.benchCarry(d.obj3);
       Snd.pick();
       if (d.el) { const g = $('dragtile'); g.replaceChildren(d.el.cloneNode(true)); g.hidden = false; d.el.style.opacity = '0.35'; if (FEEL) carryStart(g, d); }
       if (d.obj3) d.obj3.visible = false;
@@ -2432,7 +2589,9 @@
   function dropTile() {
     const d = tdrag;
     tdrag = null;
-    settle();
+    settleHand();
+    /* V11: let go of a piece from the bench: a beat to see it land, then the camera eases back in */
+    if (FEEL && d.obj3 && W.benchCarry) W.benchCarry(null, { placed: !!(d.target && d.target.ok !== false) });
     /* feel: a tile still in hand off the desk flies back into its place in the tray, or drops into what it
        was let go on; the place it left stays dim until it's back */
     const inHand = FEEL && d.started && d.el && !$('dragtile').hidden;
@@ -2574,7 +2733,7 @@
       return;
     }
     if (pinchHold) return;
-    if (tdrag) { moveTile(e); return; }
+    if (tdrag) { moveTile(e); if (tdrag && tdrag.started) edgeLean(e); return; }
     if (!bdrag) { hoverSoon(e); return; }
     const d = bdrag;
     if (!d.started) {
@@ -2593,6 +2752,7 @@
     }
     if (d.mode === 'pan') { W.panBy(e.clientX - d.lx, e.clientY - d.ly); d.lx = e.clientX; d.ly = e.clientY; return; }
     boardDrag(e);
+    edgeLean(e);
   });
   /* Safari's own pinch would zoom the whole page on the phone's desk; there the desk zooms instead */
   ['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => { if (document.body.classList.contains('phone-desk')) e.preventDefault(); }, { passive: false }));
@@ -2725,7 +2885,7 @@
   }
   function finishBoardDrag(d) {
     const b = d.hit.block;
-    settle();
+    settleHand();
     hideChip();
     unaim();
     document.querySelectorAll('.daypill.over').forEach((x) => x.classList.remove('over'));
@@ -2746,10 +2906,14 @@
     else if (d.mode === 'wake') r = commit(() => { M.setWake(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
     else if (d.mode === 'bed') r = commit(() => { M.setBed(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
     if (d.mode === 'move' || d.mode === 'slide') {
-      W.adoptPosition(d.preview.date, b.base);
+      /* V11: a block's key carries its day, so one moved to another day is found by the key it has there,
+         and falls and lands on its new day like a move within the day */
+      const moved = FEEL && d.mode === 'move' && r && r.ok ? boardDay(d.preview.date).blocks.find((x) => x.add === b.add) : null;
+      const landKey = moved ? moved.base : b.base;
+      W.adoptPosition(d.preview.date, landKey);
       W.endDrag();
       if (r && r.ok) {
-        landed(d.preview.date, b.base, b.dur / 60);
+        landed(d.preview.date, landKey, b.dur / 60);
         if (d.preview.date !== d.hit.date) toast((b.label || b.name) + ' moved to ' + placedText(d.preview.date, d.preview.start), 'good');
         if (view.pick && view.pick.key === b.base) view.pick.date = d.preview.date;
       }
@@ -2760,6 +2924,8 @@
     /* on a phone's day, what you tap is what the desk zooms in on, above the panel it opens */
     const near = () => { if (phoneDay() && W.focusOn) W.focusOn(e.clientX, e.clientY); };
     if (!hit) {
+      /* feel: a tap on the bare desk around the kinds of day puts them away */
+      if (FEEL && view.kindSpread) { closeKinds(); return; }
       if (view.pick) { selectBlock(null); return; }
       const t = targetAt(e.clientX, e.clientY);
       if (t && (t.kind === 'week' || t.kind === 'day')) { near(); Snd.pick(); openSel({ type: 'slot', date: t.date, start: M.snap(t.min) }); return; }
@@ -2767,6 +2933,8 @@
       return;
     }
     if (hit.kind === 'lamp') { toggleLamp(); return; }
+    if (hit.kind === 'kindcard') { Snd.pick(); pickKindCard(hit.id); return; }
+    if (FEEL && view.kindSpread && hit.kind === 'block') { closeKinds(); return; }
     Snd.pick();
     if (hit.kind === 'notepad') { openDueSoon(); return; }
     if (hit.kind === 'clock') { if (window.SR_onClock) window.SR_onClock(); return; }
@@ -2992,6 +3160,11 @@
       else if (b.dinner) { tip = b.planned ? cookName(b.cook) || 'Who’s cooking?' : 'Tap to pick'; stage.className = hit.nearR ? 'resize' : 'grab'; }
       else { tip = hit.nearR ? 'Drag to stretch' : b.add ? 'Drag to move' : 'Drag to slide'; stage.className = hit.nearR ? 'resize' : 'grab'; }
       showChipAt(e.clientX, e.clientY, (b.label || b.name) + (b.done ? ', done' : ''), timeSpan(hit.date, b.start, b.start + b.dur) + ', ' + M.dur(b.dur) + ' · ' + tip);
+    } else if (hit.kind === 'kindcard') {
+      /* feel: a kind of day on the spread lifts and says what a tap does */
+      W.setHover(hit.obj); stage.className = 'pointer';
+      const c = kindMemo.spec && kindMemo.spec.cards.find((x) => x.id === hit.id);
+      if (c) showChipAt(e.clientX, e.clientY - 30, c.name, c.add ? 'Tap to name it and keep it' : c.current ? 'This is the ' + M.DAY_LONG[M.weekday(view.focus)] + ' you have' : 'Tap to make ' + M.DAY_LONG[M.weekday(view.focus)] + ' this');
     } else if (hit.kind === 'lamp') {
       W.setHover(null); stage.className = 'pointer';
       showChipAt(e.clientX, e.clientY, 'Desk lamp', view.lamp ? 'Tap to turn it off' : 'Tap to turn it on');
@@ -3459,7 +3632,7 @@
     const edited = !!(dd.edits && dd.edits[b.tpl]);
     kicker(p, M.dateText(date, 'day') + ' · ' + c.name, b.icon);
     preview(p, b);
-    line(p, b.free ? 'Kept free. It shows as an empty spot, and anything you add makes room.' : b.soft ? 'Open time. Blocks you drop here make room for themselves.' : b.fixed ? 'Locked. Other blocks never push it.' : 'Part of your usual ' + M.DAY_LONG[wd] + '.');
+    line(p, b.free ? 'Kept free. It shows as an empty spot, and anything you add makes room.' : b.soft ? (FEEL ? 'Flexible: blocks you drop here make room.' : 'Open time. Blocks you drop here make room for themselves.') : b.fixed ? 'Locked. Other blocks never push it.' : 'Part of your usual ' + M.DAY_LONG[wd] + '.');
     const setTime = (start, len) => {
       const r = commit(() => {
         if (b.soft) { const rec = M.dateRec(state, date); rec.edits = rec.edits || {}; rec.edits[b.tpl] = Object.assign({}, rec.edits[b.tpl], { start: M.clamp(start, M.RAIL0, M.RAIL1 - len), dur: Math.max(15, len) }); return { ok: true }; }
@@ -3776,6 +3949,9 @@
     divider(p);
     const wkDates = M.weekDates(date);
     p.appendChild(cta('Grocery list for the week', grocerySub(wkDates), 'cart', () => openSel({ type: 'groceries' })));
+    /* on a phone, a version's meal board is a tap away from any dinner (window.SR_planMeals, V11); the desk's
+       block mat has its own way there */
+    if (window.SR_planMeals && (view.phone || phoneDay())) p.appendChild(cta('Plan meals', 'The week’s meals on one board', 'pot', () => { closeSel(); window.SR_planMeals(); }));
     if ((how === 'home' || !how) && /^https?:\/\//i.test(who().cookbook || '')) {
       const link = el('a', 'link', named('Ideas from {partner}’s cookbook'));
       link.href = who().cookbook;
@@ -3955,7 +4131,9 @@
     const got = (state.shopping && state.shopping[ws]) || {};
     kicker(p, 'Groceries · ' + M.spanText(dates[0], dates[6]), 'list');
     title(p, groceryWords(prog));
-    line(p, list.length ? 'From the dinners you’re cooking this week. Checks save, so they’re on your phone too.' : 'Pick dinners you’re cooking and the list fills in here.');
+    /* V11 plans breakfast and lunch on the board too, so its list comes from every meal you cook */
+    const fed = FEEL ? 'meals' : 'dinners';
+    line(p, list.length ? 'From the ' + fed + ' you’re cooking this week. Checks save, so they’re on your phone too.' : 'Pick ' + fed + ' you’re cooking and the list fills in here.');
     const setGot = (id, on) => commit(() => {
       state.shopping = state.shopping || {};
       const wk = Object.assign({}, state.shopping[ws]);
@@ -3978,8 +4156,9 @@
       }), n ? button('Clear the checks', 'small quiet', () => commit(() => { delete state.shopping[ws]; })) : null]);
       p.appendChild(plain);
     }
-    D.PANTRY_KINDS.forEach((k) => {
-      const items = list.filter((x) => x.kind === k.id);
+    /* parts of a typed meal that aren't a protein, a vegetable, or a base go under Other */
+    D.PANTRY_KINDS.concat([{ id: '', name: 'Other' }]).forEach((k) => {
+      const items = list.filter((x) => (k.id ? x.kind === k.id : !D.PANTRY_KINDS.some((y) => y.id === x.kind)));
       if (!items.length) return;
       const box = el('div', 'list');
       items.forEach((x) => {
@@ -4187,7 +4366,7 @@
       if (h % 3) continue;
       const pct = ((h * 60 - span0) / total) * 100;
       const tickAt = M.dateTime(date, h * 60);
-      const tk = el('span', '', M.clock(tickAt.start) + (h >= 24 ? ' +1 day' : ''));
+      const tk = el('span', '', M.clock(tickAt.start) + ((FEEL ? h > 24 : h >= 24) ? ' +1 day' : ''));
       tk.style.left = pct + '%';
       if (pct < 7) tk.classList.add('first'); else if (pct > 93) tk.classList.add('last');
       ticks.appendChild(tk);
@@ -4318,9 +4497,10 @@
       { transform: 'translate(' + dx * 0.55 + 'px, ' + (dy * 0.55 - 40) + 'px) rotate(-4deg) scale(0.62)', opacity: 1, offset: 0.6 },
       { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(0.3)', opacity: 0 }
     ], { duration: 480, easing: 'cubic-bezier(0.45, 0, 0.25, 1)' });
-    /* a hidden tab can pause the animation, so a timer makes sure the block always lands */
-    let landed = false;
-    const finish = () => { if (landed) return; landed = true; fly.remove(); land(); };
+    /* a hidden tab can pause the animation, so a timer makes sure the block always lands. (V11: this flag
+       was called landed, which hid the landed() above from land(), so every place from the panel threw) */
+    let arrived = false;
+    const finish = () => { if (arrived) return; arrived = true; fly.remove(); land(); };
     anim.onfinish = finish;
     setTimeout(finish, 900);
   }
@@ -4330,11 +4510,14 @@
      already gone, so nothing ever waits on an animation. Calmer motion and the system's reduced motion
      keep everything still. */
   function arrive(node, from, ms) {
-    if (!feelMoves() || !node || !node.animate) return;
+    if (!FEEL || !node || !node.animate) return;
+    /* calmer motion: nothing moves; it fades in, quickly */
+    if (!feelMoves()) { node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, easing: 'ease-out' }); return; }
     node.animate([from, { opacity: 1, transform: 'none' }], { duration: ms || 200, easing: OUT_EASE });
   }
   function ghostOut(node, to, ms) {
-    if (!feelMoves() || !node || node.hidden || !node.isConnected) return;
+    if (!FEEL || !node || node.hidden || !node.isConnected) return;
+    if (!feelMoves()) { to = { opacity: 0 }; ms = 100; }
     const r = node.getBoundingClientRect();
     if (!r.width || !r.height) return;
     const c = node.cloneNode(true), cs = getComputedStyle(node);
@@ -4699,8 +4882,9 @@
       }
       saveWarning(p);
       const st = saveState(), rp = remindPrefs(), b = backupAt();
-      /* how the week is kept safe; the list beside this has its own Your week, for how the week is set */
-      const kept = dsec(p, 'Keeping your week');
+      /* how the week is kept safe; the list beside this has its own Your week, for how the week is set.
+         V11: a made up board keeps nothing, and the note at the top already says so, once */
+      const kept = FEEL && view.preview ? el('div') : dsec(p, 'Keeping your week');
       const l1 = el('div', 'list');
       l1.appendChild(goRow('box', st.long.replace(/\.$/, ''), Store.savedAt ? 'Last saved ' + agoText(Store.savedAt) : 'Nothing to save yet', () => goPage('data')));
       if (Cloud.cfg) l1.appendChild(Cloud.on ? goRow('cloud', 'Shared with ' + (Cloud.me.name || 'your household'), 'Every linked device sees and changes this week', () => goPage('sync')) : goRow('cloud', 'Not shared', 'Turn on sync to see the week on your phone', () => goPage('sync')));
@@ -4861,6 +5045,8 @@
       g.appendChild(toggle('Lamp', view.lamp, () => { toggleLamp(); renderDrawer(); }, 'Warms the evening light. Tapping the lamp does the same.'));
       li.appendChild(g);
       field(p, 'Block library in the Planner', chips([{ id: 'beside', name: 'Beside the day', icon: 'beside' }, { id: 'below', name: 'Below the day', icon: 'below' }], view.arrange, (v) => { if (v === view.arrange) return; view.arrange = v; saveView(); Snd.slide(); W.resetView(); render(); }));
+      /* a version can put Block library away by itself (window.SR_kitTidy), so the calendar has the room */
+      if (window.SR_kitTidy) { const g2 = el('div', 'switches'); g2.appendChild(toggle('Put Block library away when idle', window.SR_kitTidy.on(), (v) => { window.SR_kitTidy.set(v); renderDrawer(); }, 'Away at the start of each visit, and after a minute unused.')); p.appendChild(g2); }
     },
     /* how everything reads and sounds, on this device */
     reading(p) {
@@ -5902,7 +6088,8 @@
       /* Enter moves on; its keypress must not land on the next step's first choice */
       nm.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); a.name = nm.value.trim(); saveDraft(); setTimeout(c.next, 0); } });
       field(body, 'Your name', nm);
-      body.appendChild(el('div', 'field-hint', 'It goes on your board, so the app can talk to you by name.'));
+      /* V11: the question says what it's for; a line on why it's asked wasn't missed */
+      if (!FEEL) body.appendChild(el('div', 'field-hint', 'It goes on your board, so the app can talk to you by name.'));
     },
     pains(c) {
       const { a, h, body } = c;
@@ -7221,6 +7408,9 @@
         actions(p, steps.filter((s) => s.chapter === ch.id).map((s) => devKey(button(OB.STEP_NAMES[s.id] || s.id, 'small', () => { closeDrawer(); openWelcome('preview', s.id, devAnswers(), toDev); }), 'dev-step-' + s.id)));
       });
     }
+    /* a version can add its own ways to try the first visit here (window.SR_devExtras; V11's account menu
+       held them until Oct 14) */
+    if (window.SR_devExtras) { try { window.SR_devExtras({ section: (t, line) => dsec(p, t, line), row: (parent, list) => actions(parent, list), button: (t, fn) => button(t, 'small', () => { closeDrawer(); fn(); }) }); } catch (e) { console.error(e); } }
     if (!pv && OB && !view.phone && !noDesk) {
       const tour = dsec(p, 'The tour', 'Four tips, on whatever board is showing. A fresh Getting started list needs a made up board open first.');
       actions(tour, [button('Take the tour', 'small', () => { closeDrawer(); startTour(0); })]);
@@ -7489,7 +7679,7 @@
     row.appendChild(bar);
     if (info.next && info.kind !== 'sleep') { const nx = el('span', 'now-next'); nx.style.setProperty('--bg', cat(info.next.cat).base); row.appendChild(nx); }
     /* the same line as the desk's band: what's next, or late in the evening, how tomorrow starts */
-    const line = el('div', 'now-line', info.kind === 'sleep' ? sleepLine(info) : !info.next || nowMin >= 21 * 60 ? tomorrowLine() : 'then ' + (info.next.label || info.next.name) + ' at ' + M.clock(info.next.start));
+    const line = el('div', 'now-line', info.kind === 'sleep' ? sleepLine(info) : !info.next || nowMin >= 21 * 60 ? tomorrowLine() : NEXT_WORD + (info.next.label || info.next.name) + ' at ' + M.clock(info.next.start));
     line.hidden = !line.textContent;
     bar.setAttribute('aria-label', label + ', ' + when + (line.textContent ? ', ' + line.textContent : ''));
     bar.addEventListener('click', () => { Snd.init(); Snd.pick(); if (view.phone) return; showCurrentBlock(b, info.kind); });
@@ -7577,7 +7767,7 @@
     out.replaceChildren();
     const p = quick.p = M.parseQuick($('quick-in').value, today, state.palette, nowMin, QUICK_OPTS);
     quick.plan = null;
-    if (!p || !p.name) { out.appendChild(el('p', 'quick-line', 'A name, a day, and a time. Without a time it becomes a to do. Paste a list and each line becomes one.')); return; }
+    if (!p || !p.name) { out.appendChild(el('p', 'quick-line', FEEL ? 'A name, a day, a time. No time makes it a to-do.' : 'A name, a day, and a time. Without a time it becomes a to do. Paste a list and each line becomes one.')); return; }
     const row = el('div', 'quick-row');
     if (p.kind === 'block') {
       const plan = quick.plan = quickPlan(p);
@@ -7767,6 +7957,7 @@
   }
   function setMode(m) {
     if (m === view.mode || view.phone) return;
+    dissolve();
     if (m === 'today') {
       view.plannerAt = { zoom: view.zoom, focus: view.focus, date: today };
       if (view.reset) { view.reset = null; view.before = null; }
@@ -7946,9 +8137,9 @@
     const ideas = info.kind === 'open' && info.left >= 15 ? M.fillIdeas(library(), ideaRows(), info.end - at) : [];
     const lately = view.bandSaid && view.bandSaid.until > Date.now() ? view.bandSaid.text : '';
     const said = lately || info.kind === 'sleep' ? lately || sleepLine(info)
-      : info.kind === 'open' ? (ideas.length ? (back ? 'Keep it open, or start something of yours:' : 'Fill it?') : info.next ? 'then ' + blockName(info.next) + ' at ' + M.clock(info.next.start) : '')
+      : info.kind === 'open' ? (ideas.length ? (back ? 'Keep it open, or start something of yours:' : 'Fill it?') : info.next ? NEXT_WORD + blockName(info.next) + ' at ' + M.clock(info.next.start) : '')
       : info.kind === 'free' ? 'Nothing planned, on purpose.'
-      : !info.next || nowMin >= 21 * 60 ? keptLine() + tomorrowLine() : 'then ' + blockName(info.next) + ' at ' + M.clock(info.next.start);
+      : !info.next || nowMin >= 21 * 60 ? keptLine() + tomorrowLine() : NEXT_WORD + blockName(info.next) + ' at ' + M.clock(info.next.start);
     const name = info.kind === 'sleep' ? 'Sleep' : info.kind === 'open' ? (back ? 'You have ' + leftText(info.left) + ' back' : 'Open') : blockName(b);
     const leftTxt = info.kind === 'block' ? leftText(info.left) + ' left' : info.kind === 'sleep' || back ? '' : leftText(info.left);
     const night = info.kind === 'sleep' ? nightSpan(info) : null;
@@ -8112,7 +8303,7 @@
         acts.appendChild(x);
       });
       /* the rest of the kinds are in the Planner's date card; it opens the list there */
-      acts.appendChild(button('More kinds', 'moment-kind', () => { markSeen({ kind: true }); setMode('planner'); $('kinds').classList.add('open'); }));
+      acts.appendChild(button(FEEL ? 'See every kind' : 'More kinds', 'moment-kind', () => { markSeen({ kind: true }); if (FEEL && !noDesk) { openKinds(); return; } setMode('planner'); $('kinds').classList.add('open'); }));
       acts.appendChild(dismiss('Don’t ask today', () => { markSeen({ kind: true }); }));
       box.append(icon('calendar', 9, UI.gold), text, acts);
       box.hidden = false;
@@ -8548,19 +8739,63 @@
       const prev = el('button', 'nav'), next = el('button', 'nav');
       prev.type = next.type = 'button';
       prev.appendChild(icon('left', 9, UI.ink)); next.appendChild(icon('right', 9, UI.ink));
-      prev.addEventListener('click', () => { Snd.init(); shift(-1); });
-      next.addEventListener('click', () => { Snd.init(); shift(1); });
+      /* V11: the bar is the week, Apple Calendar's way: the month on top, the seven days under it, a swipe
+         or the small arrows for the week before or after, and Today when you're away from it. What you're in
+         is on the board under the pin, and today is the day in gold, so the kicker and the day's arrows go */
+      const weekBy = (n) => { Snd.init(); Snd.slide(); view.focus = M.addDays(view.focus, 7 * n); render(); };
+      prev.addEventListener('click', () => { if (FEEL) { weekBy(-1); return; } Snd.init(); shift(-1); });
+      next.addEventListener('click', () => { if (FEEL) { weekBy(1); return; } Snd.init(); shift(1); });
       /* the week a tap apart, under the date, in the board's own order */
       const week = el('div', 'pb-week');
       week.setAttribute('role', 'group'); week.setAttribute('aria-label', 'Days of this week');
-      bar.append(list, day, prev, next, week);
+      let back = null;
+      if (FEEL) {
+        bar.classList.add('pb-feel');
+        kicker.hidden = true;
+        back = button('Today', 'small quiet pb-today', () => { Snd.init(); Snd.slide(); view.focus = today; render(); });
+        prev.classList.add('pb-wk'); next.classList.add('pb-wk');
+        /* a swipe across the days moves a week; a tap still picks a day */
+        let sx = null, sy = 0, swiped = false;
+        week.addEventListener('pointerdown', (e) => { sx = e.clientX; sy = e.clientY; swiped = false; });
+        week.addEventListener('pointerup', (e) => {
+          if (sx == null) return;
+          const dx = e.clientX - sx, dy = e.clientY - sy;
+          sx = null;
+          if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) { swiped = true; weekBy(dx < 0 ? 1 : -1); }
+        });
+        week.addEventListener('pointercancel', () => { sx = null; });
+        week.addEventListener('click', (e) => { if (swiped) { e.stopPropagation(); e.preventDefault(); swiped = false; } }, true);
+        bar.append(list, day, back, prev, next, week);
+      } else bar.append(list, day, prev, next, week);
       /* Add, the same plain words as everywhere, in the corner a thumb reaches */
       const add = el('button', 'pd-add');
       add.type = 'button'; add.id = 'pd-add'; add.setAttribute('aria-label', 'Add in plain words');
       add.appendChild(icon('plus', 11, '#FFFFFF'));
       add.addEventListener('click', () => { Snd.init(); if ($('quick').hidden) openQuick(); else closeQuick(); });
       document.body.appendChild(add);
-      phoneBar = { kicker, title, prev, next, week, add };
+      phoneBar = { kicker, title, prev, next, week, add, back };
+    }
+    if (FEEL) {
+      /* V11: the month names the week (and its year, away from this one); the day itself is the white one
+         below, said in full for a screen reader */
+      const p = M.parts(view.focus), wk = M.weekDates(view.focus);
+      phoneBar.title.replaceChildren(document.createTextNode(M.MONTH_LONG[p.m - 1] + (p.y !== M.parts(today).y ? ' ' + p.y : '')), el('span', 'sr-only', ', ' + M.dateText(view.focus, 'long')));
+      phoneBar.back.hidden = view.focus === today;
+      phoneBar.back.setAttribute('aria-label', 'Back to today, ' + M.dateText(today, 'long'));
+      phoneBar.prev.setAttribute('aria-label', 'The week before, ' + M.spanText(M.addDays(wk[0], -7), M.addDays(wk[0], -1)));
+      phoneBar.next.setAttribute('aria-label', 'The week after, ' + M.spanText(M.addDays(wk[6], 1), M.addDays(wk[6], 7)));
+      phoneBar.week.replaceChildren();
+      wk.forEach((d) => {
+        const b = el('button', 'pb-d' + (d === view.focus ? ' on' : '') + (d === today ? ' today' : ''));
+        b.type = 'button';
+        b.append(el('span', '', M.DAY_SHORT[M.weekday(d)].slice(0, 1)), el('b', '', String(+d.slice(8))));
+        b.setAttribute('aria-label', M.dateText(d, 'long') + (d === today ? ', today' : ''));
+        b.setAttribute('aria-pressed', String(d === view.focus));
+        b.addEventListener('click', () => { if (d === view.focus) return; Snd.init(); Snd.slide(); view.focus = d; render(); });
+        phoneBar.week.appendChild(b);
+      });
+      phoneBar.add.hidden = !!view.pick || !$('side').hidden;
+      return;
     }
     const n = M.diffDays(today, view.focus);
     const info = n === 0 ? nowNow() : null;
@@ -8647,6 +8882,7 @@
       main.appendChild(n);
     }
     /* the dinner question, from 3 pm, until it's answered */
+    let mealsWay = false;
     const din = d.blocks.find((b) => b.dinner), seen = seenToday();
     const asked = off > 0 ? true : !seen.dinnerNo && nowMin >= (seen.dinnerAt != null ? seen.dinnerAt : 15 * 60) && nowMin < (din ? din.start + din.dur : 0);
     if (useDinners() && din && !din.planned && asked && off <= 1) {
@@ -8663,6 +8899,8 @@
         later.appendChild(keyControl(button('Not tonight', 'small quiet', () => { markSeen({ dinnerNo: true }); Snd.slide(); toast('No more dinner questions tonight.'); renderToday(); }), 'dinner-no-' + date));
         card.appendChild(later);
       }
+      /* a version with a meal board of its own offers it here (window.SR_planMeals, V11) */
+      if (window.SR_planMeals) { card.appendChild(keyControl(button('Plan meals', 'small td-meals', () => { Snd.init(); window.SR_planMeals(); }), 'plan-meals-dinner')); mealsWay = true; }
       main.appendChild(card);
     }
     /* two real commitments at once, on this day */
@@ -8777,6 +9015,16 @@
       card.appendChild(el('h2', '', 'Groceries'));
       card.appendChild(el('p', '', groceryWords(shop, ' this week')));
       card.appendChild(keyControl(button('Open the list', 'small primary', () => openSel({ type: 'groceries' })), 'groceries'));
+      if (window.SR_planMeals) { card.appendChild(keyControl(button('Plan meals', 'small td-meals', () => { Snd.init(); window.SR_planMeals(); }), 'plan-meals-shop')); mealsWay = true; }
+      main.appendChild(card);
+    }
+    /* with neither the dinner question nor the groceries on today's list, the meal board still has a way in */
+    if (window.SR_planMeals && useDinners() && off === 0 && !mealsWay) {
+      const card = el('section', 'td-card td-mealcard');
+      card.appendChild(el('h2', '', 'Meals'));
+      const open = (weekCounts(M.weekStart(today)).openNights || []).length;
+      card.appendChild(el('p', '', open ? plural(open, 'dinner', 'dinners') + ' this week not picked yet' : 'This week’s dinners are picked'));
+      card.appendChild(keyControl(button('Plan meals', 'small td-meals', () => { Snd.init(); window.SR_planMeals(); }), 'plan-meals'));
       main.appendChild(card);
     }
     /* a board only in a browser that clears storage after a week away: how to keep it */
@@ -9007,6 +9255,7 @@
     if ((e.key === 't' || e.key === 'T') && !view.phone) { e.preventDefault(); Snd.init(); setMode('today'); return; }
     if ((e.key === 'p' || e.key === 'P') && !view.phone) { e.preventDefault(); Snd.init(); setMode('planner'); return; }
     if ((e.key === 'l' || e.key === 'L') && !view.phone && !noDesk) { e.preventDefault(); Snd.init(); if (inToday()) setMode('planner'); setList(!view.list); return; }
+    if (FEEL && (e.key === 'k' || e.key === 'K') && !view.phone && !noDesk) { e.preventDefault(); Snd.init(); if (view.kindSpread) closeKinds(); else openKinds(); return; }
     /* the phone's desk is one day: no other zooms */
     if (phoneDay() && ((e.key >= '1' && e.key <= '4') || '=+-_0'.includes(e.key))) return;
     /* Today is today; other days and zooms are the Planner */
@@ -9018,6 +9267,7 @@
     else if (e.key === 'ArrowLeft') { Snd.init(); shift(-1); }
     else if (e.key === 'ArrowRight') { Snd.init(); shift(1); }
     else if (e.key === 'Escape' && $('kinds').classList.contains('open')) $('kinds').classList.remove('open');
+    else if (e.key === 'Escape' && view.kindSpread) closeKinds();
     else if (e.key === 'Escape' && !$('quick').hidden) closeQuick();
     else if (e.key === 'Escape') { if (!$('sheet').hidden) { if (view.got.setup && $('sheet').classList.contains('onb')) closeSetup(); } else if (view.drawer) closeDrawer(); else if (view.pick) selectBlock(null); else if (view.sel) closeSel(); else if (view.bench) closeBench(); else if (view.level) { view.level = null; renderRack(); } else if (phoneDay()) closePhoneDesk(); else if (inToday()) { if (view.dockOpen) { view.dockOpen = false; render(); } } else zoomStep(1); }
   });
@@ -9238,6 +9488,8 @@
     /* a version can run a setup of its own (the desk version answers it with blocks on a mat): the same
        answers, the same week built from them, the same preview of it, and the same way it lands */
     blankAnswers: () => blankAnswers(),
+    /* the grocery count in the board's words, for a version's own pages (the meal board) */
+    grocerySub: (dates) => grocerySub(dates),
     setupWeek(a) { const st = onbBase(Object.assign(blankAnswers(), a)); return st; },
     setupWeekRows(st, from, key) { return onbWeekRows(st, from || M.weekStart(today), key); },
     setupSummary: (a) => setupSummary(Object.assign(blankAnswers(), a)),
