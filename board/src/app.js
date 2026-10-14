@@ -8670,6 +8670,8 @@
     barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
     /* a version can open a Dev board by id and leave it again */
     devBoard(id) { return loadScenarios().then(() => openScenario(id)); }, endPreview,
+    /* a version can start the setup for your own week, with the name it already knows */
+    openSetup(name) { const a = blankAnswers(); if (name) a.name = name; openWelcome('setup', 'name', a); },
     openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
     closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {
