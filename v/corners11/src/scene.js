@@ -3377,7 +3377,10 @@
   function press(obj) { pressObj = FEEL && obj ? obj : null; }
   function feelBlock(m, dt, liftTo, showGrip, sel) {
     const u = m.userData;
-    if (!u.vel) { u.vel = new T.Vector3(); u.pressK = 0; u.gripK = 0; u.haloK = 0; }
+    /* V11: a block set down before its first frame (adoptPosition and land give it a speed first) still
+       starts with no dip, grip, or glow; left unset they were NaN, and the block vanished where it landed */
+    if (!u.vel) u.vel = new T.Vector3();
+    if (u.pressK == null || u.pressK !== u.pressK) { u.pressK = 0; u.gripK = 0; u.haloK = 0; }
     /* a block placed from a panel waits, unseen, for the copy flying to it (land() lets it go) */
     if (u.held) {
       u.heldT = (u.heldT || 0) + dt;
