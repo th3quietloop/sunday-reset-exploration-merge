@@ -1063,7 +1063,7 @@
       rows.forEach((r) => {
         const li = el('li');
         if (r.gap) {
-          li.appendChild(button(M.span(r.gap[0], r.gap[1]) + ': ' + M.hours(r.gap[1] - r.gap[0]) + ' open. Add something', 'ag-open', () => openSel({ type: 'slot', date, start: r.gap[0] })));
+          li.appendChild(button(M.span(r.gap[0], r.gap[1]) + ': ' + M.dur(r.gap[1] - r.gap[0]) + ' open. Add something', 'ag-open', () => openSel({ type: 'slot', date, start: r.gap[0] })));
           ol.appendChild(li);
           return;
         }
@@ -1422,7 +1422,7 @@
     return row;
   }
   function dinnersBody(body, dates) {
-    const week = rackSection(body, view.reset ? 'Dinners that week' : 'This week');
+    const week = rackSection(body, view.reset ? (view.reset.week > M.weekStart(today) ? 'Next week’s dinners' : 'This week’s dinners') : 'This week');
     dinnerSlots(week, dates);
     week.appendChild(cta('Grocery list', grocerySub(dates), 'cart', () => openSel({ type: 'groceries' }), true));
     pantryBody(rackSection(body, view.level ? levelName() : 'Pantry'));
@@ -4274,7 +4274,7 @@
     ['Download a backup', 'data', 'export save file'], ['Load a backup', 'data', 'restore import'], ['Keeping it here', 'data', 'home screen dock safari persistent storage keep cleared'], ['Earlier versions on this device', 'data', 'history undo rescue yesterday'], ['Print this week', 'data', 'paper fridge'], ['Copy this week as text', 'data', 'words paste message notes plain'], ['Download this week for a calendar', 'data', 'ics export'], ['Start over', 'data', 'clear erase wipe'],
     ['How it works', 'help', 'guide tutorial'], ['Getting started', 'help', 'first moves checklist new list'], ['Take the tour', 'help', 'tutorial walkthrough tips'], ['Weeks', 'dev', 'dev scenarios made up boards heavy light full late early alternate preview test states'], ['Time on the board', 'dev', 'dev history six months year two years'], ['Edge cases', 'dev', 'dev empty long names overlaps overdue five kids big calendar'], ['The clock and the day', 'dev', 'dev time hold held day'], ['The first visit', 'dev', 'dev welcome setup onboarding steps'], ['This window', 'dev', 'dev phone view width'], ['Keys', 'help', 'keyboard shortcuts'], ['Something isn’t working', 'help', 'feedback bug report problem'], ['About', 'help', 'version']
   ];
-  const setPages = () => SET_PAGES.filter((p) => (p.needs === 'server' ? !!Cloud.cfg : p.needs === 'push' ? !!(Cloud.cfg && Cloud.cfg.push) : p.needs === 'dev' ? devOn() : true));
+  const setPages = () => SET_PAGES.filter((p) => (p.needs === 'server' ? !!Cloud.cfg : p.needs === 'push' ? !!(Cloud.cfg && Cloud.cfg.push) : p.needs === 'dev' ? devOn() : p.id === 'bar' ? !window.SR_noTrayBar : true));
   const wideSettings = () => window.innerWidth >= 1180 && window.innerHeight >= 560 && !view.phone;
   function openDrawer(page) {
     returnFocus = document.activeElement; closeSel(); closeQuick();
@@ -4533,13 +4533,13 @@
       l0.appendChild(goRow('person', people.join(', '), 'You and home', () => goPage('you')));
       if (rd) l0.appendChild(goRow('sunrise', 'Up at ' + M.clock(rd.wake) + ', bed at ' + M.clock(rd.bed % 1440), 'Usual days, on a Monday', () => goPage('days')));
       const when = moves && !moves.dev && moves.resetAt ? M.DAY_LONG[moves.resetAt.day] + 's at ' + M.clock(moves.resetAt.min) + ', ' : '';
-      l0.appendChild(goRow('sun', 'Sunday Reset', when + plural(stepsNow().length, 'step', 'steps'), () => goPage('reset')));
+      l0.appendChild(goRow('sun', 'Sunday Reset', when + plural(stepsNow().length - (window.SR_recapApart ? 1 : 0), 'step', 'steps'), () => goPage('reset')));
       wk.appendChild(l0);
       const dev = dsec(p, 'This device');
       const l2 = el('div', 'list'), K = window.DeskThemes;
       if (K && !noDesk) l2.appendChild(goRow('lamp', K.THEMES[view.desk.theme].name + ' desk, ' + K.LAYOUTS[view.desk.layout].name.toLowerCase(), (view.steady ? 'Light held steady' : 'Light follows the day') + (view.lamp ? ', lamp on' : ', lamp off'), () => goPage('desk')));
       l2.appendChild(goRow('textsize', (view.bigText ? 'Larger text' : 'Standard text') + ', ' + (view.clock24 ? '24 hour clock' : '12 hour clock'), (view.list ? 'Week as a list' : 'Week on the desk') + (view.sound ? ', sound on' : ', sound off') + (view.calm ? ', calmer motion' : ''), () => goPage('reading')));
-      l2.appendChild(goRow('tray', 'The tray bar', barItems().map((x) => x.name).join(', '), () => goPage('bar')));
+      if (!window.SR_noTrayBar) l2.appendChild(goRow('tray', 'The tray bar', barItems().map((x) => x.name).join(', '), () => goPage('bar')));
       dev.appendChild(l2);
     },
     /* you and the people at home, and what the board helps with */
@@ -8671,7 +8671,8 @@
     /* a version can open a Dev board by id and leave it again */
     devBoard(id) { return loadScenarios().then(() => openScenario(id)); }, endPreview,
     /* a version can start the setup for your own week, with the name it already knows */
-    openSetup(name) { const a = blankAnswers(); if (name) a.name = name; openWelcome('setup', 'name', a); },
+    openSetup(name) { const a = blankAnswers(); if (name) a.name = name; openWelcome('setup', name ? 'home' : 'name', a); },
+    /* (a name already given skips the name question; Back still reaches it) */
     openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
     closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {

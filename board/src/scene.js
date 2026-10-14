@@ -711,7 +711,7 @@
       shown++;
     }
     if (shown < m.list.length) { g.fillStyle = '#6A5440'; setFont(g, 30, 800); g.fillText('and ' + (m.list.length - shown) + ' more', lx, y - 8); }
-    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual ? '~' : '') + m.yours, lx, H - 64); setFont(g, 30, 700, true); g.fillText(m.usual ? 'usually, to yourself' : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); }
+    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual && !window.SR_starYours ? '~' : '') + m.yours, lx, H - 64); setFont(g, 30, 700, true); g.fillText(m.usual ? (window.SR_starYours ? 'to yourself, usually' : 'usually, to yourself') : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); }
     return canvasTex(cv);
   }
 

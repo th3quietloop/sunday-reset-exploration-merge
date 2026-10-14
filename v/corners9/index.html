@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--HEAD-->
+<title>Sunday Reset · Corners V9</title>
+<meta name="description" content="See your day, week, month, and year as wooden blocks on a desk. Every Sunday, set up the week ahead: your own time, to dos, dinners, and time together.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&family=Gabarito:wght@600;700;800;900&family=Poppins:wght@400;500;600;700&display=swap">
+<!--/HEAD-->
+<!-- What this page may load and run: its own files, the pinned 3D library and QR drawer from one CDN,
+     and the two font hosts. Nothing else, and no script written into the page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="same-origin">
+<link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/kit.css">
+<link rel="stylesheet" href="src/variant.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<meta name="theme-color" content="#252928">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sunday Reset">
+</head>
+<body class="v-corners9">
+<!--APP-->
+<div id="app">
+  <section class="focusroom" id="focusroom" hidden aria-label="Focus"></section>
+  <a class="skip" href="#agenda" id="skip">Show the week as a list</a>
+  <div id="stage" aria-hidden="true"></div>
+  <main class="agenda panel" id="agenda" hidden aria-label="Your week as a list"></main>
+  <div class="topbar">
+  <header class="panel hud" id="hud">
+    <div class="hud-top"><button class="hud-kicker" id="hud-kicker" type="button" aria-haspopup="dialog" aria-controls="drawer" aria-label="Sunday Reset. Settings" title="Settings: you, the desk, sync, and your data">Sunday Reset</button><button class="save-state" type="button"></button><span class="hud-clock" id="hud-clock"></span></div>
+    <div class="hud-row">
+      <div class="hud-nav">
+        <button class="nav" id="prev" type="button" aria-label="Earlier"></button>
+        <button class="nav" id="next" type="button" aria-label="Later"></button>
+      </div>
+      <h1 class="hud-title" id="hud-title">This week</h1>
+      <button class="nav hud-jump" id="hud-jump" type="button" aria-label="Go to a date" title="Go to a date"></button>
+      <input class="hud-date" id="hud-date" type="date" aria-label="Go to a date" tabindex="-1">
+    </div>
+    <div class="hud-subrow">
+      <div class="kinds" id="kinds" hidden><div class="kinds-row" id="kinds-row" role="group" aria-label="What kind of day"></div></div>
+      <span class="hud-sub" id="hud-sub"></span><button class="hud-today" id="today" type="button" hidden>Back to today</button><button class="hud-today" id="freeday" type="button" hidden>Find a free day</button>
+    </div>
+    <button class="hud-hours small quiet" id="outside-hours" type="button" hidden></button>
+    <div class="pills" id="pills" hidden role="group" aria-label="Days of this week"></div>
+  </header>
+
+  <section class="panel yours" id="yours">
+    <div class="yours-num" id="yours-num"></div>
+    <div class="yours-label" id="yours-label"></div>
+    <div class="yours-sub" id="yours-sub"></div>
+  </section>
+  <div class="spacer"></div>
+  <div class="topright" id="topright">
+  <nav class="panel zoom" id="zoom" aria-label="Zoom">
+    <button type="button" data-zoom="day">Day<kbd>1</kbd></button>
+    <button type="button" data-zoom="week">Week<kbd>2</kbd></button>
+    <button type="button" data-zoom="month">Month<kbd>3</kbd></button>
+    <button type="button" data-zoom="year">Year<kbd>4</kbd></button>
+    <button type="button" id="listtoggle" class="listtoggle" title="The week as a list (L)" aria-pressed="false">List<kbd>L</kbd></button>
+  </nav>
+  </div>
+  </div>
+  <div class="modesw" id="modesw" role="group" aria-label="Today or the Planner"></div>
+  <section class="band" id="band" hidden aria-label="Now">
+    <div class="band-tabs" id="band-tabs"><button class="band-tab band-date" id="band-date" type="button" aria-haspopup="dialog" aria-controls="drawer" title="Settings: you, the desk, sync, and your data"></button><button class="save-state band-save" type="button"></button></div>
+    <div class="panel band-in" id="band-in"></div>
+    <section class="panel moment" id="moment" hidden aria-live="polite"></section>
+  </section>
+  <button class="dinner-tag" id="dinner-tag" type="button" hidden>Pick dinner</button>
+  <div class="fab" id="fab" hidden>
+    <button class="fab-reset" id="fab-reset" type="button" hidden>Start Sunday Reset</button>
+    <button class="fab-add" id="fab-add" type="button" title="Add in plain words (N)">Add<kbd>N</kbd></button>
+  </div>
+  <div class="corner" id="corner">
+    <button type="button" id="todayview-btn" hidden>Today</button>
+    <button type="button" id="undo" hidden>Undo</button>
+    <button type="button" id="redo" hidden>Redo</button>
+    <button type="button" id="tell" hidden>Tell</button>
+    <button type="button" id="add-btn" title="Add in plain words (N)">Add</button>
+  </div>
+  <nav class="panel phonebar" id="phonebar" hidden aria-label="One day on the desk"></nav>
+
+  <div class="viewctl" id="viewctl">
+    <div class="seg" role="group" aria-label="Zoom the desk">
+      <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (minus key)"></button>
+      <button type="button" id="zfit" title="Fit everything (0 key)" aria-label="Fit everything">100%</button>
+      <button type="button" id="zin" aria-label="Zoom in" title="Zoom in (plus key)"></button>
+    </div>
+  </div>
+
+  <section class="panel rack" id="rack">
+    <div class="rack-top" id="rack-top"></div>
+    <div class="rack-body" id="rack-body"></div>
+  </section>
+
+  <aside class="panel side" id="side" hidden role="region">
+    <button class="side-x" id="side-x" type="button" aria-label="Close"></button>
+    <div class="side-in" id="side-in"></div>
+  </aside>
+
+  <div class="btools panel" id="btools" hidden role="toolbar" aria-label="Block tools"></div>
+  <section class="panel quick" id="quick" hidden role="dialog" aria-label="Add in plain words">
+    <input class="quick-in" id="quick-in" type="text" autocomplete="off" spellcheck="false" placeholder="Gym Tue 6pm 45m" aria-label="Add in plain words" aria-describedby="quick-out">
+    <div class="quick-out" id="quick-out" aria-live="polite"></div>
+  </section>
+  <main class="todayview" id="todayview" hidden></main>
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="panel drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-label="Settings">
+    <button class="side-x" id="drawer-x" type="button" aria-label="Close settings"></button>
+    <div class="drawer-in" id="drawer-in"></div>
+  </aside>
+  <section class="panel sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-h"></section>
+  <div class="preview-bar" id="preview-bar" hidden role="region" aria-label="Preview"></div>
+  <input type="file" id="ics-file" accept=".ics,text/calendar" hidden>
+  <input type="file" id="backup-file" accept=".json,application/json" hidden>
+  <div class="chip" id="chip" hidden></div>
+  <div class="dragtile" id="dragtile" hidden></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="sr-only" id="sr" aria-live="off"></div>
+  <div class="sr-only" id="announce" aria-live="polite"></div>
+  <div class="print" id="print" aria-hidden="true"></div>
+  <div class="loading" id="loading"><div class="load-blocks" aria-hidden="true"><i></i><i></i><i></i></div>Sunday Reset<noscript><p>Sunday Reset needs JavaScript to open your week.</p></noscript></div>
+</div>
+<!--/APP-->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js" integrity="sha384-qOkzR5Ke/XkQxuGVJ9hpFEpDlcoLtWwVYhnJf06cLIZa2vaIptSqaubivErzmD5O" crossorigin="anonymous"></script>
+<script src="src/data.js"></script>
+<script src="src/model.js"></script>
+<script src="src/icons.js"></script>
+<script src="src/props-data.js"></script>
+<script src="src/kit/themes.js"></script>
+<script src="src/kit/desk-paint.js"></script>
+<script src="src/kit/light.js"></script>
+<script src="src/scene.js"></script>
+<script src="src/sound.js"></script>
+<script src="src/store.js"></script>
+<script src="src/cloud.js"></script>
+<script src="src/diagnostics.js"></script>
+<script src="src/onboard.js"></script>
+<script src="src/focus.js"></script>
+<script src="src/kit.js"></script>
+<script src="src/variant.js"></script>
+<script src="src/app.js"></script>
+</body>
+</html>

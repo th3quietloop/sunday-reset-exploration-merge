@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8'];
-const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8' };
+const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8', 'corners9'];
+const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8', corners9: 'Corners V9' };
 const only = process.argv.slice(2);
 for (const id of ids) {
   if (only.length && !only.includes(id)) continue;

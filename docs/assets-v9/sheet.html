@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Block marks sheet</title>
+<style>
+  body { margin: 0; padding: 16px; background: #E9E1D2; font: 12px/1.2 -apple-system, sans-serif; color: #2B2116; }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .card { background: #FBF6EC; border-radius: 6px; padding: 6px; }
+  .nm { font-weight: 700; font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .nm i { font-style: normal; font-weight: 400; color: #7a6a55; }
+  .row { display: flex; align-items: center; gap: 6px; padding: 4px; border-radius: 4px; }
+  .row.cream { background: #F3EBDD; }
+  .row.block { background: #2D6EA6; margin-top: 3px; }
+  .big { display: block; margin: 0 auto 4px; background: #F3EBDD; }
+  .off { color: #b33; }
+</style></head>
+<body>
+<h1 id="t"></h1>
+<div class="grid" id="g"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const src = q.get('src') || '../../board/src/icons.js';
+  const big = q.get('big') !== '0';
+  const only = (q.get('only') || '').split(',').filter(Boolean);
+  document.getElementById('t').textContent = 'Block marks: ' + src + '  (14, 20, 32 px; dark on cream, white on Work blue)';
+  const s = document.createElement('script'); s.src = src + '?v=' + Date.now();
+  s.onload = run; document.head.appendChild(s);
+  const dpr = window.devicePixelRatio || 1;
+  function cv(size, color) {
+    const c = document.createElement('canvas');
+    c.width = Math.round(size * dpr); c.height = Math.round(size * dpr);
+    c.style.width = size + 'px'; c.style.height = size + 'px';
+    Icons.draw(c.getContext('2d'), NAME, c.width / 2, c.height / 2, c.width, color);
+    return c;
+  }
+  let NAME;
+  const metrics = {};
+  function measure(name) {
+    const c = document.createElement('canvas'); c.width = c.height = 240;
+    const g = c.getContext('2d');
+    Icons.draw(g, name, 120, 120, 192, '#000');
+    const d = g.getImageData(0, 0, 240, 240).data;
+    let x0 = 240, y0 = 240, x1 = 0, y1 = 0, sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < 240; y++) for (let x = 0; x < 240; x++) {
+      const a = d[(y * 240 + x) * 4 + 3];
+      if (a > 127) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; sx += x; sy += y; n++; }
+    }
+    const u = 192 / 24, o = 120 - 96;
+    const m = { box: [(x0 - o) / u, (y0 - o) / u, (x1 + 1 - o) / u, (y1 + 1 - o) / u].map((v) => +v.toFixed(1)),
+      cx: +(((x0 + x1 + 1) / 2 - o) / u).toFixed(1), cy: +(((y0 + y1 + 1) / 2 - o) / u).toFixed(1),
+      mx: +((sx / n - o) / u).toFixed(1), my: +((sy / n - o) / u).toFixed(1), ink: +(n / (192 * 192)).toFixed(2) };
+    metrics[name] = m;
+    return m;
+  }
+  function run() {
+    const g = document.getElementById('g');
+    const names = only.length ? only : Icons.names;
+    names.forEach((name) => {
+      NAME = name;
+      const m = measure(name);
+      const card = document.createElement('div'); card.className = 'card';
+      const nm = document.createElement('div'); nm.className = 'nm';
+      const off = Math.abs(m.cx - 12) > 1 || Math.abs(m.cy - 12) > 1;
+      nm.innerHTML = '<span>' + name + '</span><i class="' + (off ? 'off' : '') + '">' + m.cx + ',' + m.cy + '</i>';
+      card.appendChild(nm);
+      if (big) {
+        const b = cv(72, '#2B2116'); b.className = 'big';
+        const gg = b.getContext('2d'); gg.strokeStyle = 'rgba(200,60,60,0.35)'; gg.lineWidth = 1;
+        const u = b.width / 24; gg.strokeRect(u * 2, u * 2, u * 20, u * 20);
+        gg.beginPath(); gg.moveTo(b.width / 2, 0); gg.lineTo(b.width / 2, b.height); gg.moveTo(0, b.height / 2); gg.lineTo(b.width, b.height / 2); gg.stroke();
+        card.appendChild(b);
+      }
+      const r1 = document.createElement('div'); r1.className = 'row cream';
+      [14, 20, 32].forEach((s) => r1.appendChild(cv(s, '#2B2116')));
+      const r2 = document.createElement('div'); r2.className = 'row block';
+      [14, 20, 32].forEach((s) => r2.appendChild(cv(s, '#FFFFFF')));
+      card.append(r1, r2);
+      g.appendChild(card);
+    });
+    const pre = document.createElement('pre'); pre.id = 'metrics'; pre.style.display = 'none';
+    pre.textContent = JSON.stringify(metrics); document.body.appendChild(pre);
+    document.body.dataset.done = '1';
+  }
+</script>
+</body></html>
