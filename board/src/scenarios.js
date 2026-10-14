@@ -10,13 +10,18 @@
      board ones open on the year behind today, where their history is). heavy: a build long enough to
      say it's making the board first. */
   const LIST = [
+    { id: 'firstrun', group: 'First visit', name: 'Brand new', line: 'Someone opening it for the first time: their name on the letter rack, then the sample week.' },
     { id: 'sample', group: 'Weeks', name: 'Sample family', line: 'What someone new sees behind the welcome.' },
+    { id: 'busy', group: 'People', name: 'Busy person', line: 'Long work days, an early workout, errands in every gap, and a pile of to dos.' },
+    { id: 'creative', group: 'People', name: 'Creative person', line: 'Three short work days and the rest given to studio time, sketching, and reading.' },
     { id: 'light', group: 'Weeks', name: 'Light week', line: 'One person, four short work days, and lots of open time.' },
     { id: 'heavy', group: 'Weeks', name: 'Heavy week', line: 'Long work days, three kids on two schedules, soccer twice a week, meetings, 18 to dos, and overlaps.' },
     { id: 'full', group: 'Weeks', name: 'Fully scheduled', line: 'Every open minute has a block, every dinner is decided, every to do has a time.', heavy: true },
     { id: 'late', group: 'Weeks', name: 'Late shifts', line: 'Work 3 to 11:30 pm, up at 10 am, bed at 2 am. The board runs from 9 am to 3 am.' },
     { id: 'early', group: 'Weeks', name: 'Early riser', line: 'Up at 4 am, work 5 am to 1:30 pm, bed at 8:30 pm. The board starts at 3 am.' },
     { id: 'alternate', group: 'Weeks', name: 'Weeks that alternate', line: 'Taylor has Jamie every other week.' },
+    { id: 'weeks2', group: 'Time on the board', name: 'Two weeks in', line: 'Two weeks behind today, the same way as six months: a first few resets and dinners.', back: 14 },
+    { id: 'months3', group: 'Time on the board', name: 'Three months in', line: '13 weeks behind today, the same way. Opens on the year around them.', zoom: 'year', back: 91 },
     { id: 'months6', group: 'Time on the board', name: 'Six months in', line: '26 weeks behind today: resets, dinners, done to dos, two saved kinds of day, and two blocks of their own. Opens on the year around them.', zoom: 'year', back: 182, heavy: true },
     { id: 'year1', group: 'Time on the board', name: 'One year in', line: '52 weeks behind today, the same way. Opens on the last 12 months.', zoom: 'year', back: 365, heavy: true },
     { id: 'year2', group: 'Time on the board', name: 'Two years in', line: '104 weeks behind today, the same way. The heaviest board; opens on the last 12 months.', zoom: 'year', back: 365, heavy: true },
@@ -84,6 +89,34 @@
     const ME = ['me', 'kim'];
 
     if (id === 'sample') return D.sampleState(today);
+    /* brand new: the sample week with no name yet, for the first visit's letter rack */
+    if (id === 'firstrun') { const st = D.sampleState(today); st.profile = Object.assign({}, st.profile, { name: '' }); return st; }
+
+    if (id === 'busy') {
+      const st = base({ name: 'Dana', wake: { wd: 330, we: 420 }, bed: { wd: 1350, we: 1380 }, work: { days: [1, 2, 3, 4, 5], start: 480, end: 1110, hours: {} } });
+      widen(st, 330, 1350);
+      st.tasks = ['Expense report', 'Book flights for the offsite', 'Dentist for the kids', 'Fix the gutter', 'Renew passport', 'Call the insurance', 'Plan the team dinner', 'Return the rug']
+        .map((n, i) => task({ name: n, due: M.addDays(today, 1 + (i % 6)), dur: 30, icon: 'check' }));
+      for (let d = 0; d < 7; d++) { if (d > 0 && d < 6) place(st, at(d), 'workout', 345); fillDay(st, at(d), ['groceries', 'cookahead', 'deep', 'walk']); }
+      dinners(st, at(0), 7, ['me'], 0.5);
+      return st;
+    }
+
+    if (id === 'creative') {
+      const st = base({ name: 'Rio', work: { days: [1, 3, 5], start: 600, end: 900, hours: {} } });
+      const studio = { id: uid('b'), name: 'Studio time', cat: 'yours', dur: 150, icon: 'brush' };
+      const sketch = { id: uid('b'), name: 'Sketchbook', cat: 'yours', dur: 45, icon: 'note' };
+      st.palette.push(studio, sketch);
+      for (let d = 0; d < 7; d++) {
+        place(st, at(d), sketch.id, 480);
+        if (d === 0 || d === 2 || d === 4 || d === 6) place(st, at(d), studio.id, d % 2 ? 960 : 600);
+        else place(st, at(d), 'reading', 1200);
+        if (d === 6) place(st, at(d), 'creative', 840);
+      }
+      st.tasks = [task({ name: 'Frame the prints for the show', due: M.addDays(today, 9), icon: 'brush', steps: [['Pick the six', 30], ['Order frames', 15], ['Hang a test wall', 60]] }), task({ name: 'Send the grant application', due: M.addDays(today, 4), dur: 90 })];
+      dinners(st, at(0), 7, ['me'], 0.6);
+      return st;
+    }
 
     if (id === 'light') {
       const st = base({ name: 'Sam', work: { days: [1, 2, 3, 4], start: 600, end: 960, hours: {} } });
@@ -176,8 +209,8 @@
       return st;
     }
 
-    if (id === 'months6' || id === 'year1' || id === 'year2') {
-      const weeks = id === 'months6' ? 26 : id === 'year1' ? 52 : 104;
+    if (id === 'weeks2' || id === 'months3' || id === 'months6' || id === 'year1' || id === 'year2') {
+      const weeks = id === 'weeks2' ? 2 : id === 'months3' ? 13 : id === 'months6' ? 26 : id === 'year1' ? 52 : 104;
       const st = base({ name: 'Jordan', partner: 'Riley', kids: ['Avery'], cares: [{ kids: ['Avery'], days: [1, 2, 3, 4, 5], drop: 495, pick: 1005 }] });
       st.groups.push({ id: 'work', name: 'Work', icon: 'laptop' }, { id: 'school', name: 'School', icon: 'book' });
       const guitar = { id: uid('b'), name: 'Guitar practice', cat: 'yours', dur: 45, icon: 'note' };
