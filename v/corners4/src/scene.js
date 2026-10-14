@@ -479,7 +479,9 @@
     u.halo.scale.set(w + 0.9, 1, dU + 0.9);
     u.halo.position.y = 0.012;
     const grip = !!opts.grip && !b.soft && !b.sleep && !b.fixed && !b.done;
-    const tex = faceTex({ label: b.label || b.name, sub, icon: b.icon, ink: lk.ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR });
+    /* a version can print only the mark on a week block too narrow for its name (window.SR_iconOnly); hovering names it */
+    const thin = !!(window.SR_iconOnly && !opts.hMul && !b.piece && w < 0.42 && !b.free);
+    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink: lk.ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR });
     if (face.material.map !== tex) { face.material.map = tex; face.material.needsUpdate = true; }
     u.canGrip = grip && w > dU * 0.9;
     if (u.canGrip) {
@@ -606,6 +608,8 @@
     /* past days and days outside the month get quieter cards, never faded text */
     const quiet = !c.inMonth, past = c.past && c.inMonth;
     g.fillStyle = quiet ? '#E3DDD2' : past ? '#E6DCCB' : c.weekend ? '#F4E4C8' : '#F8F0E1'; rr(g, 4, 4, W - 8, H - 8, 26); g.fill();
+    /* a version can edge the days with time to yourself in gold (window.SR_starYours), to spot them across a month */
+    if (window.SR_starYours && c.yours && c.inMonth) { g.strokeStyle = '#D9A93A'; g.lineWidth = 9; rr(g, 9, 9, W - 18, H - 18, 22); g.stroke(); }
     if (c.trip) {
       g.fillStyle = '#2A4B90'; rr(g, 4, 4, W - 8, 74, [26, 26, 0, 0]); g.fill();
       Icons.draw(g, 'plane', 40, 41, 40, '#FFFFFF');
@@ -638,7 +642,7 @@
       g.fillStyle = '#E88A6E'; rr(g, 22, H - 116, tw, 54, 27); g.fill();
       g.fillStyle = '#3A1A10'; g.fillText(t, 39, H - 76);
       /* the chip sits beside the day's hours, not over them */
-      const more = !lines.length && !c.trip ? (c.yours ? c.yours + (window.SR_kindYours ? ' to yourself' : ' yours') : c.open ? c.open + ' open' : '') : '';
+      const more = !lines.length && !c.trip ? (c.yours ? (window.SR_starYours ? '★ ' : '') + c.yours + (window.SR_kindYours ? ' to yourself' : ' yours') : c.open ? c.open + ' open' : '') : '';
       setFont(g, 38, 700, true);
       if (more && 22 + tw + 16 + g.measureText(more).width <= W - 24) { g.fillStyle = c.yours ? '#6B4F0C' : '#5E4C36'; g.fillText(more, 22 + tw + 16, H - 76); }
     } else if (c.todo) {
@@ -647,7 +651,7 @@
       g.fillStyle = '#1D6376'; g.fillText(t, 26, H - 74);
     } else if (c.yours && !lines.length && !c.trip) {
       setFont(g, 42, 700, true);
-      g.fillStyle = '#6B4F0C'; g.fillText(c.yours + (window.SR_kindYours ? ' to yourself' : ' yours'), 26, H - 72);
+      g.fillStyle = '#6B4F0C'; g.fillText((window.SR_starYours ? '★ ' : '') + c.yours + (window.SR_kindYours ? ' to yourself' : ' yours'), 26, H - 72);
     } else if (c.open && !lines.length && !c.trip) {
       /* a day with none of your own time still says something: how much of it is open */
       setFont(g, 42, 700, true);
@@ -707,7 +711,7 @@
       shown++;
     }
     if (shown < m.list.length) { g.fillStyle = '#6A5440'; setFont(g, 30, 800); g.fillText('and ' + (m.list.length - shown) + ' more', lx, y - 8); }
-    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText(m.yours, lx, H - 64); setFont(g, 30, 700, true); g.fillText(window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); }
+    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual ? '~' : '') + m.yours, lx, H - 64); setFont(g, 30, 700, true); g.fillText(m.usual ? 'usually, to yourself' : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); }
     return canvasTex(cv);
   }
 

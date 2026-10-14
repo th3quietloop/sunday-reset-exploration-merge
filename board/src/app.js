@@ -366,7 +366,9 @@
         yours += M.totals(d).yours || 0;
         days.push({ num: k + 1, col: (off + k) % 7, row: Math.floor((off + k) / 7), trip: !!d.trip, marker: d.markers.length > 0, big: M.timedOn(state, date).some((e) => e.big), today: date === today, due: d.due.length > 0 });
       }
-      return { key: mk, name: M.MONTH_LONG[p.m - 1], year: p.y, current: mk === M.monthKey(today), days, list: monthList(ms).map((x) => ({ kind: x.kind, when: x.when, name: x.name })), yours: kindYours() && yours < 60 ? '' : M.hours(yours) };
+      /* a version can mark a month nobody has planned yet as the usual week's hours (window.SR_usualYears) */
+      const usual = !!window.SR_usualYears && mk > M.monthKey(today) && !Object.keys(state.dates).some((d) => d.startsWith(mk) && ((state.dates[d].adds || []).length));
+      return { key: mk, name: M.MONTH_LONG[p.m - 1], year: p.y, current: mk === M.monthKey(today), days, list: monthList(ms).map((x) => ({ kind: x.kind, when: x.when, name: x.name })), yours: kindYours() && yours < 60 ? '' : M.hours(yours), usual };
     });
   }
   function rangeDates() {
@@ -2875,7 +2877,12 @@
       W.setHover(hit.obj);
       stage.className = 'pointer';
       const c = M.dayCard(state, hit.date, day(hit.date));
-      const bits = c.flags.map((f) => f.name).concat(c.due.map((n) => 'Due: ' + n)).slice(0, 4);
+      let bits = c.flags.map((f) => f.name).concat(c.due.map((n) => 'Due: ' + n)).slice(0, 4);
+      /* a version can name the day's blocks and its time to yourself in the hover (window.SR_starYours) */
+      if (window.SR_starYours) {
+        const dd = day(hit.date);
+        bits = (c.yours >= 60 ? ['★ ' + M.hours(c.yours) + ' to yourself'] : []).concat(dd.blocks.filter((b) => !b.sleep && !b.soft && !b.free && b.dur >= 30).slice(0, 3).map((b) => b.name + ' ' + M.clock(b.start)), bits).slice(0, 5);
+      }
       showChipAt(e.clientX, e.clientY, M.dateText(hit.date, 'long'), (bits.length ? bits.join(' · ') + ' · ' : '') + 'Tap to open the week');
     } else if (hit.kind === 'ycard') {
       W.setHover(hit.obj);
