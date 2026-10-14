@@ -34,6 +34,32 @@
   const touch = (ms) => { activeUntil = Math.max(activeUntil, nowMs() + (ms || 600)); };
   const shadowDirty = () => touch(300);
   const props = {};
+  /* == feel ==
+     A version whose page carries the class `feel` (V11, docs/CORNERS-V11.md) moves the desk on springs:
+     a block dips when it's touched, lifts with a shadow under it, swings as it's carried, falls the last
+     bit, and lands with a knock at the moment it touches; the camera and the boards ease in and out.
+     Every other version moves as it always did. */
+  const FEEL = !!(root.document && root.document.body && root.document.body.classList.contains('feel'));
+  /* a critically damped spring: x heads for `to` and keeps its speed from one frame to the next, so a
+     new target never jolts it; it settles in about 4.7 / w seconds */
+  function spring(x, v, to, w, dt) {
+    const d = x - to, e = Math.exp(-w * dt), c = v + w * d;
+    return [to + (d + c * dt) * e, (v - c * w * dt) * e];
+  }
+  function springV(p, v, to, w, dt) {
+    let r = spring(p.x, v.x, to.x, w, dt); p.x = r[0]; v.x = r[1];
+    r = spring(p.y, v.y, to.y, w, dt); p.y = r[0]; v.y = r[1];
+    r = spring(p.z, v.z, to.z, w, dt); p.z = r[0]; v.z = r[1];
+  }
+  /* a spring that can swing past where it's going (zeta under 1), pushed by `push`: a carried block's sway */
+  function sway(s, to, w, zeta, dt, push) {
+    const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+    for (let i = 0; i < n; i++) { s.v += (-w * w * (s.x - to) - 2 * zeta * w * s.v + (push || 0)) * h; s.x += s.v * h; }
+  }
+  /* what the desk tells the app when a block touches down, comes home, or the week clicks into place, so a
+     sound can play at that moment and not before (set by the app with World.onFeel) */
+  let feelHook = null;
+  const feelSay = (kind, a) => { if (feelHook) try { feelHook(kind, a); } catch (e) { /* fine */ } };
 
   /* == helpers == */
   const matCache = {};
@@ -455,7 +481,14 @@
     const dim = !!(focusFn && !b.free && !b.piece && !focusFn(b));
     const sig2 = sig + (dim ? '|dim' : '');
     if (sig2 === u.sig) return;
+    /* feel: when a block's width changes where it sits (stretched, or open time cut around it), the edge
+       that stays put stays put, instead of the new width arriving at once and its middle gliding over */
+    if (FEEL && u.w > 0 && Math.abs(w - u.w) > 0.004 && g.visible && !u.wave && !u.dragging && !u.fall) {
+      const L0 = g.position.x - u.w / 2, R0 = g.position.x + u.w / 2, L1 = u.target.x - w / 2, R1 = u.target.x + w / 2;
+      if (Math.abs(L0 - L1) < 0.04 || Math.abs(R0 - R1) < 0.04) { g.position.x = u.target.x; if (u.vel) u.vel.x = 0; }
+    }
     u.sig = sig2; u.w = w;
+    u.haloS = { x: w + 0.9, z: dU + 0.9 };
     u.dU = dU;
     if (b.free) {
       /* no brick: only the printing on the board, still there to tap */
@@ -813,6 +846,22 @@
   function setWeek(rows, opts) {
     opts = opts || {};
     const seen = new Set();
+    /* feel: open time cut around a block gets new names wherever the cut falls (its start is in its name).
+       Its pieces keep their blocks as the cut moves, so nothing under the block you're holding pops in
+       and out; and while a block is in hand, nothing on the board grows in. */
+    const holding = FEEL && !!(drag.obj || drag.match);
+    const spare = new Map();
+    if (FEEL) {
+      const want = new Set();
+      rows.forEach((r) => r.blocks.forEach((b) => want.add(r.date + '|' + b.key)));
+      week.blocks.forEach((m, key) => {
+        const u = m.userData, b = u.block;
+        if (want.has(key) || !b || u.shrink != null || (u.wave && !u.wave.show)) return;
+        const base = u.date + '|' + (b.base || b.key);
+        if (!spare.has(base)) spare.set(base, []);
+        spare.get(base).push(key);
+      });
+    }
     rows.forEach((r, i) => {
       const row = week.rows[i];
       const sig = [r.date, r.wd, r.num, r.today, r.focus, (r.markers || []).join(','), r.trip || '', r.due || 0, r.markerIcon || ''].join('|');
@@ -832,6 +881,10 @@
         let m = week.blocks.get(key);
         const wU = b.dur / 60;
         const x = xOf(b.start) + wU / 2;
+        if (!m && FEEL) {
+          const old = nearestSpare(spare.get(r.date + '|' + (b.base || b.key)), week.blocks, x);
+          if (old) { m = week.blocks.get(old); week.blocks.delete(old); week.blocks.set(key, m); m.userData.key = key; }
+        }
         if (!m) {
           m = makeBlock(b);
           m.userData.key = key;
@@ -839,6 +892,8 @@
           m.scale.set(1, 0.001, 1);
           m.userData.grow = 0;
           m.userData.newTile = true;
+          /* while a block is in hand, a new piece (the far side of a cut) comes up out of the groove quickly */
+          if (holding) { m.userData.grow = 0.35; m.userData.growFast = true; m.userData.newTile = false; }
           row.userData.blocks.add(m);
           week.blocks.set(key, m);
         } else if (m.parent !== row.userData.blocks) {
@@ -851,15 +906,31 @@
         m.userData.target.set(x, BOARD_Y, 0);
         dressBlock(m, b, wU, depth);
         if (m.userData.wave && !m.userData.wave.show) moveTile(m, { show: true });
+        if (FEEL) handShown(m, b);
       }
     });
     week.blocks.forEach((m, key) => {
       if (!seen.has(key) && m.userData.shrink == null && !(m.userData.wave && !m.userData.wave.show)) {
         if (opts.direction) moveTile(m, { show: false, delay: waveDelay({ x: m.userData.target.x, z: rowZ(m.userData.row) }, WEEK_BOX, navigationDirection), finish: () => { dropBlock(m); week.blocks.delete(key); } });
-        else m.userData.shrink = 1;
+        /* feel: while a block is in hand, what the board no longer shows sinks away quickly, under your hand */
+        else { m.userData.shrink = 1; if (holding) m.userData.shrinkFast = true; }
       }
     });
     setGapMarks(rows);
+  }
+  /* feel: of the pieces a cut block no longer needs, the one nearest where the new piece goes */
+  function nearestSpare(pool, map, x) {
+    if (!pool) return null;
+    let best = -1, bd = Infinity;
+    pool.forEach((k, i) => { const m = map.get(k); if (!m) return; const d = Math.abs(m.userData.target.x - x); if (d < bd) { bd = d; best = i; } });
+    return best < 0 ? null : pool.splice(best, 1)[0];
+  }
+  /* feel: a block the board shows for the one in your hand stays out of sight; once you've let go (and
+     it's home, if it flew home), it shows again */
+  function handShown(m, b) {
+    const u = m.userData;
+    if (inHand(b)) { u.inHand = true; m.visible = false; }
+    else if (u.inHand) { u.inHand = false; if (!u.held) m.visible = true; }
   }
   function setGapMarks(rows) {
     const list = [];
@@ -1259,6 +1330,18 @@
       if (old) old.dispose();
     }
     const seen = new Set();
+    /* feel: as in the week, pieces of a cut block keep their bricks, and nothing flies in under your hand */
+    const holdingDay = FEEL && !opts.fly && !!(drag.obj || drag.match);
+    const spareDay = new Map();
+    if (FEEL) {
+      const want = new Set();
+      for (const b of sp.blocks) for (let li = 0; li < LANES.length; li++) want.add(sp.date + '|' + b.key + '|' + li);
+      dayb.blocks.forEach((m, key) => {
+        const u = m.userData, b = u.orig;
+        if (want.has(key) || !b || u.date !== sp.date || u.shrink != null || (u.wave && !u.wave.show)) return;
+        [sp.date + '|' + (b.base || b.key) + '|' + u.lane, sp.date + '|' + (b.base || b.key)].forEach((base) => { if (!spareDay.has(base)) spareDay.set(base, []); spareDay.get(base).push(key); });
+      });
+    }
     for (const b of sp.blocks) {
       for (let li = 0; li < LANES.length; li++) {
         const L = LANES[li];
@@ -1273,6 +1356,11 @@
         const segmentTime = s0 >= 1440 ? first ? (b.daySub || clockText(s0) + ' to ' + clockText(e0) + ' next day') : 'continued, to ' + clockText(e0) : null;
         const seg = Object.assign({}, b, { sub: segmentTime || (first ? b.daySub || b.sub : 'continued'), contL: !first, contR: !last });
         let m = dayb.blocks.get(key);
+        if (!m && FEEL) {
+          const at = dayX(li, s0) + (e0 - s0) / 120 * DU;
+          const old = nearestSpare(spareDay.get(sp.date + '|' + (b.base || b.key) + '|' + li), dayb.blocks, at) || nearestSpare(spareDay.get(sp.date + '|' + (b.base || b.key)), dayb.blocks, at);
+          if (old) { m = dayb.blocks.get(old); dayb.blocks.delete(old); dayb.blocks.set(key, m); m.userData.key = key; }
+        }
         const created = !m;
         let from = null, fromPosition = null;
         if (created) {
@@ -1293,14 +1381,17 @@
         Object.assign(u, { date: sp.date, bkey: b.key, lane: li, segStart: s0, segEnd: e0, first, last, orig: b, shrink: null, back: null });
         u.target.copy(to);
         dressBlock(m, seg, wU, DB_D, { hMul: DB_HMUL, grip: last && (!!b.add || !!b.tpl) });
-        if (created || (u.wave && !u.wave.show)) moveTile(m, { show: true, from, fromPosition, fresh: created && !from, duration: 0.5, delay: waveDelay(to, DAY_BOX, navigationDirection) });
+        /* feel: while a block is in hand, a piece the board needs appears where it goes, not flying in */
+        if (created && holdingDay) { m.position.copy(to); u.tileShown = true; u.grow = 0.35; u.growFast = true; }
+        else if (created || (u.wave && !u.wave.show)) moveTile(m, { show: true, from, fromPosition, fresh: created && !from, duration: 0.5, delay: waveDelay(to, DAY_BOX, navigationDirection) });
+        if (FEEL) handShown(m, b);
       }
     }
     dayb.blocks.forEach((m, key) => {
       const u = m.userData;
       if (seen.has(key) || u.shrink != null || (u.wave && !u.wave.show)) return;
       if (opts.fly) moveTile(m, { show: false, delay: waveDelay(u.target, DAY_BOX, navigationDirection), finish: () => { dropBlock(m); dayb.blocks.delete(key); } });
-      else u.shrink = 1;
+      else { u.shrink = 1; if (holdingDay) u.shrinkFast = true; }
     });
     dayb.date = sp.date;
     dayb.now = sp.now;
@@ -1348,13 +1439,15 @@
     }
     dayb.ghosts.forEach((g, i) => {
       const sg = segs[i];
-      g.visible = !!sg;
-      if (!sg) return;
+      if (FEEL) { if (!sg) { g.userData.on = false; return; } }
+      else { g.visible = !!sg; if (!sg) return; }
       const w = (sg.b - sg.a) / 60 * DU;
       ghostD = DB_D;
       const key = w.toFixed(2) + valid;
       if (!dayGhostTex.has(key)) dayGhostTex.set(key, ghostTexture(w, valid));
       g.material.map = dayGhostTex.get(key); g.material.needsUpdate = true;
+      /* feel: a part that stays in its lane glides; one that moved to another lane starts there */
+      if (FEEL) { if (g.userData.lane !== sg.li) g.userData.on = false; g.userData.lane = sg.li; ghostAim(g, dayX(sg.li, sg.a) + w / 2, BOARD_Y + 0.03, laneZ(sg.li), w - GAP, DB_D); return; }
       g.scale.set(w - GAP, DB_D, 1);
       g.position.set(dayX(sg.li, sg.a) + w / 2, BOARD_Y + 0.03, laneZ(sg.li));
     });
@@ -1483,6 +1576,8 @@
         m.position.set(x + wU / 2, BOARD_Y + 1.8, z);
         m.scale.set(1, 0.001, 1);
         m.userData.grow = reduced ? 1 : -(i * 0.025);
+        /* feel: the pieces drop onto the bench one after another, like tiles out of a bag, and settle */
+        if (FEEL && !reduced) { m.scale.set(1, 1, 1); m.userData.grow = null; m.visible = false; m.userData.fall = { t: 0, delay: i * 0.028, dur: 0.15, y0: 1.2, fx: null, hide: true, tap: i % 2 === 0 }; }
         bench.group.add(m);
         bench.pieces.set(it.key, m);
       }
@@ -2055,12 +2150,14 @@
     const exit = !motion.show && !motion.seat;
     return { position: { x: target.x + (exit ? -motion.direction * 0.7 : 0), y: target.y - (exit ? 0.9 : 0), z: target.z }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: s, y: s, z: s } };
   }
-  function finishTile(obj) {
+  function finishTile(obj, quiet) {
     const u = obj.userData, motion = u.wave;
     if (!motion) return;
     applyTilePose(obj, tileDestination(obj, motion));
     obj.visible = motion.show; u.tileShown = motion.show; u.wave = null;
     tileMotions.delete(obj);
+    /* feel: a tile that arrives settles as it lands */
+    if (FEEL) { if (u.vel) u.vel.set(0, 0, 0); if (motion.show && !quiet && !reduced && (u.kind === 'block' || u.kind === 'dblock')) u.sq = { t: 0, amp: 0.05 }; }
     if (motion.finish) motion.finish();
   }
   function moveTile(obj, opts) {
@@ -2106,7 +2203,7 @@
     if (weekLand && week.onLand) week.onLand(weekLand);
     if (dayLand && dayb.onLand) dayb.onLand(dayLand);
   }
-  function settleTiles() { tileMotions.forEach(finishTile); }
+  function settleTiles() { tileMotions.forEach((o) => finishTile(o, true)); }
   function stepPops(dt) {
     for (let i = pops.length - 1; i >= 0; i--) {
       const o = pops[i], u = o.userData, p = u.pop;
@@ -2219,7 +2316,14 @@
     if (!deskMat.box) deskMat.box = Object.assign({}, to);
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6.5), b = deskMat.box;
     let slid = false;
-    for (const key of ['x0', 'x1', 'z0', 'z1']) { const dv = to[key] - b[key]; if (Math.abs(dv) > 0.005) { b[key] += dv * k; slid = true; } else b[key] = to[key]; }
+    if (FEEL && !reduced) {
+      /* feel: the mat moves with the boards, on the same springs */
+      const v = deskMat.v || (deskMat.v = { x0: 0, x1: 0, z0: 0, z1: 0 });
+      for (const key of ['x0', 'x1', 'z0', 'z1']) {
+        if (Math.abs(to[key] - b[key]) > 0.005 || Math.abs(v[key]) > 0.02) { const r = spring(b[key], v[key], to[key], 9, dt); b[key] = r[0]; v[key] = r[1]; slid = true; }
+        else { b[key] = to[key]; v[key] = 0; }
+      }
+    } else for (const key of ['x0', 'x1', 'z0', 'z1']) { const dv = to[key] - b[key]; if (Math.abs(dv) > 0.005) { b[key] += dv * k; slid = true; } else b[key] = to[key]; }
     if (slid) moving = true;
     if (slid || !deskMat.sig) drawMat(b);
   }
@@ -2391,6 +2495,18 @@
     return dx;
   }
   function stepHolds(dt) {
+    if (FEEL && !reduced) {
+      /* feel: the boards slide over on springs, so they ease off and ease in */
+      for (const name of Object.keys(holds)) {
+        const h = holds[name], t = TF[name], v = h.userData.v || (h.userData.v = { x: 0, z: 0, s: 0 });
+        let r = spring(h.position.x, v.x, t.x, 9, dt); h.position.x = r[0]; v.x = r[1];
+        r = spring(h.position.z, v.z, t.z, 9, dt); h.position.z = r[0]; v.z = r[1];
+        r = spring(h.scale.x, v.s, t.s, 9, dt); h.scale.setScalar(r[0]); v.s = r[1];
+        if (Math.abs(t.x - h.position.x) + Math.abs(t.z - h.position.z) + Math.abs(t.s - h.scale.x) > 0.002 || Math.abs(v.x) + Math.abs(v.z) + Math.abs(v.s) > 0.01) moving = true;
+        else { h.position.x = t.x; h.position.z = t.z; h.scale.setScalar(t.s); v.x = v.z = v.s = 0; }
+      }
+      return;
+    }
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6.5);
     for (const name of Object.keys(holds)) {
       const h = holds[name], t = TF[name];
@@ -2655,7 +2771,7 @@
   }
   function setBenchOpen(on) { benchOn = !!on; applyMode(); maybeSolve(); }
   function setInsets(v) { insets = Object.assign({}, insets, v); maybeSolve(); }
-  function snapCamera() { cam.look.copy(camTo.look); cam.elev = camTo.elev; cam.dist = camTo.dist; cam.offX = camTo.offX; cam.offY = camTo.offY; }
+  function snapCamera() { cam.look.copy(camTo.look); cam.elev = camTo.elev; cam.dist = camTo.dist; cam.offX = camTo.offX; cam.offY = camTo.offY; camV.look.set(0, 0, 0); camV.elev = camV.dist = camV.offX = camV.offY = 0; }
   /* The desk was hidden and shows again: measure, frame, and let every rise finish at once, so the
      board is there the moment you look. */
   function wake() { fit(); snapCamera(); settleTiles(); for (let k = 0; k < 40 && pops.length; k++) stepPops(0.1); }
@@ -2666,7 +2782,23 @@
   function parallax(nx, ny) { if (quality === 'low' || reduced || phoneDay) { parTarget.set(0, 0, 0); return; } parTarget.set(nx * 0.35, -ny * 0.2, 0); }
   /* The player's own zoom and pan on top of the framed view, and a small lean toward
      whatever is being dragged so placing a block feels precise. */
-  const user = { zoom: 1, zoomTo: 1, pan: new T.Vector3(), panTo: new T.Vector3(), lean: 0, leanTo: 0, leanAt: new T.Vector3(), away: 0, awayTo: 0 };
+  const user = { zoom: 1, zoomTo: 1, pan: new T.Vector3(), panTo: new T.Vector3(), lean: 0, leanTo: 0, leanAt: new T.Vector3(), away: 0, awayTo: 0, panVel: new T.Vector3() };
+  /* feel: while a finger or the mouse holds the desk (a pinch, a pan) it moves with you exactly; let go
+     of a pan and it keeps its speed for a moment, then slows to a stop */
+  let directOn = false;
+  const panSamples = [];
+  function direct(on) {
+    on = !!on;
+    if (on === directOn) return;
+    directOn = on;
+    if (on) { user.panVel.set(0, 0, 0); panSamples.length = 0; return; }
+    const n = panSamples.length;
+    if (FEEL && !reduced && n >= 2) {
+      const a = panSamples[0], b = panSamples[n - 1], span = (b.t - a.t) / 1000;
+      if (span > 0.016 && nowMs() - b.t < 90) user.panVel.set((b.x - a.x) / span, 0, (b.z - a.z) / span).clampLength(0, 30);
+    }
+    panSamples.length = 0;
+  }
   /* slide the camera sideways by a share of the screen's width (1 is a whole screen to the right) */
   function setAway(f) { user.awayTo = +f || 0; }
   const ZOOM_MAX = 2.6;
@@ -2701,29 +2833,67 @@
     user.panTo.x -= dxPx * upp;
     user.panTo.z -= dyPx * upp / Math.max(0.5, Math.sin(cam.elev));
     clampPan();
+    if (FEEL) { const t = nowMs(); panSamples.push({ t, x: user.panTo.x, z: user.panTo.z }); while (panSamples.length > 2 && t - panSamples[0].t > 100) panSamples.shift(); }
   }
-  function resetView() { focus.pt = null; user.zoomTo = 1; user.panTo.set(0, 0, 0); }
+  function resetView() { focus.pt = null; user.zoomTo = 1; user.panTo.set(0, 0, 0); user.panVel.set(0, 0, 0); }
   /* lean in toward a point on the desk (null to settle back); k is how strongly */
   function lean(p, k) {
     if (!p) { user.leanTo = 0; return; }
     user.leanAt.set(p.x, 0, p.z);
     user.leanTo = k == null ? 1 : k;
   }
+  /* feel: the camera rides springs too: it eases off, eases in, and a new aim mid move keeps its speed */
+  const camV = { look: new T.Vector3(), elev: 0, dist: 0, offX: 0, offY: 0, zoom: 0, pan: new T.Vector3(), lean: 0, away: 0 };
+  function feelCamera(dt) {
+    if (reduced) {
+      cam.look.copy(camTo.look); cam.elev = camTo.elev; cam.dist = camTo.dist; cam.offX = camTo.offX; cam.offY = camTo.offY;
+      user.zoom = user.zoomTo; user.pan.copy(user.panTo); user.lean = user.leanTo; user.away = user.awayTo; user.panVel.set(0, 0, 0);
+      return;
+    }
+    const one = (key, to, w, box) => { const r = spring(box[key], camV[key], to, w, dt); box[key] = r[0]; camV[key] = r[1]; };
+    springV(cam.look, camV.look, camTo.look, 10, dt);
+    one('elev', camTo.elev, 10, cam); one('dist', camTo.dist, 10, cam); one('offX', camTo.offX, 10, cam); one('offY', camTo.offY, 10, cam);
+    if (directOn) { user.zoom = user.zoomTo; user.pan.copy(user.panTo); camV.zoom = 0; camV.pan.set(0, 0, 0); }
+    else {
+      if (user.panVel.lengthSq() > 0.0004) {
+        user.panTo.addScaledVector(user.panVel, dt);
+        const was = user.panTo.clone();
+        clampPan();
+        if (was.x !== user.panTo.x) user.panVel.x = 0;
+        if (was.z !== user.panTo.z) user.panVel.z = 0;
+        user.panVel.multiplyScalar(Math.exp(-dt * 4.2));
+        moving = true;
+      } else user.panVel.set(0, 0, 0);
+      one('zoom', user.zoomTo, 15, user);
+      springV(user.pan, camV.pan, user.panTo, 15, dt);
+    }
+    one('lean', user.leanTo, 13, user);
+    one('away', user.awayTo, 8, user);
+    const busy = cam.look.distanceToSquared(camTo.look) > 1e-6 || camV.look.lengthSq() > 1e-5 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camV.dist) > 0.01
+      || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camV.elev) > 1e-3 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05 || Math.abs(camV.offX) + Math.abs(camV.offY) > 0.5
+      || Math.abs(user.zoomTo - user.zoom) > 0.001 || Math.abs(camV.zoom) > 0.005 || user.pan.distanceToSquared(user.panTo) > 1e-6 || camV.pan.lengthSq() > 1e-5
+      || Math.abs(user.leanTo - user.lean) > 0.002 || Math.abs(camV.lean) > 0.01 || Math.abs(user.awayTo - user.away) > 0.0005 || Math.abs(camV.away) > 0.003;
+    if (busy) moving = true;
+    else { user.away = user.awayTo; camV.away = 0; }
+  }
   function stepCamera(dt) {
+    if (FEEL) feelCamera(dt);
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6.5);
     if (cam.look.distanceToSquared(camTo.look) > 1e-6 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05
       || Math.abs(user.zoomTo - user.zoom) > 0.001 || user.pan.distanceToSquared(user.panTo) > 1e-6 || Math.abs(user.leanTo - user.lean) > 0.002 || Math.abs(user.awayTo - user.away) > 0.0005 || par.distanceToSquared(parTarget) > 1e-6) moving = true;
-    cam.look.lerp(camTo.look, k);
-    cam.elev += (camTo.elev - cam.elev) * k;
-    cam.dist += (camTo.dist - cam.dist) * k;
-    cam.offX += (camTo.offX - cam.offX) * k;
-    cam.offY += (camTo.offY - cam.offY) * k;
-    const ku = reduced ? 1 : 1 - Math.exp(-dt * 9), kl = reduced ? 1 : 1 - Math.exp(-dt * 4);
-    user.zoom += (user.zoomTo - user.zoom) * ku;
-    user.pan.lerp(user.panTo, ku);
-    user.lean += (user.leanTo - user.lean) * kl;
-    user.away += (user.awayTo - user.away) * (reduced ? 1 : 1 - Math.exp(-dt * 3.2));
-    if (Math.abs(user.awayTo - user.away) < 0.0005) user.away = user.awayTo;
+    if (!FEEL) {
+      cam.look.lerp(camTo.look, k);
+      cam.elev += (camTo.elev - cam.elev) * k;
+      cam.dist += (camTo.dist - cam.dist) * k;
+      cam.offX += (camTo.offX - cam.offX) * k;
+      cam.offY += (camTo.offY - cam.offY) * k;
+      const ku = reduced ? 1 : 1 - Math.exp(-dt * 9), kl = reduced ? 1 : 1 - Math.exp(-dt * 4);
+      user.zoom += (user.zoomTo - user.zoom) * ku;
+      user.pan.lerp(user.panTo, ku);
+      user.lean += (user.leanTo - user.lean) * kl;
+      user.away += (user.awayTo - user.away) * (reduced ? 1 : 1 - Math.exp(-dt * 3.2));
+      if (Math.abs(user.awayTo - user.away) < 0.0005) user.away = user.awayTo;
+    }
     par.lerp(parTarget, 1 - Math.exp(-dt * 2.5));
     const el = renderer.domElement.parentElement;
     const W = el.clientWidth || root.innerWidth, H = el.clientHeight || root.innerHeight;
@@ -2780,6 +2950,234 @@
       m.scale.set(1 + 0.025 * w, 1 - 0.14 * w, 1 + 0.025 * w);
     } else if (u.grow == null) m.scale.set(1, 1, 1);
   }
+
+  /* == feel: how a block moves ==
+     One place for all of it: its lift (pointed at, picked), a dip while it's pressed, a fall and a landing
+     when it's set down, and a small knock when another lands beside it. Everything rides on springs. */
+  let pressObj = null;
+  /* the block under a finger or the mouse button dips, so it's plainly in hand before it moves */
+  function press(obj) { pressObj = FEEL && obj ? obj : null; }
+  function feelBlock(m, dt, liftTo, showGrip, sel) {
+    const u = m.userData;
+    if (!u.vel) { u.vel = new T.Vector3(); u.pressK = 0; u.gripK = 0; u.haloK = 0; }
+    /* a block placed from a panel waits, unseen, for the copy flying to it (land() lets it go) */
+    if (u.held) {
+      u.heldT = (u.heldT || 0) + dt;
+      if (u.heldT < 1.4) { m.visible = false; return; }
+      u.held = false; m.visible = true;
+    }
+    if (u.grow != null) {
+      u.grow = Math.min(1, u.grow + dt * (reduced ? 20 : u.growFast ? 7 : 3.4));
+      m.scale.y = u.grow <= 0 ? 0.001 : Math.max(0.001, easeOutSoft(Math.max(0, u.grow)));
+      if (u.grow >= 1) { u.grow = null; u.growFast = false; u.newTile = false; m.scale.y = 1; }
+      moving = true;
+    }
+    /* the drag dots fade in, and the picked glow spreads out from under the block */
+    const gTo = showGrip ? 1 : 0, hTo = sel ? 1 : 0, pTo = pressObj === m ? 1 : 0;
+    if (u.gripK !== gTo) { u.gripK = reduced ? gTo : u.gripK + (gTo - u.gripK) * (1 - Math.exp(-dt * 18)); if (Math.abs(gTo - u.gripK) < 0.01) u.gripK = gTo; moving = true; }
+    u.grip.visible = u.gripK > 0.01;
+    if (u.grip.visible) u.grip.material.opacity = u.gripK;
+    if (u.haloK !== hTo) { u.haloK = reduced ? hTo : u.haloK + (hTo - u.haloK) * (1 - Math.exp(-dt * (hTo ? 14 : 24))); if (Math.abs(hTo - u.haloK) < 0.01) u.haloK = hTo; moving = true; }
+    u.halo.visible = u.haloK > 0.01;
+    if (u.halo.visible && u.haloS) { const s = 0.5 + 0.5 * u.haloK; u.halo.scale.set(u.haloS.x * s, 1, u.haloS.z * s); }
+    if (u.pressK !== pTo) { u.pressK = reduced ? pTo : u.pressK + (pTo - u.pressK) * (1 - Math.exp(-dt * (pTo ? 45 : 20))); if (Math.abs(pTo - u.pressK) < 0.01) u.pressK = pTo; moving = true; }
+    /* the knock from a block landing beside it: a small hop, nearest first */
+    let hop = 0;
+    if (u.knock) {
+      const kn = u.knock, k = ((kn.t += dt) - kn.delay) / 0.15;
+      moving = true;
+      if (k >= 1) u.knock = null; else if (k > 0) hop = kn.amp * Math.sin(Math.PI * k);
+    }
+    tmpV.set(u.target.x, u.target.y + liftTo + hop - u.pressK * 0.025, u.target.z);
+    if (u.fall) {
+      /* set down: it slides the last bit into its slot as it falls, speeding up, and touches */
+      const f = u.fall;
+      f.t += dt; moving = true;
+      if (f.hide) m.visible = f.t >= f.delay;
+      if (f.x0 == null) { f.x0 = m.position.x; f.z0 = m.position.z; }
+      /* it reaches its slot the moment it touches: sideways it eases in, downward it speeds up */
+      const k = Math.min(1, Math.max(0, f.t - f.delay) / f.dur), side = 1 - (1 - k) * (1 - k);
+      m.position.x = f.x0 + (tmpV.x - f.x0) * side;
+      m.position.z = f.z0 + (tmpV.z - f.z0) * side;
+      u.vel.set(0, 0, 0);
+      if (k < 1) m.position.y = tmpV.y + f.y0 * (1 - k * k);
+      else { m.position.y = tmpV.y; u.fall = null; f.vx = (tmpV.x - f.x0) / f.dur; touchDown(m, f); }
+    } else if (reduced) { m.position.copy(tmpV); u.vel.set(0, 0, 0); }
+    else {
+      springV(m.position, u.vel, tmpV, 18, dt);
+      if (m.position.distanceToSquared(tmpV) > 1e-6 || u.vel.lengthSq() > 1e-4) moving = true;
+      else { m.position.copy(tmpV); u.vel.set(0, 0, 0); }
+    }
+    u.lift = Math.max(0, m.position.y - u.target.y);
+    /* the landing: a squash that's over in a sixth of a second, and a rock if it came in moving */
+    let sy = 1, sxz = 1;
+    if (u.sq) {
+      const q = u.sq, k = (q.t += dt) / (q.dur || 0.16);
+      moving = true;
+      if (k >= 1) u.sq = null;
+      else if (k > 0) { const g = Math.sin(Math.PI * k) * (1 - k); sy = 1 - q.amp * g; sxz = 1 + q.amp * 0.22 * g; }
+    }
+    if (u.rock) {
+      sway(u.rock, 0, 26, 0.3, dt);
+      moving = true;
+      if (Math.abs(u.rock.x) < 0.0008 && Math.abs(u.rock.v) < 0.01) { u.rock = null; m.rotation.z = 0; } else m.rotation.z = u.rock.x;
+    }
+    if (u.grow == null) { const p = 1 - u.pressK * 0.06; m.scale.set(sxz, sy * p, sxz); }
+  }
+  /* The moment a block touches the board: it squashes a little, rocks with the speed it came in with,
+     sawdust skids out from under it, and the blocks beside it in its row take a small knock. The sound is
+     said now, at the touch, not when it was let go. */
+  function touchDown(m, f) {
+    const u = m.userData, fx = f.fx;
+    u.sq = { t: 0, amp: fx ? fx.amp : 0.07 };
+    if (!fx) { if (f.tap) feelSay('tap'); return; }
+    const sp = Math.max(-1, Math.min(1, (f.vx || 0) / 12));
+    if (Math.abs(sp) > 0.06) u.rock = { x: 0, v: -sp * 1.4 };
+    dust(m, fx.played ? 3 : 7);
+    if (!fx.played) { fx.played = true; feelSay(fx.kind || 'land', fx.size); knockAround(m); }
+  }
+  /* the blocks either side of one that landed hop a little, the nearest first and most */
+  function knockAround(m) {
+    const u = m.userData, day = u.kind === 'dblock', list = day ? dayb.blocks : u.kind === 'block' ? week.blocks : null;
+    if (!list || reduced) return;
+    const reach = day ? 4.5 : 2.4, half = (u.w || 1) / 2, L = u.target.x - half, R = u.target.x + half;
+    list.forEach((o) => {
+      const v = o.userData, b = v.orig || v.block;
+      if (o === m || !o.visible || v.fall || v.wave || v.held || v.shrink != null || (b && b.free)) return;
+      if (v.date !== u.date || (day ? v.lane !== u.lane : v.row !== u.row) || v.bkey === u.bkey) return;
+      const ow = (v.w || 1) / 2, oL = v.target.x - ow, oR = v.target.x + ow;
+      const gap = oL >= R ? oL - R : L >= oR ? L - oR : 0;
+      if (gap > reach) return;
+      const near = 1 - gap / reach;
+      v.knock = { t: 0, delay: 0.012 + gap * (day ? 0.014 : 0.03), amp: (day ? 0.05 : 0.032) * near * near };
+    });
+  }
+  /* sawdust: a few grains skid out along the board from under both long edges */
+  function dust(m, n) {
+    const u = m.userData, wp = m.getWorldPosition(new T.Vector3()), ws = m.parent ? m.parent.getWorldScale(new T.Vector3()) : ONE;
+    const half = (u.dU || BLOCK_D) * 0.5 * ws.z, wide = (u.w || 1) * ws.x, sz = Math.max(0.7, Math.min(1.3, ws.x));
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? 1 : -1;
+      const p = new T.Vector3(wp.x + (Math.random() - 0.5) * wide * 0.85, wp.y + 0.04, wp.z + side * (half + 0.03));
+      const v = new T.Vector3((Math.random() - 0.5) * 0.9, 0.2 + Math.random() * 0.3, side * (0.7 + Math.random() * 0.8));
+      puffAt(p, v, 0.3 + Math.random() * 0.18, (0.45 + Math.random() * 0.4) * sz);
+    }
+  }
+  function puffAt(pos, v, life, s) {
+    const m = new T.Mesh(puffGeo, puffMat);
+    m.position.copy(pos);
+    m.userData = { v, life, t: 0, s };
+    world.add(m);
+    puffs.push(m);
+  }
+  /* A block was set down: dragged there, placed from a panel, or put there for you. One that's on its way
+     down lands when it touches; one that appeared some other way drops in from a hand's height. However
+     many pieces it shows as, it makes one sound. size: how big a clack (null for none). */
+  function land(date, bkey, size) {
+    const ms = blockMeshes(date, bkey).filter((m) => m.parent && (m.visible || m.userData.held));
+    const fx = { size, amp: 0.16, played: false, kind: 'land' };
+    if (!ms.length || reduced) {
+      ms.forEach((m) => { m.userData.held = false; m.visible = true; });
+      feelSay('land', size);
+      return;
+    }
+    ms.forEach((m, i) => {
+      const u = m.userData;
+      if (!u.vel) u.vel = new T.Vector3();
+      const held = u.held;
+      if (held) { u.held = false; m.visible = true; }
+      if (u.fall) { u.fall.fx = fx; return; }
+      if (held || u.grow != null) {
+        u.grow = null; u.newTile = false; u.wave = null; tileMotions.delete(m);
+        m.scale.set(1, 1, 1); m.rotation.set(0, 0, 0);
+        m.position.copy(u.target); m.position.y += 0.9; u.vel.set(0, 0, 0);
+        u.fall = { t: 0, delay: i * 0.03, dur: 0.15, y0: 0.9, fx };
+        return;
+      }
+      touchDown(m, { fx, vx: 0 });
+    });
+  }
+  /* a block placed from a panel stays out of sight until the copy flying to it arrives */
+  function holdBack(date, bkey) {
+    if (!FEEL || reduced) return;
+    blockMeshes(date, bkey).forEach((m) => { m.userData.held = true; m.userData.heldT = 0; m.visible = false; });
+  }
+  /* The Sunday Reset is done: the week clicks into place. Each day's blocks press down and settle, the
+     week's first day to its last, and each day says so with a soft knock of wood. */
+  const feelQueue = [];
+  function weekSet() {
+    if (!FEEL || reduced) return false;
+    const dayView = zoomName === 'day' && layout === 'week', list = dayView ? dayb.blocks : week.blocks;
+    const rows = new Set();
+    list.forEach((m) => {
+      const u = m.userData, b = u.orig || u.block;
+      if (!m.visible || u.shrink != null || u.wave || u.fall || (b && b.free)) return;
+      const r = dayView ? u.lane : u.row, at = r * (dayView ? 0.08 : 0.045) + (u.target.x - (dayView ? LX0 : X0)) * 0.003;
+      u.sq = { t: -at, amp: 0.12, dur: 0.2 };
+      rows.add(r);
+    });
+    const now = nowMs();
+    Array.from(rows).sort((a, b) => a - b).forEach((r) => feelQueue.push({ at: now + (r * (dayView ? 0.08 : 0.045) + 0.05) * 1000, kind: 'roll', a: r }));
+    return rows.size > 0;
+  }
+  /* a soft shadow pools on the board under the block in your hand, wider and fainter the higher it is */
+  let blob = null;
+  function stepBlob() {
+    const o = drag.obj;
+    if (!blob) {
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+      const g = cv.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(46, 26, 10, 0.9)'); gr.addColorStop(0.55, 'rgba(46, 26, 10, 0.42)'); gr.addColorStop(1, 'rgba(46, 26, 10, 0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+      blob = new T.Mesh(haloGeo, new T.MeshBasicMaterial({ map: canvasTex(cv), transparent: true, depthWrite: false }));
+      blob.renderOrder = 1;
+      world.add(blob);
+    }
+    if (!o || drag.surface == null || reduced) { blob.visible = false; return; }
+    const u = o.userData, h = Math.max(0, o.position.y - drag.surface), grow = 1 + h * 0.35;
+    blob.visible = true;
+    blob.position.set(o.position.x, drag.surface + 0.015, o.position.z);
+    blob.scale.set(((u.w || 1) + 0.5) * grow, 1, ((u.dU || BLOCK_D) + 0.5) * grow);
+    blob.material.opacity = 0.4 * Math.max(0.25, 1 - h / 3);
+  }
+  /* blocks on their way back to where they came from, after a drop that didn't fit */
+  const homes = [];
+  function stepHomes(dt) {
+    for (let i = homes.length - 1; i >= 0; i--) {
+      const h = homes[i], k = Math.min(1, (h.t += dt) / h.dur), e = 1 - Math.pow(1 - k, 3);
+      moving = true;
+      h.m.position.lerpVectors(h.from, h.to, e);
+      h.m.position.y += Math.sin(Math.PI * e) * h.arc;
+      h.m.rotation.z = h.rz * (1 - e); h.m.rotation.x = h.rx * (1 - e);
+      if (h.sink) { const s = 1 - e; h.m.scale.set(1 - e * 0.2, Math.max(0.001, s * s), 1 - e * 0.2); }
+      if (k >= 1) { homes.splice(i, 1); dropBlock(h.m); if (h.done) h.done(); }
+    }
+  }
+  /* the landing outline fades in and glides from slot to slot */
+  function ghostAim(g, x, y, z, sx, sz) {
+    const u = g.userData;
+    const was = g.visible && u.on;
+    if (!u.to) { u.to = new T.Vector3(); u.v = new T.Vector3(); u.op = 0; }
+    u.to.set(x, y, z); u.sx = sx; u.sz = sz; u.on = true;
+    if (!was || reduced) { g.position.set(x, y, z); g.scale.set(sx, sz, 1); u.v.set(0, 0, 0); }
+    if (reduced) u.op = 1;
+    g.material.opacity = u.op;
+    g.visible = true;
+  }
+  function stepGhost(g, dt) {
+    const u = g.userData;
+    if (!g.visible || !u.to) return;
+    const to = u.on ? 1 : 0;
+    u.op += (to - u.op) * (1 - Math.exp(-dt * (u.on ? 24 : 32)));
+    if (!u.on && u.op < 0.03) { g.visible = false; u.op = 0; return; }
+    g.material.opacity = u.op;
+    springV(g.position, u.v, u.to, 34, dt);
+    const ks = 1 - Math.exp(-dt * 30);
+    g.scale.x += (u.sx - g.scale.x) * ks; g.scale.y += (u.sz - g.scale.y) * ks;
+    if (Math.abs(to - u.op) > 0.01 || g.position.distanceToSquared(u.to) > 1e-6 || Math.abs(u.sx - g.scale.x) > 0.001) moving = true;
+  }
+  /* sinking into the board: the way a block leaves (taken off, or its day changed) */
+  function sinkScale(m, s) { m.scale.set(0.92 + 0.08 * s, Math.max(0.001, s * s), 0.92 + 0.08 * s); }
   function step(dt) {
     const k = 1 - Math.exp(-dt * 13);
     moving = false; steaming = false;
@@ -2788,17 +3186,20 @@
     stepProps(dt);
     stepSteam(dt);
     stepTiles(dt);
+    /* a block taken off shrinks away (feel: it sinks into the board) */
+    const gone = (m, u, rate) => {
+      moving = true;
+      u.shrink = Math.max(0, u.shrink - dt * (FEEL ? (u.shrinkFast ? 9 : 5) : rate));
+      if (FEEL) sinkScale(m, u.shrink);
+      else m.scale.set(Math.max(0.001, u.shrink), Math.max(0.001, u.shrink), 1);
+      return u.shrink <= 0;
+    };
     week.blocks.forEach((m, key) => {
       const u = m.userData;
       if (u.dragging || u.wave) return;
-      if (u.shrink != null) {
-        moving = true;
-        u.shrink = Math.max(0, u.shrink - dt * 4);
-        m.scale.set(Math.max(0.001, u.shrink), Math.max(0.001, u.shrink), 1);
-        if (u.shrink <= 0) { dropBlock(m); week.blocks.delete(key); }
-        return;
-      }
+      if (u.shrink != null) { if (gone(m, u, 4)) { dropBlock(m); week.blocks.delete(key); } return; }
       const sel = selKey === key && zoomName !== 'day';
+      if (FEEL) { feelBlock(m, dt, sel ? 0.2 : hoverObj === m ? 0.08 : 0, u.canGrip && (sel || hoverObj === m), sel); return; }
       u.halo.visible = sel;
       u.grip.visible = u.canGrip && (sel || hoverObj === m);
       easeBlock(m, dt, k, sel ? 0.2 : hoverObj === m ? 0.08 : 0);
@@ -2806,14 +3207,9 @@
     dayb.blocks.forEach((m, key) => {
       const u = m.userData;
       if (u.dragging || u.wave) return;
-      if (u.shrink != null) {
-        moving = true;
-        u.shrink = Math.max(0, u.shrink - dt * 4);
-        m.scale.set(Math.max(0.001, u.shrink), Math.max(0.001, u.shrink), 1);
-        if (u.shrink <= 0) { dropBlock(m); dayb.blocks.delete(key); }
-        return;
-      }
+      if (u.shrink != null) { if (gone(m, u, 4)) { dropBlock(m); dayb.blocks.delete(key); } return; }
       const sel = selKey === u.date + '|' + u.bkey;
+      if (FEEL) { feelBlock(m, dt, sel ? 0.5 : hoverObj === m ? 0.14 : 0, u.canGrip && (sel || hoverObj === m), sel); return; }
       u.halo.visible = sel;
       u.grip.visible = u.canGrip && (sel || hoverObj === m);
       easeBlock(m, dt, k, sel ? 0.5 : hoverObj === m ? 0.14 : 0);
@@ -2821,21 +3217,22 @@
     bench.pieces.forEach((m, key) => {
       const u = m.userData;
       if (u.dragging) return;
-      if (u.shrink != null) {
-        moving = true;
-        u.shrink = Math.max(0, u.shrink - dt * 4.5);
-        m.scale.set(Math.max(0.001, u.shrink), Math.max(0.001, u.shrink), 1);
-        if (u.shrink <= 0) { dropBlock(m); bench.pieces.delete(key); }
-        return;
-      }
+      if (u.shrink != null) { if (gone(m, u, 4.5)) { dropBlock(m); bench.pieces.delete(key); } return; }
+      if (FEEL) { feelBlock(m, dt, hoverObj === m ? 0.16 : 0, u.canGrip && hoverObj === m, false); return; }
       u.grip.visible = u.canGrip && hoverObj === m;
       easeBlock(m, dt, k, hoverObj === m ? 0.16 : 0);
     });
     const hoverCard = (list) => list.forEach((c) => {
       const u = c.userData;
       if (u.pop || u.wave) return;
-      if (Math.abs((hoverObj === c ? 0.12 : 0) - u.lift) > 0.002) moving = true;
-      u.lift += ((hoverObj === c ? 0.12 : 0) - u.lift) * (1 - Math.exp(-dt * 14));
+      const to = hoverObj === c ? 0.12 : 0;
+      if (FEEL && !reduced) {
+        const r = spring(u.lift, u.liftV || 0, to, 20, dt); u.lift = r[0]; u.liftV = r[1];
+        if (Math.abs(to - u.lift) > 0.002 || Math.abs(u.liftV) > 0.01) moving = true; else { u.lift = to; u.liftV = 0; }
+      } else {
+        if (Math.abs(to - u.lift) > 0.002) moving = true;
+        u.lift += (to - u.lift) * (1 - Math.exp(-dt * 14));
+      }
       c.position.y = (u.baseY || 0) + u.lift;
     });
     if (layout === 'month') hoverCard(month.cards);
@@ -2849,11 +3246,40 @@
       m.scale.setScalar(u.s * Math.max(0, 1 - u.t / u.life));
       if (u.t >= u.life) { world.remove(m); puffs.splice(i, 1); }
     }
-    if (pops.length || puffs.length || drag.obj) moving = true;
-    if (drag.obj) {
+    if (pops.length || puffs.length || drag.obj || homes.length) moving = true;
+    if (drag.obj && FEEL && !reduced) {
+      /* feel: the block in your hand rides a spring toward where it's aimed, and sways from how it speeds
+         up and slows down, like a tile held by its top edge: it trails as you start, swings past level as
+         you stop, and settles */
+      const o = drag.obj, u = o.userData;
+      if (drag.fresh) { o.position.copy(drag.target); drag.vel.set(0, 0, 0); drag.fresh = false; }
+      const vx = drag.vel.x, vz = drag.vel.z, inv = 1 / Math.max(dt, 0.004);
+      springV(o.position, drag.vel, drag.target, 24, dt);
+      const ax = Math.max(-90, Math.min(90, (drag.vel.x - vx) * inv)), az = Math.max(-90, Math.min(90, (drag.vel.z - vz) * inv));
+      sway(drag.roll, 0, 12, 0.5, dt, ax * 0.16);
+      sway(drag.pitch, 0, 12, 0.55, dt, -az * 0.1);
+      o.rotation.z = Math.max(-0.2, Math.min(0.2, drag.roll.x));
+      o.rotation.x = -0.06 + Math.max(-0.12, Math.min(0.12, drag.pitch.x));
+      if (u.appear != null) {
+        u.appear += (1 - u.appear) * (1 - Math.exp(-dt * 20));
+        if (1 - u.appear < 0.004) u.appear = null;
+        o.scale.setScalar(u.appear == null ? 1 : u.appear);
+      }
+    } else if (drag.obj) {
       drag.obj.position.lerp(drag.target, 1 - Math.exp(-dt * 16));
       drag.obj.rotation.z += (drag.tilt - drag.obj.rotation.z) * (1 - Math.exp(-dt * 10));
       drag.tilt *= Math.exp(-dt * 6);
+    }
+    if (FEEL) {
+      stepBlob();
+      stepHomes(dt);
+      if (drag.ghost) stepGhost(drag.ghost, dt);
+      dayb.ghosts.forEach((g) => stepGhost(g, dt));
+      if (feelQueue.length) {
+        moving = true;
+        const now = nowMs();
+        for (let i = feelQueue.length - 1; i >= 0; i--) if (now >= feelQueue[i].at) { const q = feelQueue.splice(i, 1)[0]; feelSay(q.kind, q.a); }
+      }
     }
     stepCamera(dt);
     /* a small light's pool follows its thing while the desk rearranges */
@@ -2986,7 +3412,10 @@
   }
 
   /* == dragging a block around == */
-  const drag = { obj: null, target: new T.Vector3(), ghost: null, tilt: 0 };
+  const drag = { obj: null, target: new T.Vector3(), ghost: null, tilt: 0, vel: new T.Vector3(), roll: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, origin: null, surface: null, last: null, fresh: false, match: null };
+  /* feel: the block in your hand is in your hand only. While you hold it (and while it flies home), the
+     board doesn't show a second copy of it where it would land; the outline says where. */
+  const inHand = (b) => { const h = drag.match; return !!(h && b && ((h.add && b.add === h.add) || (h.base && b.base === h.base))); };
   const ghostTexCache = new Map();
   let ghostD = BLOCK_D;
   function ghostTexture(wU, valid) {
@@ -3006,29 +3435,58 @@
     ghostTexCache.set(key, t);
     return t;
   }
-  /* A block follows the pointer. `big` makes it a day sized brick. */
-  function startDrag(b, fromObj, big) {
+  /* A block follows the pointer. `big` makes it a day sized brick. opts.origin: a piece on the bench it
+     came from (feel: it lifts from there, and goes back there if it doesn't land) */
+  function startDrag(b, fromObj, big, opts) {
+    opts = opts || {};
+    /* feel: a block traded for a bigger or smaller one mid drag (crossing between the day and the week)
+       carries on from where the last one was, at its speed */
+    const keep = !FEEL ? null : drag.obj ? { pos: drag.obj.position.clone(), vel: drag.vel.clone(), origin: drag.origin, surface: drag.surface } : drag.last && nowMs() - drag.last.at < 200 ? drag.last : null;
     endDrag();
+    drag.last = null;
     const m = makeBlock(b);
     const dayBrick = big || (fromObj && fromObj.userData.kind === 'dblock');
     const wU = (dayBrick ? DU : 1) * b.dur / 60;
     dressBlock(m, b, wU, dayBrick ? DB_D : BLOCK_D, dayBrick ? { hMul: DB_HMUL } : {});
     m.userData.dragging = true;
+    const origin = opts.origin || (keep && keep.origin) || null;
     if (fromObj) {
       m.position.copy(world.worldToLocal(fromObj.getWorldPosition(new T.Vector3())));
       const hide = fromObj.userData.kind === 'dblock' ? Array.from(dayb.blocks.values()).filter((x) => x.userData.date === fromObj.userData.date && x.userData.bkey === fromObj.userData.bkey) : [fromObj];
       hide.forEach((x) => { x.visible = false; });
       drag.hidden = hide;
-    } else m.position.set(0, 3, 8);
+    } else if (FEEL && keep) m.position.copy(keep.pos);
+    else if (FEEL && origin) m.position.copy(world.worldToLocal(origin.getWorldPosition(new T.Vector3())));
+    else if (FEEL) { drag.fresh = true; m.userData.appear = 0.86; m.scale.setScalar(0.86); }
+    else m.position.set(0, 3, 8);
     m.rotation.x = -0.06;
     world.add(m);
     drag.obj = m;
     drag.target.copy(m.position);
+    if (FEEL) {
+      drag.vel = keep ? keep.vel.clone() : new T.Vector3();
+      drag.roll = { x: 0, v: 0 }; drag.pitch = { x: 0, v: 0 };
+      drag.origin = origin;
+      drag.surface = keep ? keep.surface : null;
+      drag.match = b.add ? { add: b.add } : b.tpl ? { base: b.base } : null;
+    }
     return m;
   }
-  function dragTo(x, y, z, tilt) {
+  /* feel: nothing is in hand any more; the board shows every block it has again */
+  function letGo() {
+    drag.match = null;
+    const show = (m) => { const u = m.userData; if (u.inHand) { u.inHand = false; if (!u.held && u.shrink == null) m.visible = true; } };
+    week.blocks.forEach(show); dayb.blocks.forEach(show);
+  }
+  /* o (feel): hand, the point under the pointer, so the block rides between it and the slot instead of
+     lurching from slot to slot; surface, the height of the board under it, for its shadow */
+  function dragTo(x, y, z, tilt, o) {
     if (!drag.obj) return;
     drag.target.set(x, y, z);
+    if (FEEL && o) {
+      if (o.hand) { drag.target.x += (o.hand.x - x) * 0.3; drag.target.z += (o.hand.z - z) * 0.3; }
+      if (o.surface != null) drag.surface = o.surface;
+    }
     drag.tilt = Math.max(-0.22, Math.min(0.22, (tilt || 0) * -0.035));
   }
   function showGhost(row, start, durMin, valid) {
@@ -3038,26 +3496,76 @@
       week.group.add(drag.ghost);
     }
     const gh = drag.ghost;
-    if (row == null) { gh.visible = false; return; }
+    if (row == null) { if (FEEL) gh.userData.on = false; else gh.visible = false; return; }
     const w = durMin / 60;
     ghostD = BLOCK_D;
-    gh.visible = true;
     gh.material.map = ghostTexture(w, valid); gh.material.needsUpdate = true;
+    if (FEEL) { ghostAim(gh, xOf(start) + w / 2, BOARD_Y + 0.026, rowZ(row), w - GAP, BLOCK_D); return; }
+    gh.visible = true;
     gh.scale.set(w - GAP, BLOCK_D, 1);
     gh.position.set(xOf(start) + w / 2, BOARD_Y + 0.026, rowZ(row));
   }
-  function endDrag(landAt) {
-    if (drag.hidden) { drag.hidden.forEach((x) => { if (x.userData.shrink == null && !x.userData.back) x.visible = true; }); drag.hidden = null; }
-    if (drag.obj) {
-      if (landAt) puff(world.localToWorld(landAt.clone()), 7);
-      /* the week's worn plate may be riding on it; that one is kept */
-      if (weekSpent && weekSpent.parent === drag.obj) drag.obj.remove(weekSpent);
-      if (spentMesh && spentMesh.parent === drag.obj) drag.obj.remove(spentMesh);
-      dropBlock(drag.obj);
-      drag.obj = null;
+  /* opts (feel): home, the drop didn't fit, so the block flies back to where it came from (or sinks away
+     if it came from the tray); absorb, it was used up where it was let go (food on a dinner); then, what to
+     do once it's there. With no opts the block is put away at once, for a hand off. */
+  function endDrag(landAt, opts) {
+    if (landAt && !landAt.isVector3) { opts = landAt; landAt = null; }
+    opts = opts || {};
+    if (!FEEL) {
+      if (drag.hidden) { drag.hidden.forEach((x) => { if (x.userData.shrink == null && !x.userData.back) x.visible = true; }); drag.hidden = null; }
+      if (drag.obj) {
+        if (landAt) puff(world.localToWorld(landAt.clone()), 7);
+        /* the week's worn plate may be riding on it; that one is kept */
+        if (weekSpent && weekSpent.parent === drag.obj) drag.obj.remove(weekSpent);
+        if (spentMesh && spentMesh.parent === drag.obj) drag.obj.remove(spentMesh);
+        dropBlock(drag.obj);
+        drag.obj = null;
+      }
+      showGhost(null);
+      if (dayb.ghosts.length) showDayGhost(null);
+      if (opts.then) opts.then();
+      return;
     }
+    const hidden = drag.hidden, o = drag.obj, origin = drag.origin;
+    drag.hidden = null; drag.obj = null; drag.origin = null;
     showGhost(null);
     if (dayb.ghosts.length) showDayGhost(null);
+    if (blob) blob.visible = false;
+    /* a block shown again after a flight home sits in its slot at once (it moved there unseen) */
+    const reveal = (settle) => (hidden || []).forEach((x) => {
+      if (x.userData.shrink != null || x.userData.back) return;
+      x.visible = true;
+      if (settle && !reduced) { x.position.copy(x.userData.target); if (x.userData.vel) x.userData.vel.set(0, 0, 0); x.userData.sq = { t: 0, amp: 0.07 }; }
+    });
+    if (!o) { reveal(false); letGo(); if (opts.then) opts.then(); return; }
+    if (weekSpent && weekSpent.parent === o) o.remove(weekSpent);
+    if (spentMesh && spentMesh.parent === o) o.remove(spentMesh);
+    if (reduced || !(opts.home || opts.absorb)) {
+      drag.last = { pos: o.position.clone(), vel: drag.vel.clone(), at: nowMs(), origin, surface: drag.surface };
+      dropBlock(o);
+      reveal(false);
+      letGo();
+      if (opts.then) opts.then();
+      return;
+    }
+    const back = !opts.absorb && hidden && hidden.length ? hidden[0] : !opts.absorb ? origin : null;
+    const from = o.position.clone();
+    if (back) {
+      /* home is the slot it belongs in, wherever it was nudged to while you aimed */
+      const to = world.worldToLocal(back.parent && back.userData.target ? back.parent.localToWorld(back.userData.target.clone()) : back.getWorldPosition(new T.Vector3()));
+      homes.push({ m: o, from, to, t: 0, dur: 0.26, arc: Math.min(0.6, 0.2 + from.distanceTo(to) * 0.03), rz: o.rotation.z, rx: o.rotation.x, done: () => {
+        if (hidden && hidden.length) reveal(true);
+        else if (back.userData.shrink == null) { back.visible = true; if (!reduced) back.userData.sq = { t: 0, amp: 0.07 }; }
+        letGo();
+        feelSay('home');
+        if (opts.then) opts.then();
+      } });
+    } else {
+      /* nowhere to go back to on the desk: it sinks away where it is */
+      const to = from.clone(); to.y = drag.surface != null ? drag.surface : Math.max(0, from.y - 0.8);
+      homes.push({ m: o, from, to, t: 0, dur: 0.2, arc: 0, sink: true, rz: o.rotation.z, rx: o.rotation.x, done: () => { letGo(); if (opts.then) opts.then(); } });
+      reveal(false);
+    }
   }
   function blockMeshes(date, bkey) {
     const all = Array.from(week.blocks.values()).concat(Array.from(dayb.blocks.values())).filter((m) => !m.userData.back && m.userData.shrink == null && !(m.userData.wave && !m.userData.wave.show));
@@ -3071,20 +3579,33 @@
     });
   }
   function squash(date, bkey) {
+    /* feel: a landing, with its knock, its dust, and no sound of its own (whoever asked plays one) */
+    if (FEEL) { land(date, bkey, null); return; }
     blockMeshes(date, bkey).forEach((m) => {
       if (!m.visible) return;
       m.userData.squash = 1;
       puff(m.getWorldPosition(new T.Vector3()).add(new T.Vector3(0, 0.1, (m.userData.dU || BLOCK_D) * 0.4)), 6);
     });
   }
-  /* Place a moved block's meshes where it was dropped, so they ease from there instead of their old spot. */
+  /* Place a moved block's meshes where it was dropped, so they ease from there instead of their old spot.
+     feel: only on the board it was dropped on, and from there it falls the last bit and lands */
   function adoptPosition(date, bkey) {
     if (!drag.obj) return;
     const wp = drag.obj.getWorldPosition(new T.Vector3());
-    blockMeshes(date, bkey).forEach((m) => {
+    let ms = blockMeshes(date, bkey);
+    if (FEEL) ms = ms.filter((m) => (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block'));
+    ms.forEach((m) => {
       m.position.copy(m.parent.worldToLocal(wp.clone())); m.visible = true;
       m.userData.fly = null; m.userData.wave = null; m.userData.tileShown = true;
       m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1); tileMotions.delete(m);
+      if (!FEEL || reduced) return;
+      const u = m.userData, s = m.parent.getWorldScale(new T.Vector3()).x || 1;
+      if (!u.vel) u.vel = new T.Vector3();
+      u.vel.copy(drag.vel).multiplyScalar(1 / s);
+      u.grow = null; u.newTile = false; u.held = false;
+      const y0 = Math.max(0, m.position.y - u.target.y), far = Math.hypot(m.position.x - u.target.x, m.position.z - u.target.z);
+      /* a short fall from the height it was carried at, a little longer when it's still some way off its slot */
+      u.fall = { t: 0, delay: 0, dur: Math.max(0.09, Math.min(0.15, 0.07 + 0.06 * Math.sqrt(y0)), Math.min(0.22, 0.05 + far * 0.06)), y0, fx: null };
     });
   }
   /* The screen point just above the picked block, for the tools that float over it. */
@@ -3280,6 +3801,20 @@
     const r = renderer.domElement.getBoundingClientRect(), q = c.clone().project(camera), top = new T.Vector3(c.x, box.max.y, c.z).project(camera);
     return { x: r.left + (q.x + 1) / 2 * r.width, y: r.top + (1 - q.y) / 2 * r.height, top: r.top + (1 - top.y) / 2 * r.height };
   }
+  /* where things are on screen, for a coach that points at the board: a minute on a week row or the day,
+     and a piece on the bench by its key (or the first whose label matches) */
+  function projectWorld(w) {
+    const p = w.clone().project(camera), r = renderer.domElement.getBoundingClientRect();
+    return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height, behind: p.z > 1 };
+  }
+  function slotScreen(where, row, min) { return projectWorld(slotWorld(where, row, min)); }
+  function pieceScreen(match) {
+    let hit = null;
+    bench.pieces.forEach((m, key) => { if (hit || m.userData.shrink != null || !m.visible) return; const it = m.userData.piece || {}; if (key === match || it.label === match || (it.id && it.id === match)) hit = m; });
+    if (!hit) return null;
+    const v = new T.Vector3(); hit.getWorldPosition(v);
+    return projectWorld(v);
+  }
   function cardWorld(date) {
     const c = month.cards.find((x) => x.userData.date === date);
     return c ? c.position.clone() : null;
@@ -3308,11 +3843,12 @@
      question (what's under the pointer, where a block is on screen) doesn't */
   const changes = { fit, setNow, setDaylight, setWeek, setMonth, setYear, setDay, setBench, setBenchOpen, showLayout, rippleWeek, beginNavigation, setZoom, setPhoneDay, setInsets, snapCamera, setSelected, showDayGhost,
     startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces, setFocus, setPropsAway, setAway,
+    press, land, holdBack, weekSet, direct,
     setLamp, setLight, setNotepad, setDayOnly, setAlone, setTheme, setDesk, setClock24, setQuality, wake, setTight, setHours };
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
     init, render, step, parallax, touch, setWeekStart, setDayShape,
-    pick, boardAt, dayAt, slotWorld, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    pick, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
     /* true when nothing on the desk is moving and nothing changed lately: the frame can be skipped.
        lazy: only something slow is moving (steam), so a few frames a second are plenty */
     get idle() { return stillFrames > 12; }, get lazy() { return lazyOnly && !moving && nowMs() >= activeUntil; },
@@ -3328,6 +3864,9 @@
       try { return img && img.toDataURL ? img.toDataURL('image/jpeg', 0.86) : null; } catch (e) { return null; }
     },
     set onWeekLand(fn) { week.onLand = fn; },
+    /* feel: told when a block touches down ('land', with its size), comes home ('home'), a dealt piece lands
+       ('tap'), or a day clicks into place ('roll') */
+    set onFeel(fn) { feelHook = fn; }, get feel() { return FEEL; },
     get userZoom() { return user.zoomTo; }, get focused() { return !!focus.pt; },
     xOf, minOf, rowZ, BOARD_Y, BLOCK_D, H_HARD, DB_HMUL,
     get layout() { return layout; }, get camera() { return camera; }, get busy() { return pops.length > 0 || tileMotions.size > 0; },

@@ -42,6 +42,12 @@
   }
   let W = glOk ? window.World : stubWorld();
   let noDesk = !glOk;
+  /* feel (V11, docs/CORNERS-V11.md): a block's clack plays when it touches the board, a drop that doesn't
+     fit flies home, the block in hand casts a shadow and sways, and panels, tools, and toasts move too.
+     Only a version whose page carries the class `feel` has it; every other version is as it was. */
+  const FEEL = document.body.classList.contains('feel');
+  const OUT_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)', IN_EASE = 'cubic-bezier(0.4, 0, 1, 1)';
+  const feelMoves = () => { if (!FEEL || view.calm) return false; try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return true; } };
   const stage = $('stage');
   /* moves into the tray bar on every render, so keep a handle on it */
   const viewctl = $('viewctl'), zbtn = { out: $('zout'), fit: $('zfit'), in: $('zin') };
@@ -182,7 +188,44 @@
   const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
   /* A toast stays while the pointer or the keyboard is on it, so a button in it (Undo) never goes
      away under your hand; its clock starts again when you leave. */
+  /* feel: a toast rises in and fades down out, the stack slides when one comes or goes, and one you pointed
+     at leaves cleanly when you let it go */
+  function toastFeel(text, kind, act) {
+    const box = $('toasts');
+    const t = el('div', 'toast feel' + (kind ? ' ' + kind : '') + (act ? ' act' : ''), text);
+    const still = !feelMoves();
+    /* the toasts already showing slide to make room instead of jumping (first, last, invert, play) */
+    const slide = (change) => {
+      const was = new Map(Array.from(box.children).map((x) => [x, x.getBoundingClientRect().top]));
+      change();
+      if (still) return;
+      Array.from(box.children).forEach((x) => { const y0 = was.get(x); if (y0 == null || x._gone) return; const dy = y0 - x.getBoundingClientRect().top; if (Math.abs(dy) > 0.5) x.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: 200, easing: OUT_EASE, composite: 'add' }); });
+    };
+    const leave = (x, quick) => {
+      if (!x || x._gone) return;
+      x._gone = true; clearTimeout(x._timer);
+      if (still) { x.remove(); return; }
+      x.style.pointerEvents = 'none';
+      const a = x.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.98)' }], { duration: quick ? 110 : 170, easing: IN_EASE, fill: 'forwards' });
+      const done = () => { if (x.isConnected) slide(() => x.remove()); };
+      a.onfinish = done;
+      setTimeout(done, 450);
+    };
+    if (act) t.appendChild(button(act.label, 'toast-act', () => { leave(t, true); act.fn(); }));
+    slide(() => box.appendChild(t));
+    if (!still) t.animate([{ opacity: 0, transform: 'translateY(12px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: OUT_EASE });
+    const life = act ? 6300 : 3300;
+    t._timer = setTimeout(() => leave(t), life);
+    if (act) {
+      const hold = () => { clearTimeout(t._timer); };
+      const go = () => { clearTimeout(t._timer); t._timer = setTimeout(() => leave(t), 2600); };
+      t.addEventListener('pointerenter', hold); t.addEventListener('pointerleave', go); t.addEventListener('focusin', hold); t.addEventListener('focusout', go);
+    }
+    const live = Array.from(box.children).filter((x) => !x._gone);
+    while (live.length > 3) leave(live.shift(), true);
+  }
   function toast(text, kind, act) {
+    if (FEEL) { toastFeel(text, kind, act); return; }
     const t = el('div', 'toast' + (kind ? ' ' + kind : '') + (act ? ' act' : ''), text);
     if (act) t.appendChild(button(act.label, 'toast-act', () => { t.remove(); act.fn(); }));
     $('toasts').appendChild(t);
@@ -290,9 +333,10 @@
   const weekOf = () => M.weekDates(view.focus);
   function decorate(b, date) {
     const o = Object.assign({}, b);
-    if (b.dinner) { o.label = b.label; o.sub = dinnerSub(b, date); }
+    if (b.dinner) { o.label = b.label; o.sub = date ? dinnerSub(b, date) : ''; }
     else if (b.sleep) o.sub = '';
-    else o.sub = timeSpan(date, b.start, b.start + b.dur);
+    /* a piece in hand from the tray or Block library has no day yet: its time is the plain span */
+    else o.sub = date ? timeSpan(date, b.start, b.start + b.dur) : M.span(b.start, b.start + b.dur);
     return o;
   }
   function rowSpec(date, pd) {
@@ -383,6 +427,8 @@
   const tick = () => { const n = performance.now(); if (n - tickAt > 45) { tickAt = n; Snd.tick(false); } };
   /* blocks settling onto the board make soft taps, a few at most */
   const landTick = () => { const n = performance.now(); if (n - landAt > 70) { landAt = n; Snd.tap(); } };
+  /* a block set down: with feel, its knock and its clack come at the moment it touches the board */
+  function landed(date, key, size) { if (FEEL) W.land(date, key, size); else { W.squash(date, key); Snd.clack(size); } }
   /* The day board's header and bricks. */
   /* On the day board every block prints its time under its name, so the time never has to be read off the ruler. */
   function decorateDay(b, date) {
@@ -1838,12 +1884,14 @@
     const b = view.before;
     view.reset = null; view.before = null;
     if (b && b.mode === 'today') { view.mode = 'today'; saveMode(); enterToday(); }
-    Snd.chime();
+    if (!FEEL || view.calm) Snd.chime();
     /* the last word is as honest as the recap was: set, or done with what's still open named */
     const open = stillOpen(weekCounts(r.week));
     if (open.length) toast((r.catchup ? 'Caught up. ' : 'Reset done. ') + 'Still open: ' + open.map((o) => o.short).join(', ') + '.', '');
     else toast(r.catchup ? 'The rest of your week is set' : 'Your week is set', 'good');
     render();
+    /* feel: the week clicks into place, a day at a time, and the chime comes as the last day settles */
+    if (FEEL && !view.calm) { if (W.weekSet()) setTimeout(() => Snd.chime(), 420); else Snd.chime(); }
     noteMove('reset');
     /* the first reset gets one question, once, when there's someone to hear the answer */
     if (!r.catchup && first && (sharedBy || Cloud.cfg) && !view.preview) setTimeout(() => { if (!view.sel && !view.reset) { view.got.fb = null; openSel({ type: 'feedback', ask: 'reset' }); } }, 1800);
@@ -2046,7 +2094,7 @@
         const p = sug.block;
         const b = tile({ name: p.name + ' ' + M.DAY_LONG[M.weekday(sug.date)] + ' at ' + M.clock(sug.start), meta: 'There’s room. Tap to add it.', icon: p.icon, cat: p.cat, cls: 'glow', onClick: () => {
           const r = commit(() => M.placeAdd(state, sug.date, { name: p.name, cat: p.cat, icon: p.icon, dur: p.dur, src: { type: 'block', id: p.id } }, sug.start));
-          if (r && r.ok) { Snd.clack(0.75); W.squash(sug.date, 'add:' + r.add.id); toast(p.name + ' on ' + M.DAY_LONG[M.weekday(sug.date)] + ' at ' + M.clock(r.start), 'good', { label: 'Undo', fn: undo }); }
+          if (r && r.ok) { landed(sug.date, 'add:' + r.add.id, 0.75); toast(p.name + ' on ' + M.DAY_LONG[M.weekday(sug.date)] + ' at ' + M.clock(r.start), 'good', { label: 'Undo', fn: undo }); }
         } });
         body.appendChild(b);
       }
@@ -2186,6 +2234,7 @@
       if (e.button !== 0) return;
       Snd.init();
       tdrag = { spec, el: elm, x: e.clientX, y: e.clientY, started: false, onClick, target: null };
+      if (FEEL) { const r = elm.getBoundingClientRect(); tdrag.gx = e.clientX - r.left; tdrag.gy = e.clientY - r.top; }
       e.preventDefault();
     });
   }
@@ -2226,18 +2275,26 @@
   }
   /* Show where a block would land, and float the picked up block over that spot. */
   let aimKey = '', leaning = false;
-  function aim(t, start, dur, ok, tilt) {
+  /* mid (feel): the minute the middle of the block is over, before it snaps, so the block can ride between
+     your hand and its slot */
+  function aim(t, start, dur, ok, tilt, mid) {
     const key = t.kind + t.date + ':' + start + ':' + dur;
     if (key !== aimKey) { if (aimKey) Snd.detent(ok); aimKey = key; }
     if (!leaning) { leaning = true; W.lean(t.kind === 'day' ? W.slotWorld('day', null, start + dur / 2) : W.slotWorld('week', t.row, start + dur / 2), 1); }
+    /* where the block's middle is under the hand: the pointer, moved by where on the block you hold it */
+    const hand = (where, row, p, dz) => {
+      if (!FEEL || t.wx == null) return undefined;
+      const hour = where === 'day' ? W.slotWorld('day', null, 420).x - W.slotWorld('day', null, 360).x : W.slotWorld('week', row, 360).x - W.slotWorld('week', row, 300).x;
+      return { hand: { x: t.wx + (mid == null || t.min == null ? 0 : (mid - t.min) / 60 * hour), z: t.wz + dz }, surface: p.y };
+    };
     if (t.kind === 'day') {
       W.showGhost(null); W.showDayGhost(start, dur, ok);
       const p = W.slotWorld('day', null, start + Math.min(dur, 60) / 2);
-      W.dragTo(p.x, p.y + 1.2, p.z + 0.3, tilt);
+      W.dragTo(p.x, p.y + 1.2, p.z + 0.3, tilt, hand('day', null, p, 0.3));
     } else {
       W.showDayGhost(null); W.showGhost(t.row, start, dur, ok);
       const p = W.slotWorld('week', t.row, start + dur / 2);
-      W.dragTo(p.x, p.y + (t.kind === 'mini' ? 0.7 : 1.1), p.z + 0.2, tilt);
+      W.dragTo(p.x, p.y + (t.kind === 'mini' ? 0.7 : 1.1), p.z + 0.2, tilt, hand('week', t.row, p, 0.2));
     }
   }
   function unaim() { W.showGhost(null); W.showDayGhost(null); aimKey = ''; }
@@ -2248,13 +2305,15 @@
     if (!d.started) {
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
       d.started = true;
+      if (FEEL) W.press(null);
       Snd.pick();
-      if (d.el) { const g = $('dragtile'); g.replaceChildren(d.el.cloneNode(true)); g.hidden = false; d.el.style.opacity = '0.35'; }
+      if (d.el) { const g = $('dragtile'); g.replaceChildren(d.el.cloneNode(true)); g.hidden = false; d.el.style.opacity = '0.35'; if (FEEL) carryStart(g, d); }
       if (d.obj3) d.obj3.visible = false;
       hideChip();
     }
     const ghost = $('dragtile');
-    ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+    if (FEEL && d.el) carryMove(e.clientX - d.gx, e.clientY - d.gy);
+    else { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; }
     d.target = null;
     document.querySelectorAll('.slot.over').forEach((x) => x.classList.remove('over'));
     const under = document.elementFromPoint(e.clientX, e.clientY);
@@ -2290,9 +2349,9 @@
       const dur = M.gridDur(add.dur);
       const start = magnetWindow(t.date, t.min - dur / 2, dur);
       const r = canPlaceWindow(t.date, dur, start);
-      if (!d.obj || d.objBig !== (t.kind === 'day')) { if (d.obj) W.endDrag(); d.obj = W.startDrag(decorate(Object.assign({ key: 'drag', start: r.start }, add, { dur })), null, t.kind === 'day'); d.objBig = t.kind === 'day'; }
+      if (!d.obj || d.objBig !== (t.kind === 'day')) { if (d.obj) W.endDrag(); d.obj = W.startDrag(decorate(Object.assign({ key: 'drag', start: r.start }, add, { dur })), null, t.kind === 'day', FEEL && d.obj3 ? { origin: d.obj3 } : undefined); d.objBig = t.kind === 'day'; }
       ghost.hidden = true;
-      aim(t, r.start, dur, r.ok, e.movementX || 0);
+      aim(t, r.start, dur, r.ok, e.movementX || 0, t.min);
       d.target = { type: 'rail', date: t.date, start: r.start, ok: r.ok, reason: r.reason, blocker: r.blocker, add: Object.assign({}, add, { dur }) };
       showChipAt(e.clientX, e.clientY - 30, add.name, r.ok ? placedText(t.date, r.start) + ' to ' + M.clock(r.start + dur) : blockedText(r));
     } else if (W.layout === 'month') {
@@ -2305,12 +2364,59 @@
       offBoard(true);
     } else offBoard();
   }
+  /* == feel: a flat tile in hand ==
+     The spot you grabbed stays under the pointer; the tile lifts as it comes up, and leans the way it's
+     moving, swinging back level when you stop. */
+  const carry = { g: null, x: 0, y: 0, px: 0, vx: 0, rot: { x: 0, v: 0 }, raf: 0, at: 0 };
+  function carryStart(g, d) {
+    g._homing = null;
+    if (g.getAnimations) g.getAnimations().forEach((a) => a.cancel());
+    carry.g = g; carry.at = performance.now(); carry.vx = 0; carry.rot = { x: 0, v: 0 };
+    const r = d.el.getBoundingClientRect();
+    if (d.gx == null) { d.gx = r.width / 2; d.gy = r.height / 2; }
+    carry.x = carry.px = r.left; carry.y = r.top;
+    Object.assign(g.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', transformOrigin: d.gx + 'px ' + d.gy + 'px', rotate: '0deg', scale: '1', translate: '0px 0px', opacity: '' });
+    if (feelMoves()) requestAnimationFrame(() => { if (carry.g === g) g.style.scale = '1.05'; });
+    else g.style.scale = '1.04';
+    cancelAnimationFrame(carry.raf);
+    if (feelMoves()) carry.raf = requestAnimationFrame(carryStep);
+  }
+  function carryMove(x, y) { if (!carry.g) return; carry.x = x; carry.y = y; carry.g.style.left = x + 'px'; carry.g.style.top = y + 'px'; }
+  function carryStep(now) {
+    if (!carry.g) return;
+    const dt = Math.min(0.05, Math.max(0.001, (now - carry.at) / 1000)); carry.at = now;
+    /* over the desk the block in 3D takes over; the tile waits, level, for the pointer to come back */
+    if (carry.g.hidden) { carry.px = carry.x; carry.vx = 0; carry.rot.x = carry.rot.v = 0; carry.raf = requestAnimationFrame(carryStep); return; }
+    const v = (carry.x - carry.px) / dt; carry.px = carry.x;
+    const a = Math.max(-4000, Math.min(4000, (v - carry.vx) / dt)); carry.vx = v;
+    /* a pendulum pushed by how fast the tile speeds up: it trails as you start and swings past as you stop */
+    const n = Math.ceil(dt * 240), h = dt / n;
+    for (let i = 0; i < n; i++) { carry.rot.v += (-140 * carry.rot.x - 13 * carry.rot.v + a * 0.0045) * h; carry.rot.x += carry.rot.v * h; }
+    carry.g.style.rotate = Math.max(-9, Math.min(9, -3 + carry.rot.x)).toFixed(2) + 'deg';
+    carry.raf = requestAnimationFrame(carryStep);
+  }
+  function carryHome(d, into) {
+    const g = $('dragtile');
+    cancelAnimationFrame(carry.raf); carry.g = null;
+    const done = () => { if (g._homing !== token) return; g.hidden = true; g.style.translate = ''; g.style.opacity = ''; g.style.scale = ''; g.style.rotate = ''; if (d.el) d.el.style.opacity = ''; };
+    const token = {}; g._homing = token;
+    if (!feelMoves()) { done(); return; }
+    const home = !into && d.el && d.el.isConnected ? d.el.getBoundingClientRect() : null;
+    if (!home || !home.width) {
+      g.animate([{ opacity: 1 }, { opacity: 0, scale: '0.85' }], { duration: 150, easing: IN_EASE, fill: 'forwards' }).onfinish = done;
+      setTimeout(done, 400);
+      return;
+    }
+    const dx = home.left - parseFloat(g.style.left), dy = home.top - parseFloat(g.style.top);
+    g.animate([{ translate: '0px 0px', rotate: g.style.rotate, scale: g.style.scale }, { translate: dx + 'px ' + dy + 'px', rotate: '0deg', scale: '1' }], { duration: 240, easing: OUT_EASE, fill: 'forwards' }).onfinish = () => { done(); if (d.el && d.el.animate) d.el.animate([{ transform: 'translateY(-3px)' }, { transform: 'none' }], { duration: 160, easing: OUT_EASE }); };
+    setTimeout(done, 520);
+  }
   /* A piece picked up from the bench stays in hand, floating under the pointer, even between boards. */
   function floatFree(d, e, t) {
     if (d.el) { if (d.obj) { W.endDrag(); d.obj = null; } $('dragtile').hidden = false; return; }
     const a = specLook(d.spec) || { name: 'Piece', cat: 'open', icon: 'box', dur: 60 };
-    if (!d.obj || d.objBig) { if (d.obj) W.endDrag(); d.obj = W.startDrag(decorate(Object.assign({ key: 'drag', start: 600 }, a, { dur: M.gridDur(a.dur) }))); d.objBig = false; }
-    if (t) W.dragTo(t.wx, (t.wy || 0.3) + 1.4, t.wz, e.movementX || 0);
+    if (!d.obj || d.objBig) { if (d.obj) W.endDrag(); d.obj = W.startDrag(decorate(Object.assign({ key: 'drag', start: 600 }, a, { dur: M.gridDur(a.dur) })), null, false, FEEL && d.obj3 ? { origin: d.obj3 } : undefined); d.objBig = false; }
+    if (t) W.dragTo(t.wx, (t.wy || 0.3) + 1.4, t.wz, e.movementX || 0, FEEL ? { surface: t.wy || 0.3 } : undefined);
   }
   function offBoard(keepHover) {
     const d = tdrag;
@@ -2327,24 +2433,28 @@
     const d = tdrag;
     tdrag = null;
     settle();
-    if (d.el) d.el.style.opacity = '';
+    /* feel: a tile still in hand off the desk flies back into its place in the tray, or drops into what it
+       was let go on; the place it left stays dim until it's back */
+    const inHand = FEEL && d.started && d.el && !$('dragtile').hidden;
+    if (d.el && !inHand) d.el.style.opacity = '';
     const back = () => { if (d.obj3) d.obj3.visible = true; };
-    $('dragtile').hidden = true;
+    if (inHand) carryHome(d, !!d.target);
+    else { $('dragtile').hidden = true; cancelAnimationFrame(carry.raf); carry.g = null; }
     document.querySelectorAll('.slot.over, .daypill.over').forEach((x) => x.classList.remove('over'));
     W.setHover(null);
     hideChip();
     unaim();
     if (!d.started) { back(); if (d.onClick) { Snd.pick(); d.onClick(); } return; }
     const t = d.target;
-    if (t && t.type === 'dinner') { W.endDrag(); back(); setDinnerFrom(t.date, d.spec); return; }
+    if (t && t.type === 'dinner') { if (FEEL) W.endDrag({ absorb: true }); else W.endDrag(); back(); setDinnerFrom(t.date, d.spec); return; }
     if (t && t.type === 'rail') {
-      if (!t.ok) { W.endDrag(); back(); Snd.bad(); toast(blockedText(t), 'bad'); return; }
+      /* feel: a block that doesn't fit flies back to where it came from */
+      if (!t.ok) { if (FEEL) W.endDrag({ home: true, then: back }); else { W.endDrag(); back(); } Snd.bad(); toast(blockedText(t), 'bad'); return; }
       const r = commit(() => M.placeAdd(state, t.date, t.add, t.start));
       if (r && r.ok) {
         W.adoptPosition(t.date, 'add:' + r.add.id);
         W.endDrag();
-        W.squash(t.date, 'add:' + r.add.id);
-        Snd.clack(t.add.dur / 60);
+        landed(t.date, 'add:' + r.add.id, t.add.dur / 60);
         if (d.spec.kind === 'task' || d.spec.kind === 'step' || d.spec.kind === 'idea') toast(t.add.name + ', ' + placedText(r.date || t.date, r.start), 'good');
       } else W.endDrag();
       back();
@@ -2360,8 +2470,7 @@
       if (r && r.ok) { Snd.clack(add.dur / 60); toast(add.name + ', ' + placedText(r.date || t.date, r.start), 'good'); }
       return;
     }
-    W.endDrag();
-    back();
+    if (FEEL) W.endDrag({ home: true, then: back }); else { W.endDrag(); back(); }
     Snd.slide();
   }
   const cooking = (c) => c === 'me' || c === 'kim' || c === 'home';
@@ -2405,6 +2514,7 @@
       bdrag = null; pinchHold = true; clearTimeout(tapWait);
       const sp = spread();
       pinch = { d0: Math.max(20, sp.d), z0: W.userZoom, x: sp.x, y: sp.y };
+      if (FEEL) { W.press(null); W.direct(true); }
       try { stage.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
       hideChip();
       return;
@@ -2416,6 +2526,7 @@
     if (hit && hit.kind === 'bench') {
       const pc = hit.piece;
       tdrag = { spec: pc.drag || null, el: null, obj3: hit.obj, x: e.clientX, y: e.clientY, started: false, target: null, onClick: () => { if (pc.open) openSel(pc.open); else if (pc.drag) openSel({ type: 'place', spec: pc.drag }); } };
+      if (FEEL) W.press(hit.obj);
       try { stage.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
       return;
     }
@@ -2431,6 +2542,8 @@
       bdrag.grabMin = hit.min - full.start;
       bdrag.board = hit.board;
     }
+    /* feel: what you press dips into the board before it moves */
+    if (FEEL && hit && hit.kind === 'block' && hit.obj && hit.board !== 'mini') W.press(hit.obj);
     try { stage.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
   });
   /* A drag answers every move at once. Looking around (the hover chip, the desk's small drift) is
@@ -2467,7 +2580,8 @@
     if (!d.started) {
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5 || d.mode === 'click') return;
       d.started = true;
-      if (d.mode === 'pan') { stage.className = 'grabbing'; hideChip(); }
+      if (FEEL) W.press(null);
+      if (d.mode === 'pan') { stage.className = 'grabbing'; hideChip(); if (FEEL) W.direct(true); }
       else {
         Snd.pick();
         hideChip();
@@ -2492,7 +2606,8 @@
      back out to the whole day. */
   let tapWait = 0, lastTap = null;
   window.addEventListener('pointerup', (e) => {
-    if (liftFinger(e)) return;
+    if (liftFinger(e)) { if (FEEL && !fingers.size) W.direct(false); return; }
+    if (FEEL) { W.press(null); W.direct(false); }
     if (tdrag) { dropTile(e); return; }
     if (!bdrag) return;
     const d = bdrag;
@@ -2522,7 +2637,19 @@
     if (d.mode === 'pan') return;
     finishBoardDrag(d);
   });
-  window.addEventListener('pointercancel', (e) => { if (liftFinger(e)) return; W.lean(null); if (tdrag) { tdrag.started = false; dropTile(); } if (bdrag) { bdrag = null; W.endDrag(); render(); } });
+  window.addEventListener('pointercancel', (e) => {
+    if (liftFinger(e)) return;
+    W.lean(null);
+    if (FEEL) {
+      /* feel: a touch the browser took back puts the block back where it was, and opens nothing */
+      W.press(null); W.direct(false);
+      if (tdrag) { const d = tdrag; if (d.obj) { W.endDrag({ home: true }); d.obj = null; d.obj3 = null; } d.started = false; d.onClick = null; dropTile(); }
+      if (bdrag) { bdrag = null; render(); W.endDrag({ home: true }); }
+      return;
+    }
+    if (tdrag) { tdrag.started = false; dropTile(); }
+    if (bdrag) { bdrag = null; W.endDrag(); render(); }
+  });
 
   function boardDrag(e) {
     const d = bdrag, b = d.hit.block;
@@ -2533,7 +2660,7 @@
     const pill = d.mode === 'move' && under && under.closest && under.closest('.daypill');
     if (pill) {
       pill.classList.add('over');
-      d.preview = { pill: pill.dataset.date };
+      d.preview = { pill: pill.dataset.date }; d.ck = null;
       unaim();
       renderBoard();
       showChipAt(e.clientX, e.clientY + 60, 'Move to ' + M.dateText(pill.dataset.date, 'day'), 'Same time if it fits, or the first open time');
@@ -2544,7 +2671,7 @@
     if (lifting) {
       const date = t.date;
       if (t.kind === 'none' || (d.mode === 'slide' && date !== d.hit.date)) {
-        d.preview = null;
+        d.preview = null; d.ck = null;
         unaim();
         W.dragTo(t.wx, (t.wy || 0.3) + 1.2, t.wz, e.movementX);
         renderBoard();
@@ -2553,24 +2680,39 @@
       }
       const start = M.snap(t.min - d.grabMin);
       const snapStart = magnetWindow(date, start, full.dur, sourceKey(b));
+      const mid = t.min - d.grabMin + full.dur / 2;
+      /* feel: the week is planned again only when the slot under you changes; in between, only the block
+         in your hand moves (a full board used to stutter, planned again on every pointer move) */
+      const ck = date + ':' + snapStart + ':' + start;
+      if (FEEL && d.ck === ck && d.cAim) {
+        aim(t, d.cAim.start, full.dur, d.cAim.ok, e.movementX, mid);
+        showChipAt(e.clientX, e.clientY - 30, d.cAim.title, d.cAim.sub);
+        return;
+      }
       const tr = tryOn(() => (d.mode === 'move' ? M.moveAdd(state, b.add, date, snapStart) : M.moveTemplate(state, sourceDate(b, date), b.tpl, sourceMinute(b, date, snapStart))));
       const at = M.dateTime(tr.r.date || M.dateTime(date, snapStart).date, tr.r.start == null ? M.dateTime(date, snapStart).start : tr.r.start);
       const shownStart = M.windowTime(date, at.date, at.start), h = M.visibleHours(state);
       d.preview = tr.r.ok ? { date, start: shownStart } : null;
-      aim(t, tr.r.ok ? shownStart : M.clamp(start, h.start, h.end - full.dur), full.dur, tr.r.ok, e.movementX);
+      const aimStart = tr.r.ok ? shownStart : M.clamp(start, h.start, h.end - full.dur);
+      aim(t, aimStart, full.dur, tr.r.ok, e.movementX, mid);
       renderBoard(tr.r.ok ? daysWith(tr.dates, Array.from(new Set([date, d.hit.date]))) : null);
-      showChipAt(e.clientX, e.clientY - 30, b.label || b.name, tr.r.ok ? timeSpan(date, shownStart, shownStart + full.dur) : blockedText(tr.r));
+      const sub = tr.r.ok ? timeSpan(date, shownStart, shownStart + full.dur) : blockedText(tr.r);
+      if (FEEL) { d.ck = ck; d.cAim = { start: aimStart, ok: tr.r.ok, title: b.label || b.name, sub }; }
+      showChipAt(e.clientX, e.clientY - 30, b.label || b.name, sub);
       return;
     }
     if (t.kind === 'none' || t.date !== d.hit.date) return;
     const date = d.hit.date;
     if (d.mode === 'resize') {
       const want = M.snap(t.min - full.start);
+      if (FEEL && d.ck === 'r' + want) { if (d.cAim) showChipAt(e.clientX, e.clientY - 30, d.cAim.title, d.cAim.sub); return; }
+      if (FEEL) { d.ck = 'r' + want; d.cAim = null; }
       const tr = tryOn(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want));
       d.preview = tr.r.ok ? { dur: tr.r.dur } : null;
       if (tr.r.ok && d.lastV !== tr.r.dur) { if (d.lastV != null) Snd.detent(true); d.lastV = tr.r.dur; }
       renderBoard(tr.r.ok ? daysWith(tr.dates, [date]) : null);
       if (tr.r.ok) showChipAt(e.clientX, e.clientY - 30, (b.label || b.name) + ', ' + M.dur(tr.r.dur), timeSpan(date, full.start, full.start + tr.r.dur));
+      if (FEEL && tr.r.ok) d.cAim = { title: (b.label || b.name) + ', ' + M.dur(tr.r.dur), sub: timeSpan(date, full.start, full.start + tr.r.dur) };
       return;
     }
     const v = M.snap(sourceMinute(b, date, t.min)), owner = sourceDate(b, date);
@@ -2587,7 +2729,7 @@
     hideChip();
     unaim();
     document.querySelectorAll('.daypill.over').forEach((x) => x.classList.remove('over'));
-    if (!d.preview) { W.endDrag(); Snd.slide(); render(); return; }
+    if (!d.preview) { if (FEEL) { render(); W.endDrag({ home: true }); } else { W.endDrag(); render(); } Snd.slide(); return; }
     if (d.preview.pill) {
       const to = d.preview.pill;
       W.endDrag();
@@ -2607,8 +2749,7 @@
       W.adoptPosition(d.preview.date, b.base);
       W.endDrag();
       if (r && r.ok) {
-        W.squash(d.preview.date, b.base);
-        Snd.clack(b.dur / 60);
+        landed(d.preview.date, b.base, b.dur / 60);
         if (d.preview.date !== d.hit.date) toast((b.label || b.name) + ' moved to ' + placedText(d.preview.date, d.preview.start), 'good');
         if (view.pick && view.pick.key === b.base) view.pick.date = d.preview.date;
       }
@@ -2736,7 +2877,7 @@
       if (t) setDone(t, src.type === 'step' ? src.id : null, what === 'done');
       return;
     }
-    if (r && r.ok !== false) { Snd.clack(0.6); W.squash(date, b.base); }
+    if (r && r.ok !== false) landed(date, b.base, 0.6);
     else if (r === false || (r && r.ok === false)) { Snd.bad(); toast(blockedText(r || {}), 'bad'); }
     renderTools();
   }
@@ -2745,9 +2886,11 @@
   function drawTools() {
     const box = $('btools');
     const b = pickedBlock();
-    if (!b || !benchable()) { box.hidden = true; if (view.pick && !b) { view.pick = null; W.setSelected(null); } return; }
+    /* feel: they rise out of the block, and sink back into it */
+    const away = () => { if (FEEL && !box.hidden) ghostOut(box, { opacity: 0, transform: 'translateY(' + (box.classList.contains('under') ? -6 : 6) + 'px) scale(0.96)' }, 120); box.hidden = true; box._key = null; };
+    if (!b || !benchable()) { away(); if (view.pick && !b) { view.pick = null; W.setSelected(null); } return; }
     /* the side panel already shows this block; one set of controls at a time */
-    if (view.sel) { box.hidden = true; return; }
+    if (view.sel) { away(); return; }
     const date = view.pick.date;
     /* a tool used from the keyboard keeps focus through the redraw, so the next key still lands */
     const hadIdx = box.contains(document.activeElement) ? [...box.querySelectorAll('button')].indexOf(document.activeElement) : -1;
@@ -2790,9 +2933,12 @@
     }
     if (!b.sleep && !b.meeting && !b.event) add('Take off', 'x', 'remove');
     box.appendChild(row);
+    const fresh = FEEL && (box.hidden || box._key !== date + '|' + b.key);
     box.hidden = false;
+    box._key = date + '|' + b.key;
     if (hadIdx >= 0) { const bs = box.querySelectorAll('button'); (bs[Math.min(hadIdx, bs.length - 1)] || bs[0]).focus(); }
     placeTools();
+    if (fresh) { box.style.transformOrigin = box.classList.contains('under') ? '50% 0' : '50% 100%'; arrive(box, { opacity: 0, transform: 'translateY(' + (box.classList.contains('under') ? -8 : 8) + 'px) scale(0.95)' }, 170); }
   }
   /* with the tools focused, arrows move the picked block, Shift and arrows stretch it, Delete takes it off */
   $('btools').addEventListener('keydown', (e) => {
@@ -2897,6 +3043,7 @@
     if (sub) c.appendChild(el('small', '', sub));
     c.style.left = Math.max(120, Math.min(window.innerWidth - 120, x)) + 'px';
     c.style.top = Math.max(80, y) + 'px';
+    if (FEEL && c.hidden) { c.hidden = false; if (feelMoves()) c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 110, easing: 'ease-out' }); return; }
     c.hidden = false;
   }
   function hideChip() { $('chip').hidden = true; }
@@ -2974,7 +3121,8 @@
     const sel = view.sel;
     placeNow = null;
     if (!tdrag && !bdrag) { W.showGhost(null); W.showDayGhost(null); }
-    if (!sel) { side.hidden = true; sideShown = ''; return; }
+    const sideMoves = FEEL && !document.body.classList.contains('c-detail'), wasHidden = side.hidden;
+    if (!sel) { if (sideMoves) ghostOut(side, { opacity: 0, transform: 'translateX(10px)' }, 140); side.hidden = true; sideShown = ''; return; }
     const key = selKey(sel), same = key === sideShown;
     const keepScroll = same ? side.scrollTop : 0;
     let ok = true;
@@ -2986,6 +3134,7 @@
     side.setAttribute('aria-label', h ? h.textContent : 'Details');
     if (!same) {
       sideShown = key;
+      if (sideMoves) { if (wasHidden) arrive(side, { opacity: 0, transform: 'translateX(14px)' }, 220); else arrive(inn, { opacity: 0, transform: 'translateY(6px)' }, 170); }
       /* a new panel says what it is: its title takes focus, unless you're typing somewhere */
       const a = document.activeElement, typing = a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !side.contains(a);
       if (h && !typing && !inn.querySelector('[data-autofocus]')) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
@@ -4139,18 +4288,32 @@
     const from = hero.getBoundingClientRect();
     const wk = weekOf(), row = wk.indexOf(date);
     const where = view.zoom === 'day' ? (date === view.focus ? 'day' : null) : view.zoom === 'week' && row >= 0 ? 'week' : null;
-    const land = () => { W.squash(date, 'add:' + r.add.id); Snd.clack(add.dur / 60); };
+    const land = () => landed(date, 'add:' + r.add.id, add.dur / 60);
     toast(add.name + ', ' + placedText(r.date || M.dateTime(date, start).date, r.start), 'good');
     closeSel();
-    if (!where || reducedMotion()) { land(); return; }
+    if (!where || reducedMotion() || (FEEL && view.calm)) { land(); return; }
     const shownStart = M.windowTime(date, r.date || M.dateTime(date, start).date, r.start);
-    const to = W.toScreen(W.slotWorld(where, row, shownStart + add.dur / 2));
+    /* feel: the block on the desk waits for the copy; the copy flies to a hand's height over its slot at the
+       block's own size there, and hands over to the block as it drops in */
+    if (FEEL) W.holdBack(date, 'add:' + r.add.id);
+    const slot = W.slotWorld(where, row, shownStart + add.dur / 2);
+    const to = W.toScreen(FEEL ? slot.clone().setY(slot.y + 0.9) : slot);
+    let endScale = 0.3;
+    if (FEEL) {
+      const a = W.toScreen(W.slotWorld(where, row, shownStart)), b2 = W.toScreen(W.slotWorld(where, row, shownStart + Math.min(add.dur, where === 'day' ? 60 : add.dur)));
+      endScale = Math.max(0.16, Math.min(1.1, Math.abs(b2.x - a.x) / Math.max(1, from.width)));
+    }
     const fly = hero.cloneNode(true);
     fly.classList.add('flying');
     Object.assign(fly.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px' });
     $('app').appendChild(fly);
     const dx = to.x - (from.left + from.width / 2), dy = to.y - (from.top + from.height / 2);
-    const anim = fly.animate([
+    const anim = FEEL ? fly.animate([
+      { transform: 'translate(0, 0) rotate(-0.6deg) scale(1)', opacity: 1 },
+      { transform: 'translate(' + dx * 0.5 + 'px, ' + (dy * 0.5 - 48) + 'px) rotate(-3deg) scale(' + ((1 + endScale) / 2).toFixed(3) + ')', opacity: 1, offset: 0.55 },
+      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(' + endScale.toFixed(3) + ')', opacity: 1, offset: 0.9 },
+      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(' + endScale.toFixed(3) + ')', opacity: 0 }
+    ], { duration: 440, easing: 'cubic-bezier(0.45, 0, 0.2, 1)' }) : fly.animate([
       { transform: 'translate(0, 0) rotate(-0.6deg) scale(1)', opacity: 1 },
       { transform: 'translate(' + dx * 0.55 + 'px, ' + (dy * 0.55 - 40) + 'px) rotate(-4deg) scale(0.62)', opacity: 1, offset: 0.6 },
       { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(0.3)', opacity: 0 }
@@ -4162,6 +4325,28 @@
     setTimeout(finish, 900);
   }
   const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+  /* == feel: the pieces on top of the desk move too ==
+     Arrivals ease out from where they come from; departures are a copy that fades while the real thing is
+     already gone, so nothing ever waits on an animation. Calmer motion and the system's reduced motion
+     keep everything still. */
+  function arrive(node, from, ms) {
+    if (!feelMoves() || !node || !node.animate) return;
+    node.animate([from, { opacity: 1, transform: 'none' }], { duration: ms || 200, easing: OUT_EASE });
+  }
+  function ghostOut(node, to, ms) {
+    if (!feelMoves() || !node || node.hidden || !node.isConnected) return;
+    const r = node.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const c = node.cloneNode(true), cs = getComputedStyle(node);
+    c.removeAttribute('id'); c.querySelectorAll('[id]').forEach((x) => x.removeAttribute('id'));
+    c.setAttribute('aria-hidden', 'true'); c.inert = true;
+    Object.assign(c.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', right: 'auto', bottom: 'auto', margin: '0', pointerEvents: 'none', zIndex: cs.zIndex === 'auto' ? '60' : cs.zIndex, transformOrigin: cs.transformOrigin, visibility: 'visible' });
+    $('app').appendChild(c);
+    c.scrollTop = node.scrollTop;
+    const a = c.animate([{ opacity: 1, transform: 'none' }, to], { duration: ms || 130, easing: IN_EASE, fill: 'forwards' });
+    a.onfinish = () => c.remove();
+    setTimeout(() => c.remove(), (ms || 130) + 250);
+  }
 
   /* Save what's on a day as a kind of day to use again. A day that started from a blank slate
      saves as one, so a free day can be a kind of its own. */
@@ -5136,6 +5321,8 @@
      without finishing goes (Dev goes back to Dev). */
   function openWelcome(mode, at, answers, back) {
     if (!OB) { toast('The setup didn’t load. Reload the page to try again.', 'bad'); return; }
+    /* Set up my week, asked for again, opens where the last setup on this device was left */
+    if (mode === 'setup' && !answers && !at) { const d = loadDraft(); if (d) { resumeFrom(d, 'setup'); return; } }
     view.got.setup = { mode, at: at || (mode === 'first' ? 'welcome' : 'name'), a: answers || blankAnswers(), fromWelcome: at === 'welcome', back: back || null };
     document.title = 'Sunday Reset';
     returnFocus = document.activeElement;
@@ -5149,10 +5336,11 @@
   /* A setup that was halfway done when the page closed picks up where it was: the step, the answers,
      and a calendar file brought in (t is when it was saved; drafts before Oct 1 called it at). The
      build step comes back as the step before it. */
-  function saveDraft() {
+  /* closed: the person closed the setup themselves, so a reload leaves it closed until they open it */
+  function saveDraft(closed) {
     const su = view.got.setup;
     if (!su || su.mode === 'preview' || su.at === 'welcome') return;
-    const d = { id: su.at === 'build' ? 'reset' : su.at, a: su.a, ics: su.ics || null, t: Date.now() };
+    const d = { id: su.at === 'build' ? 'reset' : su.at, a: su.a, ics: su.ics || null, t: Date.now(), closed: !!closed };
     try { localStorage.setItem(SETUP_KEY, JSON.stringify(d)); } catch (e) {
       /* a calendar too big for this browser's storage still comes in now; only a reload would lose it */
       try { d.ics = null; localStorage.setItem(SETUP_KEY, JSON.stringify(d)); } catch (err) { /* fine */ }
@@ -5166,9 +5354,17 @@
   function resumeSetup() {
     const d = loadDraft();
     if (!d || !OB) { openWelcome('first'); return; }
-    view.got.setup = { mode: 'first', at: d.id || OLD_STEPS[d.step] || 'name', a: Object.assign(blankAnswers(), d.a), ics: d.ics || null, resumed: true };
+    resumeFrom(d, 'first');
+  }
+  /* a draft opened again: its step, its answers, and a calendar brought in. name: the name the opener
+     already knows, for a draft that never got one and for Start over */
+  function resumeFrom(d, mode, name) {
+    const a = Object.assign(blankAnswers(), d.a);
+    if (name && !String(a.name || '').trim()) a.name = name;
+    view.got.setup = { mode, at: d.id || OLD_STEPS[d.step] || 'name', a, ics: d.ics || null, resumed: true, back: null, knownName: name || '' };
     document.title = 'Sunday Reset';
-    returnFocus = document.activeElement;
+    /* from the welcome, focus goes back where it was before the welcome opened */
+    if ($('sheet').hidden) returnFocus = document.activeElement;
     $('scrim').hidden = false; $('sheet').hidden = false;
     renderSheet();
     setTimeout(() => { const h = $('sheet').querySelector('#sheet-h'); if (h) h.focus({ preventScroll: true }); }, 40);
@@ -5218,7 +5414,7 @@
     lines.push('Bed at ' + M.clock(bed != null ? bed : a.bed.wd) + ' on weekdays');
     const ate = inp.meals ? ['breakfast', 'lunch'].filter((m) => inp.meals[m]) : [];
     if (ate.length) lines.push(cap(ate.join(' and ')) + ' get a time each day');
-    lines.push('Sunday Reset helps with to dos, your own time' + (inp.help.dinners ? ', dinners' : '') + (inp.help.together ? ', and time together' : ''));
+    lines.push('Sunday Reset helps with to-dos, your own time' + (inp.help.dinners ? ', dinners' : '') + (inp.help.together ? ', and time together' : ''));
     return lines;
   }
   function openLinkSheet(code) {
@@ -5388,6 +5584,87 @@
   /* a name typed all in lowercase (mike, jenny) gets its capitals; one typed with any capital (deShawn,
      McKenzie) is left the way it was written */
   const properName = (v) => (typeof v === 'string' && v && v === v.toLowerCase() && /[a-z]/.test(v) ? v.replace(/(^|[\s'-])([a-z])/g, (m, p, c) => p + c.toUpperCase()) : v);
+  /* The people at home as name chips, each a small block in the board's colors (a partner in the color
+     of time together, kids in Family's), with a person mark and an x to take them off. One box: type a
+     name and press Enter or a comma; "Robin and Max" is two. one: a single chip (a partner); the box
+     steps aside while it's there. Backspace in an empty box goes to the last chip's x, the arrows move
+     between the x's and the box, and Delete or Backspace on an x takes that one off. Each change is
+     said aloud, and focus lands where the next move is. */
+  function peopleField(parent, o) {
+    const id = 'pp-' + o.cat, lk = W.look({ cat: o.cat });
+    const f = el('div', 'field onb-people-field');
+    const lbl = el('label', 'lbl', o.label); lbl.htmlFor = id; lbl.id = id + '-l';
+    const box = el('div', 'onb-people'), list = el('ul', 'onb-chips');
+    list.setAttribute('aria-labelledby', lbl.id);
+    const inp = el('input', 'onb-people-in');
+    inp.type = 'text'; inp.id = id; inp.maxLength = 30; inp.autocomplete = 'off'; inp.spellcheck = false;
+    inp.placeholder = o.ph; inp.dataset.fk = id; inp.setAttribute('enterkeyhint', 'done');
+    let hint = null;
+    if (o.hint) { hint = el('div', 'field-hint', o.hint); hint.id = id + '-h'; inp.setAttribute('aria-describedby', hint.id); }
+    const xs = () => [...list.querySelectorAll('.onb-person-x')];
+    /* the chips are drawn in place, never by a redraw of the step, so a tap on Next that commits a
+       typed name still lands on Next */
+    const paint = (focus, fresh) => {
+      list.replaceChildren();
+      o.get().forEach((n, k) => {
+        const li = el('li', 'onb-person' + (fresh && fresh.includes(n) ? ' new' : ''));
+        li.tabIndex = -1;
+        li.style.background = lk.base; li.style.color = lk.ink;
+        li.append(icon('person', 8, lk.ink), el('span', '', n));
+        const x = button('', 'onb-person-x', () => {
+          const v = o.get().filter((y) => y !== n);
+          o.set(v); saveDraft(); Snd.slide(); say(n + ' is off the list.');
+          paint(!o.one && v.length ? Math.min(k, v.length - 1) : 'box');
+        });
+        x.setAttribute('aria-label', 'Take ' + n + ' off'); x.title = 'Take ' + n + ' off';
+        x.appendChild(icon('x', 6, lk.ink));
+        x.addEventListener('keydown', (e) => {
+          const all = xs(), j = all.indexOf(x);
+          if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); e.stopPropagation(); x.click(); }
+          else if (e.key === 'ArrowLeft' && j > 0) { e.preventDefault(); e.stopPropagation(); all[j - 1].focus(); }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); (all[j + 1] || (inp.hidden ? x : inp)).focus(); }
+        });
+        li.appendChild(x);
+        list.appendChild(li);
+      });
+      inp.hidden = !!(o.one && o.get().length);
+      if (focus === 'box') (inp.hidden ? list.lastChild || inp : inp).focus();
+      else if (focus === 'chip') { const last = list.lastChild; if (last) last.focus(); }
+      else if (typeof focus === 'number' && xs()[focus]) xs()[focus].focus();
+    };
+    /* nameList splits on commas and "and"; a name already there isn't added twice */
+    const add = (text, quiet) => {
+      const got = nameList(text).map(properName), had = o.get();
+      const fresh = got.filter((n) => !had.some((y) => y.toLowerCase() === n.toLowerCase()));
+      inp.value = '';
+      if (!got.length) return;
+      if (!fresh.length) { say(got[0] + ' is already on the list.'); return; }
+      const v = o.one ? fresh.slice(0, 1) : had.concat(fresh);
+      o.set(v); saveDraft(); Snd.pick();
+      say(o.one ? v[0] + ' is added.' : fresh.join(' and ') + (fresh.length > 1 ? ' are' : ' is') + ' added.');
+      /* a partner's box steps aside, so focus goes on to the kids' box, or rests on the new chip */
+      const next = o.one && o.next ? document.getElementById(o.next) : null;
+      paint(quiet ? null : o.one ? (next ? null : 'chip') : 'box', fresh);
+      if (!quiet && next) next.focus();
+    };
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') return;
+      e.stopPropagation();
+      if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); if (inp.value.trim()) add(inp.value); }
+      else if ((e.key === 'Backspace' || e.key === 'ArrowLeft') && !inp.value && xs().length) { e.preventDefault(); xs()[xs().length - 1].focus(); }
+    });
+    /* a pasted list, or a comma typed on a phone's keyboard (which can skip keydown) */
+    inp.addEventListener('input', () => { if (/[,;]/.test(inp.value)) add(inp.value); });
+    /* a name typed and left without Enter (a tap on Next, or the close mark) still counts */
+    inp.addEventListener('change', () => { if (inp.value.trim()) add(inp.value, true); });
+    box.addEventListener('click', (e) => { if (!inp.hidden && (e.target === box || e.target === list)) inp.focus(); });
+    box.append(list, inp);
+    paint();
+    f.append(lbl, box);
+    if (hint) f.appendChild(hint);
+    parent.appendChild(f);
+    return f;
+  }
   function onbGo(id) {
     const su = view.got.setup;
     if (!su) return;
@@ -5413,7 +5690,7 @@
   }
   /* a time the way someone would type it: 6pm, 10:30am */
   const typedTime = (m) => { const h = Math.floor(m / 60) % 24, mm = m % 60; return (h % 12 || 12) + (mm ? ':' + String(mm).padStart(2, '0') : '') + (h < 12 ? 'am' : 'pm'); };
-  /* The examples on the to do step, from the person's own week: the gym at an open evening hour
+  /* The examples on the to-do step, from the person's own week: the gym at an open evening hour
      tomorrow, a haircut on Saturday when Saturday has room. */
   function onbExamples(a) {
     const out = ['Call the dentist by Friday'];
@@ -5428,15 +5705,21 @@
     return out;
   }
   /* What adding a timed thing in the setup would do, said before it's added: it fits, it takes time
-     from work that's yours to plan, or work is set then and it waits in To do. */
+     from work that's yours to plan, or work is set then and it waits in the to-dos. */
   function onbLands(a, p) {
     const st = onbWeek(a).st, date = M.dateTime(p.date, M.snap(p.start)).date;
     const r = M.placeAdd(st, date, { name: p.name, cat: p.cat || 'yours', icon: p.icon || 'star', dur: p.dur || 30, src: { type: 'custom' } }, M.snap(p.start));
-    if (!r || !r.ok) return (r && r.blocker ? (r.blocker.label || r.blocker.name) + ' is locked then' : 'That time is taken') + ', so it waits in To do for that day.';
+    if (!r || !r.ok) return (r && r.blocker ? (r.blocker.label || r.blocker.name) + ' is locked then' : 'That time is taken') + ', so it waits in your to-dos for that day.';
     const work = M.calendarDay(onbWeek(a).st, date).blocks.find((b) => b.cat === 'work' && b.soft && b.start < r.start + (p.dur || 30) && r.start < b.start + b.dur);
     return work ? 'That’s during ' + (work.label || work.name) + ', ' + M.span(work.start, work.start + work.dur) + '. It takes the time from it.' : 'It goes on the board at that time.';
   }
 
+  /* Look around first, and the welcome's way out by Escape or a click outside it */
+  function lookAround() {
+    const su = view.got.setup, preview = su && su.mode === 'preview';
+    closeSheet();
+    if (!preview) toast('This is a sample week for a made up family. Set up yours any time from Sunday Reset, top left.');
+  }
   /* The welcome: what it is, in one look, and the way in. The picture explains (the week's blocks
      drop in like tiles, and one of your own lands in open time); the words are a few: a headline, one
      line, three tiles in the board's colors. One strong button where a thumb is, a plain Look around
@@ -5479,10 +5762,11 @@
     });
     words.appendChild(tiles);
     box.appendChild(words);
-    const go = button('', 'go onb-start', () => onbGo('name'));
+    /* a setup closed halfway on this device picks up where it was, answers and all */
+    const go = button('', 'go onb-start', () => { const d = !preview && loadDraft(); if (d) resumeFrom(d, 'first'); else onbGo('name'); });
     go.append(el('b', '', 'Set up my week'), el('small', '', 'About 5 minutes'));
     go.dataset.first = '1';
-    const look = button('Look around first', 'small quiet onb-look', () => { closeSheet(); if (!preview) toast('This is a sample week for a made up family. Set up yours any time from Sunday Reset, top left.'); });
+    const look = button('Look around first', 'small quiet onb-look', lookAround);
     const foot = el('div', 'onb-w-foot');
     foot.append(go, look);
     const keep = el('p', 'onb-keep');
@@ -5504,21 +5788,33 @@
   }
 
   /* One step of the setup: the bar of its four parts, the part's name, the step, and Back and Next.
-     Each step's drawing is in ONB below; a step can rename Next (c.label) or move on by itself. */
-  const ONB_WIDE = ['pains', 'why', 'help', 'work', 'try', 'ahead', 'dinner', 'todo', 'plan'];
+     Each step's drawing is in ONB below; a step can rename Next (c.label) or move on by itself.
+     The card is one size on every step and every answer (docs/SETUP-CARD-V10.md): the bar, the title,
+     and the close mark hold still at the top, Back and Next at the bottom, and only the middle scrolls.
+     A redraw of the same step keeps its scroll and puts focus back on the control that had it (data-fk),
+     so a tap on a tile never drops someone at the top of the page. */
   function renderSheet() {
     const su = view.got.setup, box = $('sheet');
     if (!su) return;
     if (!OB) { closeSheet(); return; }
+    const same = box.dataset.step === su.at && box.classList.contains('onb');
+    const was = document.activeElement, oldScroll = box.querySelector('.onb-scroll');
+    const keep = { top: same && oldScroll ? oldScroll.scrollTop : 0, fk: su.focusKey || (same && was && box.contains(was) && was.dataset ? was.dataset.fk : null) };
+    su.focusKey = null;
     stopOnb();
     box.replaceChildren();
     box.className = 'panel sheet onb';
-    if (su.at === 'welcome') { onbWelcome(box); return; }
+    fieldSeq = 0;
+    if (su.at === 'welcome') { box.dataset.step = 'welcome'; onbWelcome(box); return; }
     const a = su.a, steps = OB.stepsFor(a);
     su.at = OB.nearestStep(steps, su.at);
+    box.dataset.step = su.at;
     const i = steps.findIndex((s) => s.id === su.at);
     const step = steps[i];
-    if (ONB_WIDE.includes(step.id)) box.classList.add('wide');
+    box.classList.add('onb-card', 'onb-at-' + step.id);
+    const head = el('div', 'onb-head');
+    const top = el('div', 'onb-top');
+    const prog = el('div', 'onb-prog');
     const bar = el('div', 'onb-bar');
     bar.setAttribute('role', 'progressbar');
     bar.setAttribute('aria-label', 'Setup');
@@ -5533,12 +5829,21 @@
     names.setAttribute('aria-hidden', 'true');
     parts.forEach((c) => names.appendChild(el('span', c.on ? 'on' : c.fill >= 1 ? 'done' : '', c.name)));
     bar.setAttribute('aria-valuetext', parts.find((c) => c.on) ? parts.find((c) => c.on).name + ', step ' + (i + 1) + ' of ' + steps.length : 'Step ' + (i + 1) + ' of ' + steps.length);
-    box.append(bar, names);
-    const note = (su.resumed ? 'Where you left off' : '') + (su.mode === 'preview' ? (su.resumed ? ' · ' : '') + 'A preview, nothing is saved' : '');
-    if (note) box.appendChild(el('div', 'sheet-step', note));
+    prog.append(bar, names);
+    top.append(prog, onbCloseButton(su));
+    head.appendChild(top);
+    /* a setup picked up again says so once, with a way to begin it fresh; a preview says nothing is saved */
+    if (su.resumed || su.mode === 'preview') {
+      const note = el('div', 'sheet-step');
+      note.appendChild(el('span', '', [su.resumed ? 'Where you left off' : '', su.mode === 'preview' ? 'A preview, nothing is saved' : ''].filter(Boolean).join('. ')));
+      if (su.resumed && su.mode !== 'preview') note.appendChild(button('Start over', 'onb-link', () => { const nm = su.knownName || a.name; su.a = Object.assign(blankAnswers(), { name: nm }); su.ics = null; su.aheadPlayed = false; view.got.painOther = false; onbGo(nm ? 'home' : 'name'); say('The setup starts over. Your answers were cleared.'); }));
+      head.appendChild(note);
+    }
     const h = el('h2', 'sheet-h'); h.id = 'sheet-h'; h.tabIndex = -1;
-    const body = el('div', 'sheet-body');
-    box.append(h, body);
+    head.appendChild(h);
+    const scroll = el('div', 'onb-scroll'), body = el('div', 'sheet-body');
+    scroll.appendChild(body);
+    box.append(head, scroll);
     let label = 'Next';
     const nextId = () => { const s2 = OB.stepsFor(a), j = s2.findIndex((s) => s.id === step.id); return j >= 0 && s2[j + 1] ? s2[j + 1].id : null; };
     const c = {
@@ -5548,11 +5853,43 @@
     };
     ONB[step.id](c);
     const prev = i > 0 ? steps[i - 1].id : su.mode === 'first' || su.fromWelcome ? 'welcome' : null;
-    /* a preview never touches a real setup left halfway on this device */
-    const back = prev ? button('Back', 'small quiet', () => onbGo(prev === 'build' ? 'reset' : prev)) : button('Cancel', 'small quiet', () => { if (su.mode !== 'preview') dropDraft(); closeSheet(); });
+    /* the close mark is the way out on every step, so the first step has Next alone (a spacer keeps it right) */
+    const back = prev ? button('Back', 'small quiet', () => onbGo(prev === 'build' ? 'reset' : prev)) : el('span');
     c.go = button(label, 'go', () => c.next());
     if (c.ready) c.ready();
     actions(box, [back, c.go]);
+    /* a line under the head and over the buttons only when there's more to scroll to that way */
+    const edges = () => { if (!scroll.isConnected) return; box.classList.toggle('edge-top', scroll.scrollTop > 2); box.classList.toggle('edge-end', scroll.scrollTop + scroll.clientHeight < scroll.scrollHeight - 2); };
+    scroll.addEventListener('scroll', edges, { passive: true });
+    if (window.ResizeObserver) { if (onbSize) onbSize.disconnect(); onbSize = new ResizeObserver(edges); onbSize.observe(body); onbSize.observe(scroll); }
+    scroll.scrollTop = keep.top;
+    requestAnimationFrame(edges);
+    if (keep.fk) { const again = box.querySelector('[data-fk="' + keep.fk + '"]'); if (again) again.focus({ preventScroll: true }); }
+  }
+  let onbSize = null;
+  /* The way out, on every step: the answers stay as a draft, so the setup opens again where it was */
+  function onbCloseButton(su) {
+    const words = su.mode === 'preview' ? 'Close the setup. Nothing is saved.' : 'Close setup. Your answers are kept.';
+    const b = button('', 'onb-x', () => closeSetup());
+    b.setAttribute('aria-label', words); b.title = words;
+    b.appendChild(icon('x', 10, UI.soft));
+    return b;
+  }
+  /* Close the setup from any step, by the close mark, Escape, or a click outside the card. Words typed
+     and not yet committed are committed first (a blur fires their change), then the draft is kept and
+     marked closed, so a reload doesn't open it again by itself; Set up my week opens it where it was. */
+  function closeSetup() {
+    const su = view.got.setup, box = $('sheet');
+    if (!su || box.hidden) return;
+    if (su.at === 'welcome') { lookAround(); return; }
+    const f = document.activeElement;
+    if (f && box.contains(f) && /^(INPUT|TEXTAREA)$/.test(f.tagName)) f.blur();
+    if (!view.got.setup) return;
+    /* names get their capitals here too, the same as on the way to the next step */
+    const an = su.a;
+    if (an) { an.name = properName(an.name); an.partner = properName(an.partner); an.kids = (an.kids || []).map(properName); }
+    if (su.mode !== 'preview') saveDraft(true);
+    closeSheet();
   }
 
   const ONB = {
@@ -5609,20 +5946,50 @@
       }
       sync();
     },
+    /* What changes, from what they picked: their own words on cards that turn over, one after another,
+       from a quiet Now side to a gold With Sunday Reset side, like blocks turning over on the desk.
+       Then why it works: the strongest study picked, its number big, its finding, what the board does
+       about it, and the source, linked; a second study waits folded. Calmer motion shows both sides at
+       once, the way they read after the turn. */
     why(c) {
       const { a, h, body } = c;
-      const r = OB.reflect(a.pains);
-      h.textContent = a.name ? 'You’re not alone, ' + a.name + '.' : 'You’re not alone.';
-      body.appendChild(el('p', 'sheet-line', 'Here’s what changes, and why it works.'));
-      const t = el('div', 'onb-ba');
-      const head = el('div', 'onb-ba-row head');
-      head.append(el('span'), el('span', '', 'Now'), el('span', '', 'With Sunday Reset'));
-      t.appendChild(head);
-      r.rows.forEach((x) => { const row = el('div', 'onb-ba-row'); row.append(icon(x.icon, 10, UI.gold), el('span', 'onb-was', x.before), el('span', 'onb-now', x.after)); t.appendChild(row); });
-      body.appendChild(t);
-      /* one study, number first; a second waits behind Another study, so the step isn't a wall of reading */
-      if (r.cards[0]) body.appendChild(onbFact(r.cards[0]));
-      if (r.cards[1]) { const more = disclosure('Another study'); more.classList.add('onb-more2'); more.appendChild(onbFact(r.cards[1], true)); body.appendChild(more); }
+      const r = OB.reflect(a.pains), calm = onbCalm();
+      h.textContent = a.name ? 'Here’s what changes, ' + a.name + '.' : 'Here’s what changes.';
+      const cards = el('ul', 'onb-flips' + (calm ? ' calm' : '') + (r.rows.length === 1 ? ' one' : ''));
+      cards.setAttribute('aria-label', 'What you picked, and what changes');
+      r.rows.forEach((x) => {
+        const li = el('li', 'onb-flip');
+        const inner = el('div', 'onb-flip-in');
+        const now = el('div', 'onb-face onb-face-now');
+        const nk = el('span', 'onb-face-k'); nk.append(icon(x.icon, 9, UI.soft), document.createTextNode('Now'));
+        now.append(nk, el('b', '', x.name));
+        const then = el('div', 'onb-face onb-face-then');
+        const tk = el('span', 'onb-face-k'); tk.append(icon(x.icon, 9, UI.dark), document.createTextNode('With Sunday Reset'));
+        then.append(tk, el('b', '', x.after), el('small', '', x.how || ''));
+        inner.append(now, then);
+        li.appendChild(inner);
+        cards.appendChild(li);
+      });
+      body.appendChild(cards);
+      /* why it works: the strongest study first; a second waits behind Another study */
+      const s = r.cards[0];
+      if (s) {
+        const why = el('figure', 'onb-proof');
+        const k = el('div', 'onb-proof-k'); k.append(icon('book', 9, UI.gold), document.createTextNode('Why it works'));
+        const link = el('a', '', s.who + ', ' + s.year);
+        link.href = s.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        link.setAttribute('aria-label', s.who + ', ' + s.where + ', ' + s.year + '. Opens the study in a new tab.');
+        const cite = el('figcaption', 'onb-proof-c'); cite.appendChild(link);
+        why.append(k, el('b', 'onb-proof-big', s.big), el('p', 'onb-proof-f', s.small || s.finding), el('p', 'onb-proof-m', s.means), cite);
+        body.appendChild(why);
+        if (r.cards[1]) { const more = disclosure('Another study'); more.classList.add('onb-more2'); more.appendChild(onbFact(r.cards[1], true)); body.appendChild(more); }
+      }
+      if (calm) return;
+      /* the turn: a beat to read their words, then each card turns over in turn, with a soft tick */
+      const flips = [...cards.children];
+      flips.forEach((li, k) => onbLater(() => { li.classList.add('over'); Snd.tick(false); }, 900 + k * 420));
+      body.classList.add('onb-wait');
+      onbLater(() => body.classList.remove('onb-wait'), 900 + flips.length * 420 + 120);
     },
     home(c) {
       const { a, h, body } = c;
@@ -5636,6 +6003,7 @@
       HOMES.forEach((x) => {
         const b = el('button', 'onb-pick');
         b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(a.home === x.id));
+        b.dataset.fk = 'home-' + x.id;
         if (a.home === x.id) b.dataset.first = '1';
         const tick = el('span', 'onb-tick'); tick.appendChild(icon('check', 7, UI.dark));
         b.append(icon(x.icon, 11, UI.gold), onbWords(x.name, x.line), tick);
@@ -5643,10 +6011,12 @@
         pick.appendChild(b);
       });
       body.appendChild(pick);
-      if (a.home === 'partner' || a.home === 'family') field(body, 'Partner', textInput(a.partner, (v) => { a.partner = v; saveDraft(); }, 'Their first name, optional', 30));
-      if (a.home === 'family') {
-        field(body, 'Kids', textInput(a.kids.join(', '), (v) => { a.kids = nameList(v); saveDraft(); }, 'Their first names', 60));
-        body.appendChild(el('div', 'field-hint', 'Commas or “and” between names. Each gets their own drop off and pick up times.'));
+      /* the people, as name chips in the board's colors: a partner is one, kids are a row */
+      if (a.home === 'partner' || a.home === 'family') {
+        const ppl = el('div', 'onb-people-row');
+        peopleField(ppl, { label: 'Partner', cat: 'us', ph: 'Their first name, optional', one: true, next: a.home === 'family' ? 'pp-family' : null, get: () => (a.partner.trim() ? [a.partner.trim()] : []), set: (v) => { a.partner = v[0] || ''; } });
+        if (a.home === 'family') peopleField(ppl, { label: 'Kids', cat: 'family', ph: 'Add a kid', hint: 'Press Enter after each name. Each gets their own drop off and pick up times.', get: () => a.kids.slice(), set: (v) => { a.kids = v; } });
+        body.appendChild(ppl);
       }
       if (a.home === 'shared') body.appendChild(el('div', 'field-hint', 'Your board is yours. Everyone shares it only if you turn on sync and link their device.'));
     },
@@ -5662,40 +6032,39 @@
       /* every part is a tile, the same as the rest of the setup; a gold dot marks one you said was hard */
       const tiles = el('div', 'onb-picks onb-tiles2 onb-helps');
       tiles.setAttribute('role', 'group'); tiles.setAttribute('aria-labelledby', 'sheet-h');
-      const tile = (mark, name, line, isOn, toggle, dot) => {
+      const tile = (mark, name, line, isOn, toggle, dot, into, key) => {
         const b = el('button', 'onb-pick');
         b.type = 'button'; b.setAttribute('role', 'checkbox'); b.setAttribute('aria-checked', String(isOn()));
+        b.dataset.fk = 'help-' + key;
         const tick = el('span', 'onb-tick'); tick.appendChild(icon('check', 7, UI.dark));
         const w = onbWords(name, line);
         if (dot) { const d = el('span', 'onb-said-dot'); d.title = 'You picked “' + dot.name + '”'; w.firstChild.appendChild(d); }
         b.append(icon(mark, 11, UI.gold), w, tick);
         b.addEventListener('click', () => { Snd.init(); Snd.pick(); toggle(); saveDraft(); renderSheet(); });
-        tiles.appendChild(b);
+        (into || tiles).appendChild(b);
         return b;
       };
-      tile('pot', 'Meals', 'Breakfast, lunch, dinner, groceries', mealsOn, () => {
+      tile('fork', 'Meals', 'Breakfast, lunch, dinner, groceries', mealsOn, () => {
         const on = !mealsOn();
         a.help.dinners = on; a.meals = { breakfast: on, lunch: on };
-      }, said(['dinner'])).dataset.first = '1';
-      if (partnered) tile('heart', a.partner.trim() ? 'Time with ' + a.partner.trim() : 'Time together', 'An evening idea each week', () => a.help.together !== false, () => { a.help.together = a.help.together === false; }, said(['us']));
-      OB.FOCUS.forEach((f) => tile(f.icon, f.name, f.line, () => a.focus.includes(f.id), () => { a.focus = a.focus.includes(f.id) ? a.focus.filter((x) => x !== f.id) : a.focus.concat(f.id); }, OB.PAINS.find((x) => a.pains.includes(x.id) && x.focus === f.id)));
+      }, said(['dinner']), null, 'meals').dataset.first = '1';
+      if (partnered) tile('heart', a.partner.trim() ? 'Time with ' + a.partner.trim() : 'Time together', 'An evening idea each week', () => a.help.together !== false, () => { a.help.together = a.help.together === false; }, said(['us']), null, 'together');
+      OB.FOCUS.forEach((f) => tile(f.icon, f.name, f.line, () => a.focus.includes(f.id), () => { a.focus = a.focus.includes(f.id) ? a.focus.filter((x) => x !== f.id) : a.focus.concat(f.id); }, OB.PAINS.find((x) => a.pains.includes(x.id) && x.focus === f.id), null, f.id));
       body.appendChild(tiles);
-      /* meals are more than dinner: which ones get a time on the board, and dinner's own help */
+      /* meals are more than dinner: which ones get a time on the board, and dinner's own help. Three
+         small check tiles in one row, the same answer as every other choice here (white read as picked) */
       if (mealsOn()) {
-        const MEALS = [{ id: 'breakfast', name: 'Breakfast' }, { id: 'lunch', name: 'Lunch' }, { id: 'dinner', name: 'Dinner' }];
-        const picked = MEALS.filter((m) => (m.id === 'dinner' ? a.help.dinners !== false : a.meals[m.id])).map((m) => m.id);
-        const row = chips(MEALS, picked, (id) => {
-          if (id === 'dinner') a.help.dinners = a.help.dinners === false;
-          else a.meals[id] = !a.meals[id];
-          saveDraft(); renderSheet();
-        });
+        const MEALS = [{ id: 'breakfast', name: 'Breakfast', icon: 'cup' }, { id: 'lunch', name: 'Lunch', icon: 'bowl' }, { id: 'dinner', name: 'Dinner', icon: 'pot' }];
+        const row = el('div', 'onb-picks onb-meals');
+        MEALS.forEach((m) => tile(m.icon, m.name, '', () => (m.id === 'dinner' ? a.help.dinners !== false : !!a.meals[m.id]), () => {
+          if (m.id === 'dinner') a.help.dinners = a.help.dinners === false;
+          else a.meals[m.id] = !a.meals[m.id];
+        }, null, row, 'meal-' + m.id));
         field(body, 'Which meals?', row);
-        body.appendChild(el('div', 'field-hint', 'Breakfast and lunch get a time each day. Dinner also asks who’s cooking and makes the grocery list. Skip any you don’t plan.'));
+        body.appendChild(el('div', 'field-hint', 'Breakfast and lunch get a time each day. Dinner also asks who’s cooking and makes the grocery list.'));
       }
-      const on = el('div', 'onb-always-row');
-      on.appendChild(el('span', 'onb-always', 'Always on'));
-      OB.PARTS.filter((p) => p.always).forEach((p) => { const c = el('span', 'onb-always-chip'); c.append(icon(p.icon, 8, UI.gold), document.createTextNode(p.name)); on.appendChild(c); });
-      body.appendChild(on);
+      /* what every board has, said once and plainly */
+      body.appendChild(el('p', 'onb-also', 'Every board also has to-dos, time of your own, and the Sunday Reset, about 20 minutes each week to plan it.'));
     },
     days(c) {
       const { a, h, body } = c;
@@ -5757,7 +6126,7 @@
         const two = chips([{ id: 'plan', name: 'Mine to plan' }, { id: 'set', name: 'Set, like a shift' }], workFixed(a) ? 'set' : 'plan', (v) => { a.work.fixed = v === 'set'; redraw(); });
         two.classList.add('onb-two');
         field(body, 'Your work hours are', two);
-        body.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked. Nothing you add goes inside it.' : 'Focus blocks and to dos can go inside it.'));
+        body.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked. Nothing you add goes inside it.' : 'Focus blocks and to-dos can go inside it.'));
         body.appendChild(toggle('My hours change week to week', !!a.work.varies, (v) => { a.work.varies = v; redraw(); }));
         if (a.work.varies) body.appendChild(el('div', 'field-hint', 'Set your usual hours. Next, bring in your schedule.'));
         body.appendChild(toggle('The same hours every day', a.work.same, (v) => { a.work.same = v; redraw(); }));
@@ -5888,6 +6257,7 @@
         if (ghost.parentNode !== lane) lane.appendChild(ghost);
       };
       const draw = () => {
+        stopDemo();
         const w = onbWeek(a);
         mineId = w.add ? w.add.id : null;
         board.replaceChildren();
@@ -5906,6 +6276,7 @@
             grip.addEventListener('keydown', (e) => {
               if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
               e.preventDefault(); e.stopPropagation();
+              stopDemo();
               stretchTo(a.placed.dur + (e.key === 'ArrowRight' ? 15 : -15), true);
             });
             mine.appendChild(grip);
@@ -5944,7 +6315,7 @@
       };
       const pieceDrag = (e, chip, p) => {
         if (e.button !== 0) return;
-        stopHint();
+        stopDemo(); stopHint();
         const d = onbDrag = { float: null, spot: null, x: e.clientX, y: e.clientY, moved: false };
         try { chip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         const move = (ev) => {
@@ -5996,6 +6367,8 @@
         line.textContent = p.name + ', ' + M.span(spot.start, spot.start + p.dur) + '. ' + (moved.length ? moved.join(', ') + ' to make room. ' : 'Nothing else moved. ') + words.stretch;
         const g = lane.querySelector('.onb-grip');
         if (g) g.focus({ preventScroll: true });
+        /* the stretch is shown once too, after a beat to read where it landed */
+        if (!shown.stretch) demoT = onbLater(playDemo, 1400);
       };
       /* the stretch: the longest it can be up to what was asked, the way the board decides it */
       /* w is the week with the block on it; a drag builds it once and asks it on every move */
@@ -6019,7 +6392,7 @@
       const stretchDrag = (e, grip, mine) => {
         if (e.button !== 0) return;
         e.preventDefault(); e.stopPropagation();
-        stopHint();
+        stopDemo(); stopHint();
         const d = onbDrag = { float: null, dur: a.placed.dur, w: onbWeek(a) };
         try { grip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         Snd.pick();
@@ -6036,56 +6409,197 @@
         };
         grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
       };
-      /* after a few quiet seconds, show the move once and offer to do it */
-      function stopHint() { clearTimeout(hintT); helpRow.replaceChildren(); if (phase !== 'place') helpRow.appendChild(button('Take it off', 'small quiet', takeOff)); }
+      /* The coach: when the step opens, the move is shown once (a pointer carries the first block from
+         the tray to a roomy spot on tomorrow, then takes it back), and the same for the stretch once a
+         block is placed. Then it's their turn, with Show me again. Anything they touch stops it, and
+         calmer motion shows where it would land without the glide. After a few quiet seconds the idle
+         hint still shows the spot and offers Do it for me. */
+      let demo = null, demoT = null;
+      const shown = { place: false, stretch: false };
+      const say1 = (t) => el('span', 'onb-help-t', t);
+      const again = () => button('Show me again', 'small quiet', () => playDemo());
+      const doIt = () => (phase === 'place'
+        ? button('Do it for me', 'small', () => { const p = pieces[0], s = roomyStart(p.dur); if (s != null) drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) }); })
+        : button('Do it for me', 'small', () => stretchTo(a.placed.dur + 30)));
+      const off = () => button('Take it off', 'small quiet', takeOff);
+      /* the row at rest: their turn, once they've been shown; Take it off once something is placed */
+      function stopHint() {
+        clearTimeout(hintT);
+        const turn = phase !== 'done' && shown[phase];
+        helpRow.replaceChildren(...[turn ? say1('Your turn.') : null, turn ? again() : null, phase !== 'place' ? off() : null].filter(Boolean));
+      }
+      /* after a few quiet seconds, show the spot again and offer to do it */
       function hint() {
         stopHint();
-        if (phase === 'done') return;
+        if (phase === 'done' || demo) return;
         hintT = onbLater(() => {
-          if (onbDrag) return;
+          if (onbDrag || demo) return;
           if (phase === 'place') {
             const p = pieces[0], s = roomyStart(p.dur);
             if (s == null) return;
-            if (!onbCalm()) { ghostAt(s, p.dur, true); ghost.classList.add('show'); onbLater(() => { if (!onbDrag) ghostAt(null); }, 2400); }
-            helpRow.replaceChildren(el('span', '', 'Like this: ' + p.name + ' at ' + M.clock(s) + '.'), button('Do it for me', 'small', () => drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) })));
+            if (!onbCalm()) { ghostAt(s, p.dur, true); ghost.classList.add('show'); onbLater(() => { if (!onbDrag && !demo) ghostAt(null); }, 2400); }
+            helpRow.replaceChildren(say1('Like this: ' + p.name + ' at ' + M.clock(s) + '.'), again(), doIt());
           } else {
-            helpRow.replaceChildren(el('span', '', 'Drag the dotted edge to the right.'), button('Do it for me', 'small', () => stretchTo(a.placed.dur + 30)), button('Take it off', 'small quiet', takeOff));
+            helpRow.replaceChildren(say1('Drag the dotted edge to the right.'), again(), doIt(), off());
           }
         }, 6000);
       }
+      function stopDemo() {
+        clearTimeout(demoT); demoT = null;
+        if (!demo) return;
+        const d = demo;
+        demo = null;
+        d.timers.forEach(clearTimeout);
+        d.nodes.forEach((n) => n.remove());
+        if (d.chip) d.chip.classList.remove('lifted');
+        if (d.grow) d.grow.getAnimations().forEach((x) => x.cancel());
+        ghost.getAnimations().forEach((x) => x.cancel());
+        ghost.classList.remove('demo', 'filled');
+        ghost.style.removeProperty('--fill');
+        ghostAt(null);
+      }
+      /* one showing of the move for this phase: place carries a block over, stretch pulls an edge */
+      function playDemo() {
+        stopDemo(); clearTimeout(hintT);
+        if (phase === 'done' || onbDrag || !lane || !body.isConnected) return;
+        const calm = onbCalm(), d = demo = { timers: [], nodes: [], chip: null };
+        /* onbLater, so moving to another step clears a showing's last beats with everything else */
+        const at = (ms, fn) => { d.timers.push(onbLater(() => { if (demo === d) fn(); }, ms)); };
+        const B = body.getBoundingClientRect();
+        const rel = (r) => ({ x: r.left - B.left + r.width / 2, y: r.top - B.top + r.height / 2, w: r.width, h: r.height });
+        const move = (n, from, to, ms, ease, s0, s1, r0, r1) => n.animate([
+          { transform: 'translate(' + from.x + 'px, ' + from.y + 'px) translate(-50%, -50%) scale(' + (s0 == null ? 1 : s0) + ') rotate(' + (r0 || 0) + 'deg)' },
+          { transform: 'translate(' + to.x + 'px, ' + to.y + 'px) translate(-50%, -50%) scale(' + (s1 == null ? 1 : s1) + ') rotate(' + (r1 || 0) + 'deg)' }
+        ], { duration: calm ? 0 : ms, easing: ease || 'cubic-bezier(0.45, 0, 0.2, 1)', fill: 'forwards' });
+        const fade = (n, o0, o1, ms) => n.animate([{ opacity: o0 }, { opacity: o1 }], { duration: calm ? 0 : ms, fill: 'forwards', composite: 'replace' });
+        const pt = el('div', 'onb-pointer'); pt.setAttribute('aria-hidden', 'true');
+        const tip = el('i'); pt.appendChild(tip);
+        const press = (down) => tip.animate([{ transform: 'scale(' + (down ? 1 : 0.78) + ')' }, { transform: 'scale(' + (down ? 0.78 : 1) + ')' }], { duration: calm ? 0 : 140, fill: 'forwards' });
+        const words = phase === 'place' ? 'Watch: drag a block onto the day.' : 'Watch: drag the right edge to make it longer.';
+        helpRow.replaceChildren(say1(words), ...(phase === 'stretch' ? [off()] : []));
+        say(words);
+        const end = (ms) => at(ms, () => {
+          stopDemo();
+          shown[phase] = true;
+          hint();
+          say('Your turn.');
+        });
+        if (phase === 'place') {
+          const chip = tray.querySelector('.onb-piece'), p = pieces[0], s = p && roomyStart(p.dur);
+          if (!chip || s == null) { demo = null; hint(); return; }
+          const lk = W.look(p);
+          ghostAt(s, p.dur, true);
+          ghost.classList.add('demo');
+          ghost.style.setProperty('--fill', lk.base);
+          /* the spot shows as the block nears it, never before it sets off */
+          if (!calm) ghost.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 1220, fill: 'backwards' });
+          const cr = rel(chip.getBoundingClientRect()), gr = rel(ghost.getBoundingClientRect());
+          const fl = chip.cloneNode(true);
+          fl.className = 'onb-piece onb-demo-piece'; fl.removeAttribute('data-first'); fl.setAttribute('aria-hidden', 'true'); fl.tabIndex = -1;
+          fl.style.width = cr.w + 'px';
+          body.append(fl, pt);
+          d.nodes.push(fl, pt); d.chip = chip;
+          const grab = { x: cr.x + cr.w * 0.18, y: cr.y + cr.h * 0.2 }, off2 = { x: grab.x - cr.x, y: grab.y - cr.y };
+          const land = { x: gr.x, y: gr.y }, lift = { x: cr.x, y: cr.y - 6 };
+          fl.style.opacity = '0';
+          move(pt, { x: grab.x, y: grab.y + 14 }, grab, 180, 'ease-out'); fade(pt, 0, 1, 180);
+          if (calm) {
+            /* calmer motion: where it lands, at once, and the pointer resting there */
+            move(pt, grab, { x: land.x + off2.x * 0.3, y: land.y + off2.y * 0.3 }, 0);
+            ghost.classList.add('filled');
+            end(1900);
+            return;
+          }
+          at(340, () => { press(true); chip.classList.add('lifted'); fl.style.opacity = '1'; move(fl, cr, lift, 160, 'ease-out', 1, 1.06, 0, -3); });
+          at(520, () => {
+            move(fl, lift, land, 1100, null, 1.06, 1.02, -3, -1);
+            move(pt, grab, { x: land.x + off2.x, y: land.y + off2.y }, 1100);
+          });
+          at(1640, () => {
+            move(fl, land, land, 200, 'ease-in', 1.02, 0.5, -1, 0); fade(fl, 1, 0, 200);
+            ghost.classList.add('filled'); press(false);
+          });
+          /* it goes back to the tray: this one was only a showing */
+          at(2600, () => {
+            ghost.classList.remove('filled');
+            fade(fl, 0, 1, 160); move(fl, land, cr, 700, null, 0.6, 1, 0, 0);
+            move(pt, { x: land.x + off2.x, y: land.y + off2.y }, grab, 700);
+            ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' });
+          });
+          at(3320, () => { fade(fl, 1, 0, 140); fade(pt, 1, 0, 180); chip.classList.remove('lifted'); });
+          end(3560);
+        } else {
+          /* the block itself grows under the pointer, the way it will under theirs, then goes back */
+          const mine = mineId && [...lane.querySelectorAll('[data-add="' + mineId + '"]')].pop(), grip = mine && mine.querySelector('.onb-grip');
+          const longer = fitDur(a.placed.dur + 60, onbWeek(a));
+          if (!grip || longer <= a.placed.dur) { demo = null; hint(); return; }
+          const L = lane.getBoundingClientRect(), perMin = L.width / (hi - lo);
+          const gr = rel(grip.getBoundingClientRect()), dx = (longer - a.placed.dur) * perMin;
+          const w0 = (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo), w1 = (100 * Math.min(longer, hi - a.placed.start)) / (hi - lo);
+          body.appendChild(pt);
+          d.nodes.push(pt);
+          d.grow = mine;
+          const grow = (from, to, ms) => mine.animate([{ width: from + '%' }, { width: to + '%' }], { duration: calm ? 0 : ms, easing: 'cubic-bezier(0.45, 0, 0.2, 1)', fill: 'forwards' });
+          const g0 = { x: gr.x, y: gr.y + 6 }, g1 = { x: gr.x + dx, y: gr.y + 6 };
+          move(pt, { x: g0.x, y: g0.y + 14 }, g0, 180, 'ease-out'); fade(pt, 0, 1, 180);
+          if (calm) {
+            /* calmer motion: the longer block at once, the pointer at its new edge */
+            grow(w0, w1, 0);
+            move(pt, g0, g1, 0);
+            end(1900);
+            return;
+          }
+          at(340, () => press(true));
+          at(500, () => { move(pt, g0, g1, 1000); grow(w0, w1, 1000); });
+          at(2300, () => { press(false); move(pt, g1, g0, 560); grow(w1, w0, 560); });
+          at(2960, () => fade(pt, 1, 0, 180));
+          end(3200);
+        }
+      }
+      /* a touch anywhere on the step stops a showing; it never plays under someone's hand */
+      body.addEventListener('pointerdown', () => { if (demo || demoT) { stopDemo(); stopHint(); } }, true);
+      body.addEventListener('keydown', () => { if (demo || demoT) { stopDemo(); stopHint(); } }, true);
       draw();
+      /* when the step opens, it's shown once */
+      if (phase !== 'done') demoT = onbLater(playDemo, 700);
     },
-    /* See further ahead: the same week from a day to the year, playing out once, with something
-       coming up marked where it lands. It goes on the board as a marker. */
+    /* See further ahead: when it opens, the zoom plays once by itself (Day, Week, Month, Year), each
+       with one line for what it's for, and an example trip about three months out marked where it
+       lands, so the idea is seen before anything is asked. The example is only a picture: nothing goes
+       on the board unless they keep it or type a name of their own (then it's a marker). Anything
+       touched stops the showing, and Show me again plays it again. Calmer motion cuts from level to
+       level with nothing moving. (Until Oct 13 it opened on the week and never moved by itself;
+       Russell asked to be shown, docs/SETUP-CARD-V10.md.) */
     ahead(c) {
-      const { a, h, body } = c;
+      const { su, a, h, body } = c;
       h.textContent = 'See further ahead';
-      body.appendChild(el('p', 'sheet-line', 'Something coming up? See where it lands in your year.'));
-      const s = a.soon || { name: '', date: M.addMonths(today, 6) };
-      const keep = () => { a.soon = s.name.trim() && s.date ? { name: s.name.trim(), date: s.date } : null; saveDraft(); };
-      /* each box with its own suggestions right under it, so a tap is never a guess about which box it fills */
-      const nm = textInput(s.name, () => {}, 'Beach trip', 40);
-      nm.addEventListener('input', () => { stopPlay(); s.name = nm.value; keep(); show(at === 'day' || at === 'week' ? 'month' : at); });
-      field(body, 'Something coming up', nm);
-      /* a date picked shows its month, then where the month sits in the year */
-      const land = () => { stopPlay(); keep(); show('month', true); playing.push(onbLater(() => show('year', true), 1300)); };
-      const dt = dateInput(s.date, (v) => { s.date = v; land(); });
-      dt.min = today;
-      /* a name in one tap for someone who can't think of one, so the zoom lands on something of theirs */
-      body.appendChild(suggests(['A trip', 'A birthday', 'A deadline'], (t) => { nm.value = s.name = t; if (!a.soon) s.date = s.date || M.addMonths(today, 3); dt.value = s.date; land(); }, 'Ideas for something coming up'));
-      field(body, 'When', dt).classList.add('onb-when');
-      body.appendChild(suggests([[1, 'Next month'], [3, 'In 3 months'], [6, 'In 6 months']], (n) => { s.date = M.addMonths(today, n); dt.value = s.date; land(); }, 'Dates'));
-      /* the zoom is the app's own segmented control, not more date chips */
+      const EX = 'Beach trip';
+      /* the example lands on a Saturday about three months out, the way a trip would */
+      const exDate = (() => { const d = M.addMonths(today, 3); return M.addDays(d, (6 - M.weekday(d) + 7) % 7); })();
+      const s = a.soon ? { name: a.soon.name, date: a.soon.date } : { name: '', date: exDate };
+      const own = () => !!s.name.trim();
+      /* what the zoom shows: theirs once there's a name, or the example */
+      const marked = () => (s.date ? { name: own() ? s.name.trim() : EX, date: s.date, example: !own() } : null);
+      const LV = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']];
+      const LINE = {
+        day: () => 'Day: tomorrow, hour by hour.',
+        week: () => 'Week: your seven days, side by side.',
+        month: () => { const m = marked(); return 'Month: what’s coming up.' + (m ? ' ' + m.name + ' is on ' + M.dateText(m.date, 'day') + '.' : ''); },
+        year: () => { const m = marked(); return 'Year: the months ahead' + (m ? ', and where ' + m.name + ' lands.' : '.'); }
+      };
+      const zrow = el('div', 'onb-zrow');
       const tabs = el('div', 'onb-zoom zoom panel');
       tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Zoom');
+      const zline = el('p', 'onb-zline');
+      const replay = button('Show me again', 'small quiet onb-replay', () => { Snd.init(); play(); });
+      zrow.append(tabs, zline, replay);
       const stage = el('div', 'onb-stage');
-      stage.setAttribute('aria-live', 'polite');
-      body.append(tabs, stage);
+      body.append(zrow, stage);
       const st = onbWeek(a).st, tomorrow = M.addDays(today, 1);
       let at = 'day', playing = [];
-      const LV = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['year', 'Year']];
-      LV.forEach(([z, t]) => { const b = el('button', '', t); b.type = 'button'; b.addEventListener('click', () => { Snd.init(); stopPlay(); if (z !== at) Snd.zoom(LV.findIndex((x) => x[0] === z) > LV.findIndex((x) => x[0] === at)); show(z); }); b.dataset.z = z; tabs.appendChild(b); });
-      const marked = () => (s.name.trim() && s.date ? s : null);
+      LV.forEach(([z, t]) => { const b = el('button', '', t); b.type = 'button'; b.dataset.fk = 'zoom-' + z; b.addEventListener('click', () => { Snd.init(); stopPlay(); if (z !== at) Snd.zoom(LV.findIndex((x) => x[0] === z) > LV.findIndex((x) => x[0] === at)); show(z); }); b.dataset.z = z; tabs.appendChild(b); });
+      /* a marker on the month and the year: solid once it's theirs, dashed while it's the example */
+      const tag = (m) => { const t = el('em', '', m.name); t.prepend(icon(OB.markFor(m.name), 7, UI.dark)); if (m.example) t.title = m.name + ', an example'; return t; };
       const draw = (z) => {
         const box = el('div', 'onb-level ' + z);
         const m = marked();
@@ -6096,14 +6610,15 @@
           box.append(el('div', 'onb-board-h', 'This week'), onbWeekRows(st, M.weekStart(today)));
         } else if (z === 'month') {
           const ref = m ? m.date : today, ms = M.monthStart(ref), first = M.weekStart(ms);
-          box.appendChild(el('div', 'onb-board-h', M.MONTH_LONG ? M.MONTH_LONG[+ms.slice(5, 7) - 1] + ' ' + ms.slice(0, 4) : M.dateText(ms)));
+          box.appendChild(el('div', 'onb-board-h', M.MONTH_LONG[+ms.slice(5, 7) - 1] + ' ' + ms.slice(0, 4)));
           const grid = el('div', 'onb-month');
           M.range(first, 42).forEach((d, k) => {
             if (k >= 35 && d.slice(0, 7) !== ms.slice(0, 7)) return;
-            const cell = el('div', 'onb-cell' + (d.slice(0, 7) !== ms.slice(0, 7) ? ' out' : '') + (d === today ? ' today' : '') + (m && d === m.date ? ' mark' : ''));
+            const hit = m && d === m.date;
+            const cell = el('div', 'onb-cell' + (d.slice(0, 7) !== ms.slice(0, 7) ? ' out' : '') + (d === today ? ' today' : '') + (hit ? ' mark' + (m.example ? ' example' : '') : ''));
             cell.appendChild(el('span', 'n', String(+d.slice(8))));
             cell.appendChild(onbLane(st, d, M.visibleHours(st).start, M.visibleHours(st).end, { thin: true }));
-            if (m && d === m.date) { const t = el('em', '', m.name); t.prepend(icon(OB.markFor(m.name), 7, UI.dark)); cell.appendChild(t); }
+            if (hit) cell.appendChild(tag(m));
             grid.appendChild(cell);
           });
           box.appendChild(grid);
@@ -6112,36 +6627,73 @@
           const grid = el('div', 'onb-year');
           for (let k = 0; k < 12; k++) {
             const ms = M.addMonths(M.monthStart(today), k), here = m && m.date.slice(0, 7) === ms.slice(0, 7);
-            const card = el('div', 'onb-mcard' + (k === 0 ? ' now' : '') + (here ? ' mark' : ''));
+            const card = el('div', 'onb-mcard' + (k === 0 ? ' now' : '') + (here ? ' mark' + (m.example ? ' example' : '') : ''));
             card.appendChild(el('b', '', M.MONTH_SHORT[+ms.slice(5, 7) - 1]));
             const dots = el('div', 'onb-dots');
             const n = new Date(Date.UTC(+ms.slice(0, 4), +ms.slice(5, 7), 0)).getUTCDate();
             for (let d = 0; d < M.weekday(ms); d++) dots.appendChild(el('i', 'x'));
             for (let d = 0; d < n; d++) { const dd = M.addDays(ms, d), wd = M.weekday(dd); const dot = el('i', a.work.days.includes(wd) && !a.noWork ? 'w' : ''); if (here && dd === m.date) dot.className = 'm'; dots.appendChild(dot); }
             card.appendChild(dots);
-            if (here) { const t = el('em', '', m.name); t.prepend(icon(OB.markFor(m.name), 7, UI.dark)); card.appendChild(t); }
+            if (here) card.appendChild(tag(m));
             grid.appendChild(card);
           }
           box.appendChild(grid);
         }
         return box;
       };
-      /* reveal: a date picked scrolls where it landed into view, clear of the buttons along the bottom
-         (never while typing a name, which would scroll the box being typed in away) */
-      function show(z, reveal) {
+      /* reveal: a date picked scrolls where it landed into view (never while typing a name, which would
+         scroll the box being typed in away). quiet: the line changes without being read out, so typing a
+         name isn't read back a letter at a time */
+      function show(z, reveal, quiet) {
         at = z;
         tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.z === z)));
+        zline.textContent = LINE[z]();
+        if (!quiet) say(zline.textContent);
         const next = draw(z);
         stage.replaceChildren(next);
         if (!onbCalm()) requestAnimationFrame(() => next.classList.add('in')); else next.classList.add('in');
         const mk = reveal && next.querySelector('em');
         if (mk) { mk.parentNode.classList.add('landed'); requestAnimationFrame(() => mk.parentNode.scrollIntoView({ block: 'nearest', behavior: onbCalm() ? 'auto' : 'smooth' })); }
       }
-      /* it plays once, quietly, and stops the moment anything is touched */
-      function stopPlay() { playing.forEach(clearTimeout); playing = []; }
-      /* it opens on the week (the step before was the day) and moves only when asked: a zoom that plays
-         itself while someone reads is the board changing under them */
-      show(a.soon ? 'month' : 'week');
+      /* it plays once by itself when the step first opens, and stops the moment anything is touched */
+      function stopPlay() { playing.forEach(clearTimeout); playing = []; replay.hidden = false; }
+      function play() {
+        stopPlay();
+        replay.hidden = true;
+        show('day');
+        [['week', 1900], ['month', 3800], ['year', 6000]].forEach(([z, ms]) => playing.push(onbLater(() => show(z), ms)));
+        playing.push(onbLater(() => { playing = []; replay.hidden = false; }, 6100));
+        su.aheadPlayed = true;
+      }
+      /* the box for their own: each with its suggestions right under it, so a tap is never a guess about which box it fills */
+      const form = el('div', 'onb-soon');
+      const nameCol = el('div'), whenCol = el('div');
+      form.append(nameCol, whenCol);
+      body.appendChild(form);
+      const sayNow = el('p', 'onb-soon-say');
+      body.appendChild(sayNow);
+      const keep = () => {
+        a.soon = own() && s.date ? { name: s.name.trim(), date: s.date } : null;
+        saveDraft();
+        sayNow.textContent = own() ? s.name.trim() + ' goes on your board as a marker, ' + M.dateText(s.date, 'day') + '.' : EX + ' is an example. Only what you keep or type goes on your board.';
+        const k = nameCol.querySelector('.onb-suggest');
+        if (k) k.textContent = own() ? EX : 'Keep ' + EX;
+      };
+      const nm = textInput(s.name, () => {}, 'Type its name', 40);
+      nm.addEventListener('input', () => { stopPlay(); s.name = nm.value; keep(); show(at === 'day' || at === 'week' ? 'month' : at, false, true); });
+      field(nameCol, 'Something coming up', nm);
+      /* a date picked shows its month, then where the month sits in the year */
+      const land = () => { stopPlay(); keep(); show('month', true, true); playing.push(onbLater(() => show('year', true, true), 1300)); say(sayNow.textContent); };
+      const dt = dateInput(s.date, (v) => { s.date = v; land(); });
+      dt.min = today;
+      /* keep the example in one tap, or a name for someone who can't think of one */
+      nameCol.appendChild(suggests([[EX, 'Keep ' + EX], ['A birthday', 'A birthday'], ['A deadline', 'A deadline']], (t) => { nm.value = s.name = t; land(); }, 'Ideas for something coming up'));
+      field(whenCol, 'When', dt).classList.add('onb-when');
+      whenCol.appendChild(suggests([[1, 'Next month'], [3, 'In 3 months'], [6, 'In 6 months']], (n) => { s.date = M.addMonths(today, n); dt.value = s.date; land(); }, 'Dates'));
+      keep();
+      /* the first time the step opens it plays; coming back to it opens where their thing is */
+      if (!su.aheadPlayed) play();
+      else show(own() ? 'month' : 'year');
       c.label('Next');
     },
     /* Dinner: tonight's (or tomorrow's, late in the evening), asked the way the board asks it: how it's
@@ -6198,13 +6750,13 @@
       draw();
       c.label('Next');
     },
-    /* A to do in plain words, read the way Add reads it. A day makes it due; a time puts it on the board. */
+    /* A to-do in plain words, read the way Add reads it. A day makes it due; a time puts it on the board. */
     todo(c) {
       const { a, h, body } = c;
       h.textContent = 'Anything you need to get done?';
       body.appendChild(el('p', 'sheet-line', 'Type it the way you’d say it.'));
       const inp = textInput(a.todo ? a.todo.text : '', () => {}, 'Renew the passport by Friday', 80);
-      field(body, 'A to do', inp);
+      field(body, 'A to-do', inp);
       const out = el('div', 'onb-result');
       const read = () => {
         const text = inp.value.trim();
@@ -6217,7 +6769,7 @@
         const card = el('div', 'onb-part');
         if (p.kind === 'task') {
           card.append(icon('flag', 11, UI.gold), onbWords(p.name, p.due ? 'Due ' + M.relText(p.due, today) + (M.diffDays(today, p.due) < 7 && M.diffDays(today, p.due) > 1 ? ', ' + M.dateText(p.due) : '') : 'No due date yet'));
-          out.append(card, el('p', 'onb-groc', 'It waits in To do until you give it a time. Due soon, and the notepad on the desk, keep it in sight.'));
+          out.append(card, el('p', 'onb-groc', 'It waits in your to-dos until you give it a time. Due soon and the notepad on the desk keep it in sight.'));
         } else {
           const lk = W.look(p);
           const blk = el('div', 'onb-chip');
@@ -6327,8 +6879,8 @@
           const t = x.kind === 'block' ? x.name + ', ' + M.relText(x.date, today) + ' ' + M.span(x.start, x.start + x.dur)
             : x.kind === 'soon' ? x.name + ', ' + M.dateText(x.date)
             : x.kind === 'dinner' ? (x.name || 'Dinner') + ' ' + (x.date === today ? 'tonight' : 'tomorrow') + (x.cook ? ', ' + (x.cook === 'kim' ? onbCook(a, x.cook) : onbCook(a, x.cook).toLowerCase()) : '')
-            : x.kind === 'todo' && x.taken != null ? x.name + ', in To do for ' + M.relText(x.due, today) + ' (' + M.clock(x.taken) + ' was taken)'
-            : x.kind === 'todo' ? x.name + (x.due ? ', due ' + M.relText(x.due, today) : ', in To do')
+            : x.kind === 'todo' && x.taken != null ? x.name + ', in your to-dos for ' + M.relText(x.due, today) + ' (' + M.clock(x.taken) + ' was taken)'
+            : x.kind === 'todo' ? x.name + (x.due ? ', due ' + M.relText(x.due, today) : ', in your to-dos')
             : x.name + ', ' + plural(x.count, 'event', 'events');
           const ic = { block: 'check', soon: OB.markFor(x.name), dinner: 'pot', todo: 'flag', calendar: 'calendar' }[x.kind];
           const r = el('div', 'onb-on');
@@ -6357,7 +6909,7 @@
         const ctx = { partnered: !!partnered, dinners: a.help.dinners !== false, together: !!partnered && a.help.together !== false };
         a.pains.map(OB.painById).filter(Boolean).forEach((p) => { const r = el('div', 'onb-on'); r.append(icon(p.icon, 9, UI.gold), onbWords(OB.leanFor(p, ctx), p.name)); ln.appendChild(r); });
         /* their own words get an answer too: the reset is where it gets looked at */
-        if ((a.painOther || '').trim()) { const r = el('div', 'onb-on'); r.append(icon('note2', 9, UI.gold), onbWords(a.painOther.trim(), 'It’s in To do as Look at. Bring it to your first Sunday Reset.')); ln.appendChild(r); }
+        if ((a.painOther || '').trim()) { const r = el('div', 'onb-on'); r.append(icon('note2', 9, UI.gold), onbWords(a.painOther.trim(), 'It’s in your to-dos as Look at. Bring it to your first Sunday Reset.')); ln.appendChild(r); }
         body.appendChild(ln);
       }
       const more = disclosure('Everything on it');
@@ -6448,6 +7000,8 @@
   }
   function endPreview() {
     if (!view.preview) return;
+    /* a setup tried as someone new goes with the made up board it was tried on */
+    if (view.got.setup && view.got.setup.mode === 'preview' && !$('sheet').hidden) closeSheet();
     const from = view.preview.from;
     state = view.preview.saved; undoStack = view.preview.undo; redoStack = view.preview.redo || [];
     view.preview = null;
@@ -8428,7 +8982,16 @@
   $('side-x').addEventListener('click', () => { Snd.init(); closeSel(); });
   $('hud-kicker').addEventListener('click', () => { Snd.init(); if (view.drawer) closeDrawer(); else openDrawer(); });
   $('drawer-x').addEventListener('click', () => { Snd.init(); closeDrawer(); });
-  $('scrim').addEventListener('click', () => { if (!$('sheet').hidden) { if (view.got.setup && view.got.setup.mode !== 'first') closeSheet(); } else closeDrawer(); });
+  /* a click outside the setup closes it with its answers kept, the same as its close mark */
+  $('scrim').addEventListener('click', () => { if (!$('sheet').hidden) { if (view.got.setup && $('sheet').classList.contains('onb')) closeSetup(); } else closeDrawer(); });
+  /* Escape closes the setup from anywhere inside it, a text box too (they keep Escape to themselves);
+     a time being typed into a stepper takes the first Escape to put its number back */
+  $('sheet').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !view.got.setup || !$('sheet').classList.contains('onb')) return;
+    if (e.target && e.target.classList && e.target.classList.contains('step-in')) return;
+    e.preventDefault(); e.stopPropagation();
+    closeSetup();
+  }, true);
   $('side').addEventListener('scroll', sideFade);
   document.addEventListener('keydown', trapFocus, true);
   document.addEventListener('pointerdown', (e) => { const k = $('kinds'); if (k.classList.contains('open') && !k.contains(e.target)) k.classList.remove('open'); }, true);
@@ -8456,7 +9019,7 @@
     else if (e.key === 'ArrowRight') { Snd.init(); shift(1); }
     else if (e.key === 'Escape' && $('kinds').classList.contains('open')) $('kinds').classList.remove('open');
     else if (e.key === 'Escape' && !$('quick').hidden) closeQuick();
-    else if (e.key === 'Escape') { if (!$('sheet').hidden) { if (view.got.setup && view.got.setup.mode !== 'first') closeSheet(); } else if (view.drawer) closeDrawer(); else if (view.pick) selectBlock(null); else if (view.sel) closeSel(); else if (view.bench) closeBench(); else if (view.level) { view.level = null; renderRack(); } else if (phoneDay()) closePhoneDesk(); else if (inToday()) { if (view.dockOpen) { view.dockOpen = false; render(); } } else zoomStep(1); }
+    else if (e.key === 'Escape') { if (!$('sheet').hidden) { if (view.got.setup && $('sheet').classList.contains('onb')) closeSetup(); } else if (view.drawer) closeDrawer(); else if (view.pick) selectBlock(null); else if (view.sel) closeSel(); else if (view.bench) closeBench(); else if (view.level) { view.level = null; renderRack(); } else if (phoneDay()) closePhoneDesk(); else if (inToday()) { if (view.dockOpen) { view.dockOpen = false; render(); } } else zoomStep(1); }
   });
 
   /* == the frame loop and the real clock == */
@@ -8600,6 +9163,8 @@
     if (view.calm == null) view.calm = state.settings.motion === 'calm';
     W.setLamp(view.lamp);
     W.onWeekLand = landTick;
+    /* feel: the desk says when a block touches down, comes home, or a day clicks into place */
+    if (FEEL) W.onFeel = (kind, a) => { if (kind === 'land') { if (a != null) Snd.clack(a); } else if (kind === 'home' || kind === 'roll') Snd.tap(); else if (kind === 'tap') landTick(); };
     applyPrefs();
     ready = true;
     render();
@@ -8614,7 +9179,7 @@
     else if (Store.loadFailed) setTimeout(() => toast('Couldn’t load your saved week. Changes stay in this browser for now.', 'bad'), 700);
     else if (Store.unreadable && !saved) setTimeout(() => openRecovery(), 500);
     else if (new URLSearchParams(location.search).get('link')) probe.then(() => setTimeout(() => openLinkSheet(new URLSearchParams(location.search).get('link')), 300));
-    else if (!saved && loadDraft()) setTimeout(() => resumeSetup(), 500);
+    else if (!saved && loadDraft() && !loadDraft().closed) setTimeout(() => resumeSetup(), 500);
     else if (!saved && !window.SR_MERGE) setTimeout(() => openWelcome('first'), 500);
     else if (fresh && !window.SR_QUIET) setTimeout(() => openSel({ type: 'help' }), 700);
     else if (tzHome && tzHere && tzHome !== tzHere && !sessionStorage.getItem('sundayreset.tzsaid')) { try { sessionStorage.setItem('sundayreset.tzsaid', '1'); } catch (e) { /* fine */ } setTimeout(() => toast('Times here are in ' + tzName(tzHome) + ' time. This device is on ' + tzName(tzHere) + ' time.', '', { label: 'Change', fn: () => openDrawer('days') }), 900); }
@@ -8670,9 +9235,23 @@
     barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
     /* a version can open a Dev board by id and leave it again */
     devBoard(id) { return loadScenarios().then(() => openScenario(id)); }, endPreview,
+    /* a version can run a setup of its own (the desk version answers it with blocks on a mat): the same
+       answers, the same week built from them, the same preview of it, and the same way it lands */
+    blankAnswers: () => blankAnswers(),
+    setupWeek(a) { const st = onbBase(Object.assign(blankAnswers(), a)); return st; },
+    setupWeekRows(st, from, key) { return onbWeekRows(st, from || M.weekStart(today), key); },
+    setupSummary: (a) => setupSummary(Object.assign(blankAnswers(), a)),
+    readIcs(text, fileName) { const r = M.parseIcs(String(text), M.addDays(today, -30), M.addDays(today, 400), 800, { tz: homeTz() }); return r.items.length ? { name: r.name || String(fileName || 'Calendar').replace(/\.ics$/i, ''), cat: 'work', items: r.items, more: r.more } : null; },
+    applySetup(a, ics) {
+      const su = { mode: view.preview ? 'preview' : 'setup', a: Object.assign(blankAnswers(), a), ics: ics || null };
+      view.got.setup = su; onbBuild(su); finishSetup();
+    },
+    saveResetIcs: (at) => saveResetIcs(at),
     /* a version can start the setup for your own week, with the name it already knows */
-    openSetup(name) { const a = blankAnswers(); if (name) a.name = name; openWelcome('setup', name ? 'home' : 'name', a); },
-    /* (a name already given skips the name question; Back still reaches it) */
+    /* in a preview (Try the setup), a fresh setup that saves nothing, never this device's own draft */
+    openSetup(name) { if (view.preview) { const a = blankAnswers(); if (name) a.name = name; openWelcome('preview', name ? 'home' : 'name', a); return; } const d = OB && loadDraft(); if (d) { resumeFrom(d, 'setup', name); return; } const a = blankAnswers(); if (name) a.name = name; openWelcome('setup', name ? 'home' : 'name', a); },
+    /* (a setup closed halfway opens again where it was, with its answers; a name already given skips
+       the name question, and Back still reaches it) */
     openTray(tab, level) { if (view.mode !== 'planner') setMode('planner'); view.bench = null; view.tab = tab; view.level = level || null; setTrayCollapsed(false); render(); },
     closeTray() { if (inToday()) { view.dockOpen = false; } else setTrayCollapsed(true); render(); },
     resetState() {

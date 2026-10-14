@@ -63,6 +63,8 @@ body.drawer-live .scrim { -webkit-backdrop-filter: none; backdrop-filter: none; 
 .k-pill { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; white-space: nowrap; transition: background 0.15s; }
 .k-pill:hover { background: rgba(255, 240, 220, 0.1); }
 .k-pill[aria-pressed="true"] { background: var(--cream); color: var(--esp) !important; }
+/* a pressed pill is white, so its mark (drawn in cream) turns to the dark ink of its words */
+.k-pill[aria-pressed="true"] canvas { filter: brightness(0); opacity: 0.86; }
 .k-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #D2503A; color: #FFFFFF; font-size: 12px; font-weight: 600; display: inline-grid; place-items: center; }
 .k-count:empty { display: none; }
 .k-kinds { display: contents; }

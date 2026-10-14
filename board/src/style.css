@@ -1168,7 +1168,6 @@ body.phone .drawer { z-index: 95; }
    The try steps draw the person's own day on a wooden board, the way the desk does. */
 .sheet:not([hidden]) ~ .toasts { z-index: 96; }
 .sheet.onb { width: min(580px, calc(100% - 32px)); gap: 18px; padding: 26px 30px 24px; border-radius: 22px; }
-.sheet.onb.wide { width: min(780px, calc(100% - 32px)); }
 .sheet.onb > .actions { position: sticky; bottom: -24px; margin: 4px -30px -24px; padding: 14px 30px 20px; background: linear-gradient(rgba(34, 38, 37, 0), rgba(34, 38, 37, 0.99) 30%); z-index: 3; }
 .sheet.onb .sheet-line { max-width: 60ch; }
 .sheet.onb .sheet-h:focus { outline: none; }
@@ -1196,7 +1195,7 @@ body.phone .drawer { z-index: 95; }
 .onb-hero .onb-row:nth-child(5) { animation-delay: 0.16s; } .onb-hero .onb-row:nth-child(6) { animation-delay: 0.2s; } .onb-hero .onb-row:nth-child(7) { animation-delay: 0.24s; }
 .onb-why { display: flex; flex-direction: column; gap: 10px; }
 .onb-why-row { display: flex; align-items: center; gap: 12px; font: 700 var(--t-input)/1.35 var(--font); color: var(--soft); }
-.onb-why-row canvas, .onb-pick > canvas, .onb-part > canvas, .onb-on canvas, .onb-ba-row canvas { width: 22px; height: 22px; flex: none; }
+.onb-why-row canvas, .onb-pick > canvas, .onb-part > canvas, .onb-on canvas { width: 22px; height: 22px; flex: none; }
 .onb-fine { margin: -6px 0 0; font: 600 var(--t-small) var(--font); color: var(--muted); text-align: right; }
 .onb-links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
@@ -1242,7 +1241,6 @@ body.phone .drawer { z-index: 95; }
 .onb-parts { display: flex; flex-direction: column; gap: 8px; }
 .onb-part { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--panel-2); }
 .onb-said { display: block; margin-top: 4px; font: 700 var(--t-label) var(--font); font-style: normal; color: var(--gold); }
-.onb-always { flex: none; font: 800 var(--t-label) var(--font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .onb-switch { width: auto; min-height: 0; padding: 4px; background: transparent; flex: none; }
 .onb-switch:hover { background: transparent; }
 .onb-how { border-radius: var(--r-md); background: var(--panel-2); padding: 10px 14px; }
@@ -1253,11 +1251,6 @@ body.phone .drawer { z-index: 95; }
 .onb-how p b { color: #FFFFFF; }
 
 /* the research */
-.onb-ba { display: flex; flex-direction: column; gap: 6px; }
-.onb-ba-row { display: grid; grid-template-columns: 26px 1fr 1fr; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-md); background: var(--panel-2); }
-.onb-ba-row.head { background: none; padding: 0 14px; font: 800 var(--t-label) var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.onb-ba-row .onb-was { font: 700 var(--t-body) var(--font); color: var(--soft); }
-.onb-ba-row .onb-now { font: 800 var(--t-input) var(--font); color: var(--gold); }
 .onb-study { margin: 0; padding: 14px 16px; border-radius: 14px; background: rgba(242, 207, 122, 0.08); box-shadow: inset 0 0 0 1px rgba(242, 207, 122, 0.25); display: flex; flex-direction: column; gap: 8px; }
 .onb-study-k { display: flex; align-items: center; gap: 8px; font: 800 var(--t-label) var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
 .onb-study-k canvas { width: 16px; height: 16px; }
@@ -1346,7 +1339,7 @@ body.phone .drawer { z-index: 95; }
 .onb-time b { font: 800 var(--t-body) var(--font); color: #FFFFFF; }
 .onb-time span { font: 500 var(--t-body)/1.45 var(--font); color: var(--soft); }
 @media (max-width: 600px) {
-  .sheet.onb, .sheet.onb.wide, .sheet.onb.welcome { left: 0; top: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; padding: calc(env(safe-area-inset-top) + 18px) 18px 0; animation: none; }
+  .sheet.onb, .sheet.onb.welcome { left: 0; top: 0; transform: none; width: 100%; height: 100%; max-height: none; border-radius: 0; padding: calc(env(safe-area-inset-top) + 18px) 18px 0; animation: none; }
   .sheet.onb > .actions { margin: 4px -18px 0; padding: 12px 18px calc(env(safe-area-inset-bottom) + 14px); bottom: 0; margin-top: auto; }
   .sheet.onb .sheet-h { font-size: var(--t-title); }
   .onb-picks { grid-template-columns: minmax(0, 1fr); }
@@ -1354,7 +1347,6 @@ body.phone .drawer { z-index: 95; }
   .onb-stats { grid-template-columns: minmax(0, 1fr); }
   .onb-year { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .onb-time li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
-  .onb-ba-row { grid-template-columns: 22px 1fr 1fr; gap: 8px; padding: 10px; }
   .onb-board .onb-lane { height: 58px; }
   .onb-b small { display: none; }
 }
@@ -1513,11 +1505,8 @@ body:has(#sheet:not([hidden])) .pd-add, body:has(#drawer:not([hidden])) .pd-add,
 .onb-fact-small { margin: 0; font: 600 var(--t-input)/1.45 var(--font); color: #FFFFFF; }
 .onb-how.onb-more2 { background: none; padding: 0; }
 .onb-more2 summary { font: 700 var(--t-small) var(--font); color: var(--soft); min-height: 36px; }
-/* what it helps with: switches, then the always on parts in one quiet row */
+/* what it helps with: a gold dot marks a part someone said was hard */
 .onb-said-dot { display: inline-block; width: 7px; height: 7px; margin-left: 8px; vertical-align: middle; border-radius: 50%; background: var(--gold); }
-.onb-always-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.onb-always-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--panel-2); font: 700 var(--t-small) var(--font); color: var(--soft); }
-.onb-always-chip canvas { width: 14px; height: 14px; }
 /* seven round days in one row */
 .chips.days7 { display: grid; grid-template-columns: repeat(7, minmax(0, 44px)); gap: 6px; }
 .chips.days7 .chip-btn { width: 100%; aspect-ratio: 1; min-height: 0; padding: 0; border-radius: 50%; justify-content: center; font-weight: 800; }
@@ -1630,3 +1619,170 @@ body.phone-desk .phonebar { background: #252928; }
 @media (max-width: 600px) {
   .onb-homes .onb-words small, .onb-helps .onb-words small { display: block; font: 600 var(--t-label)/1.3 var(--font); color: var(--muted); }
 }
+
+/* == the setup card, Oct 13 (docs/SETUP-CARD-V10.md) ==
+   One size on every step and every answer: the bar, the title, and the close mark hold still at the
+   top, Back and Next at the bottom, and only the middle scrolls when it must. One type scale on every
+   step: 26 the title, 16 what you read first and every answer, 14 labels and the lines under things,
+   13 only for the words printed on the drawings of the board. */
+.sheet.onb.onb-card { width: min(860px, calc(100% - 48px)); height: min(720px, calc(100% - 64px)); max-height: none; padding: 0; gap: 0; display: flex; flex-direction: column; overflow: hidden; }
+.onb-head { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 22px 36px 14px; transition: box-shadow 0.2s; }
+.onb-top { display: flex; align-items: flex-start; gap: 20px; }
+.onb-prog { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding-top: 12px; }
+.sheet.onb.onb-card .onb-bar-names { margin-top: 0; font-size: var(--t-small); }
+.onb-x { flex: none; width: 40px; height: 40px; margin: 0 -12px 0 0; padding: 0; border: 0; border-radius: 50%; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.onb-x canvas { width: 20px; height: 20px; }
+.onb-x:hover { background: var(--panel-3); }
+.onb-x:active { transform: translateY(1px); }
+.onb-x:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 1px; }
+@media (pointer: coarse) { .onb-x { width: 44px; height: 44px; } .onb-person-x { width: 36px; height: 36px; } }
+.sheet.onb.onb-card .sheet-h { margin-top: 2px; }
+.sheet.onb.onb-card .sheet-step { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 14px; margin-bottom: -6px; font: 600 var(--t-body)/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.onb-link { border: 0; background: none; padding: 4px 2px; font: 700 var(--t-body) var(--font); color: var(--soft); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.onb-link:hover { color: #FFFFFF; }
+.onb-link:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; border-radius: 4px; }
+.onb-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sheet.onb.onb-card .sheet-body { position: relative; padding: 4px 36px 22px; gap: 18px; }
+.sheet.onb.onb-card > .actions { flex: none; position: static; margin: 0; padding: 16px 36px 24px; background: none; box-shadow: 0 -1px 0 transparent; transition: box-shadow 0.2s; }
+/* a hairline under the head and over the buttons only while there's more to scroll that way */
+.sheet.onb.edge-top .onb-head { box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1); }
+.sheet.onb.edge-end > .actions { box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.1); }
+/* one type scale */
+.sheet.onb.onb-card .sheet-line { font: 500 var(--t-input)/1.5 var(--font); color: var(--soft); max-width: 62ch; }
+.sheet.onb.onb-card .field > label, .sheet.onb.onb-card .field > .lbl { font: 700 var(--t-body)/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--soft); }
+.sheet.onb.onb-card .field-hint { font: 500 var(--t-body)/1.45 var(--font); color: var(--muted); margin-top: -4px; }
+.sheet.onb.onb-card .onb-words b, .sheet.onb.onb-card .onb-tiles2 .onb-words b { font-size: var(--t-input); line-height: 1.3; }
+.sheet.onb.onb-card .onb-words small { font: 600 var(--t-body)/1.35 var(--font); color: var(--muted); }
+.sheet.onb.onb-card .switch { min-height: 52px; padding: 10px 14px; font-size: var(--t-input); }
+.sheet.onb.onb-card .switch .sw-label small { font: 500 var(--t-body)/1.35 var(--font); }
+.sheet.onb.onb-card .chip-btn { font-size: var(--t-input); min-height: 44px; padding: 8px 14px; }
+.sheet.onb.onb-card .dcard-h { font: 800 var(--t-name)/1.2 var(--name); }
+.sheet.onb.onb-card .onb-dish b, .sheet.onb.onb-card .onb-piece b { font-size: var(--t-input); }
+.sheet.onb.onb-card .onb-piece small, .sheet.onb.onb-card .onb-suggest { font-size: var(--t-body); }
+.sheet.onb.onb-card .onb-help, .sheet.onb.onb-card .onb-groc, .sheet.onb.onb-card .onb-on, .sheet.onb.onb-card .onb-time b, .sheet.onb.onb-card .onb-time span, .sheet.onb.onb-card .onb-stat span, .sheet.onb.onb-card .onb-stats.row3 .onb-stat span, .sheet.onb.onb-card .onb-study-c a, .sheet.onb.onb-card .onb-how p { font-size: var(--t-body); }
+.sheet.onb.onb-card .onb-how summary, .sheet.onb.onb-card .onb-more2 summary { font: 700 var(--t-body) var(--font); }
+.sheet.onb.onb-card .onb-ticks span, .sheet.onb.onb-card .onb-day, .sheet.onb.onb-card .onb-key, .sheet.onb.onb-card .onb-cell .n, .sheet.onb.onb-card .onb-cell em, .sheet.onb.onb-card .onb-mcard em, .sheet.onb.onb-card .onb-b small { font-size: var(--t-small); }
+.sheet.onb.onb-card .onb-mcard b { font-size: var(--t-body); }
+.sheet.onb.onb-card .onb-stat small { font-size: var(--t-small); }
+/* answers that are one short thing keep a short line, so a wide card never stretches them thin */
+.sheet.onb.onb-at-name .input { max-width: 440px; }
+.sheet.onb.onb-card .row2 { max-width: 560px; }
+
+/* who's at home: the people as name chips, each a small block in the board's colors */
+.onb-people-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.onb-people { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 56px; padding: 7px; border-radius: var(--r-sm); border: 2px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.06); cursor: text; }
+.onb-people:focus-within { border-color: rgba(255, 255, 255, 0.75); }
+.onb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.onb-chips:empty { display: none; }
+.onb-person { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 3px 0 10px; border-radius: var(--r-sm); font: 800 var(--t-input)/1 var(--name); cursor: default; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.22), inset 0 -3px 0 rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.22); }
+.onb-person.new { animation: blockin 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.onb-person > canvas { width: 16px; height: 16px; flex: none; }
+.onb-person span { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.onb-person:focus { outline: none; }
+.onb-person:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.onb-person-x { position: relative; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; display: grid; place-items: center; cursor: pointer; }
+.onb-person-x::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: 0; transition: opacity 0.15s; }
+.onb-person-x:hover::before { opacity: 0.18; }
+.onb-person-x canvas { position: relative; width: 12px; height: 12px; }
+.onb-person-x:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.onb-people-in { flex: 1 1 96px; min-width: 0; height: 38px; padding: 0 6px; border: 0; background: transparent; color: #FFFFFF; font: 700 var(--t-input) var(--font); outline: none; }
+.onb-people-in::placeholder { color: var(--faint); opacity: 1; }
+
+/* which meals: three small check tiles in one row, a mark each */
+.onb-picks.onb-meals { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.onb-meals .onb-pick { min-height: 52px; padding: 10px 14px; gap: 10px; }
+.onb-meals .onb-pick > canvas { width: 20px; height: 20px; }
+.onb-meals .onb-tick { width: 22px; height: 22px; }
+/* what every board has, said once */
+.onb-also { margin: 2px 0 0; font: 500 var(--t-body)/1.5 var(--font); color: var(--soft); max-width: 62ch; }
+
+/* what changes: their words on cards that turn over, a quiet Now side and a gold side */
+.onb-flips { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.onb-flips.one { max-width: 420px; }
+.onb-flip { perspective: 900px; }
+.onb-flip-in { position: relative; display: grid; height: 100%; transform-style: preserve-3d; transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.35, 1.18); }
+.onb-flip.over .onb-flip-in { transform: rotateX(180deg); }
+.onb-face { grid-area: 1 / 1; display: flex; flex-direction: column; gap: 10px; min-height: 150px; padding: 16px 18px 18px; border-radius: 14px; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.onb-face-now { background: #303433; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.onb-face-then { background: var(--gold); color: #2A2A28; transform: rotateX(180deg); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), inset 0 -4px 0 rgba(80, 52, 10, 0.18); }
+.onb-face-k { display: flex; align-items: center; gap: 8px; font: 700 var(--t-body)/1.2 var(--font); color: var(--muted); }
+.onb-face-k canvas { width: 18px; height: 18px; flex: none; }
+.onb-face-then .onb-face-k { color: #4B3A18; }
+.onb-face b { font: 800 var(--t-name)/1.2 var(--name); color: var(--soft); text-wrap: balance; }
+.onb-face-then b { color: #2A2A28; }
+.onb-face small { font: 600 var(--t-body)/1.45 var(--font); color: #3F2E12; }
+/* calmer motion: both sides at once, the way they read after the turn */
+.onb-flips.calm .onb-flip-in { display: flex; flex-direction: column; transform: none; transition: none; }
+.onb-flips.calm .onb-face { min-height: 0; transform: none; -webkit-backface-visibility: visible; backface-visibility: visible; }
+.onb-flips.calm .onb-face-now { border-radius: 14px 14px 0 0; }
+.onb-flips.calm .onb-face-then { flex: 1; border-radius: 0 0 14px 14px; }
+/* why it works: the strongest study, its number big */
+.onb-proof { margin: 0; padding: 18px 20px 18px; border-radius: 14px; background: rgba(242, 207, 122, 0.08); box-shadow: inset 0 0 0 1px rgba(242, 207, 122, 0.28); display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr); grid-template-areas: "k k" "big f" "big m" "big c"; column-gap: 24px; row-gap: 6px; align-items: start; transition: opacity 0.25s ease-out, transform 0.25s ease-out; }
+.onb-proof-k { grid-area: k; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font: 700 var(--t-body) var(--font); color: var(--gold); }
+.onb-proof-k canvas { width: 18px; height: 18px; flex: none; }
+.onb-proof-big { grid-area: big; font: 800 var(--t-big)/1.08 var(--name); color: var(--gold); text-wrap: balance; }
+.onb-proof-f { grid-area: f; margin: 0; font: 600 var(--t-input)/1.45 var(--font); color: #FFFFFF; }
+.onb-proof-m { grid-area: m; margin: 0; font: 500 var(--t-body)/1.5 var(--font); color: var(--soft); }
+.onb-proof-c { grid-area: c; margin-top: 2px; }
+.onb-proof-c a { font: 700 var(--t-body) var(--font); color: var(--soft); text-decoration: underline; text-underline-offset: 3px; }
+.onb-proof-c a:hover { color: #FFFFFF; }
+.onb-proof-c a:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; border-radius: 3px; }
+.sheet-body > .onb-more2 { transition: opacity 0.25s ease-out, transform 0.25s ease-out; }
+.sheet-body.onb-wait > .onb-proof, .sheet-body.onb-wait > .onb-more2 { opacity: 0; transform: translateY(8px); }
+
+/* try it: the coach shows the move once, a pointer carrying the block */
+.onb-pointer { position: absolute; left: 0; top: 0; width: 34px; height: 34px; z-index: 8; pointer-events: none; }
+.onb-pointer i { position: absolute; inset: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.45); box-shadow: 0 0 0 2.5px #FFFFFF, 0 6px 16px rgba(20, 10, 2, 0.45); }
+.onb-demo-piece { position: absolute; left: 0; top: 0; z-index: 7; margin: 0; pointer-events: none; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 14px 26px rgba(0, 0, 0, 0.38); }
+.onb-ghost.demo { transition: background-color 0.16s ease-out, box-shadow 0.16s ease-out; }
+.onb-ghost.demo.filled { background: var(--fill, var(--gold)); box-shadow: 0 0 0 3px #FFFFFF, 0 6px 14px rgba(40, 24, 8, 0.35); }
+.onb-help-t { font: 700 var(--t-body)/1.4 var(--font); color: #FFFFFF; }
+
+/* see further ahead: the zoom and its line, a stage that holds one size, and their own thing */
+.onb-zrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.onb-zline { flex: 1 1 240px; margin: 0; font: 600 var(--t-body)/1.4 var(--font); color: var(--soft); }
+.onb-replay { flex: none; }
+/* the stage holds the tallest level, so the boxes under it never move while the levels change */
+.sheet.onb.onb-card .onb-stage { height: auto; min-height: 262px; }
+.sheet.onb.onb-card .onb-level { transition: opacity 0.25s ease-out, transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sheet.onb.onb-card .onb-level .landed { scroll-margin: 16px 0; }
+.sheet.onb.onb-card .onb-dots i { aspect-ratio: auto; height: 6px; }
+.sheet.onb.onb-card .onb-month { gap: 4px; }
+.sheet.onb.onb-card .onb-cell { min-height: 0; padding: 2px 4px 3px; gap: 1px; }
+.sheet.onb.onb-card .onb-cell .n { line-height: 15px; }
+.sheet.onb.onb-card .onb-cell .onb-lane.thin { height: 8px; }
+/* a marked day shows its name in place of its strip, so every row of the month keeps one height */
+.sheet.onb.onb-card .onb-cell.mark .onb-lane { display: none; }
+/* the example is dashed until it's theirs */
+.onb-cell.mark.example, .onb-mcard.mark.example { background: rgba(242, 207, 122, 0.55); box-shadow: none; outline: 2px dashed #FFFFFF; outline-offset: 1px; }
+.onb-soon { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.onb-soon > div { display: flex; flex-direction: column; gap: 14px; }
+.onb-soon-say { margin: -4px 0 0; font: 500 var(--t-body)/1.45 var(--font); color: var(--muted); }
+
+@media (max-width: 600px) {
+  .sheet.onb.onb-card { left: 0; top: 0; transform: none; width: 100%; height: 100%; border-radius: 0; animation: none; }
+  .onb-head { padding: calc(env(safe-area-inset-top) + 12px) 18px 10px; gap: 12px; }
+  .onb-top { gap: 12px; }
+  .onb-x { margin-right: -10px; }
+  .sheet.onb.onb-card .sheet-body { padding: 4px 18px 22px; gap: 16px; }
+  .sheet.onb.onb-card > .actions { padding: 12px 18px calc(env(safe-area-inset-bottom) + 14px); }
+  .sheet.onb.onb-card .sheet-h { font-size: var(--t-title); }
+  /* a phone's tiles are narrow: every tile's name at 14 and its line at 13, the same on every step */
+  .sheet.onb.onb-card .onb-pick .onb-words b { font-size: var(--t-body); }
+  .sheet.onb.onb-card .onb-words small, .sheet.onb.onb-card .onb-homes .onb-words small, .sheet.onb.onb-card .onb-helps .onb-words small { font-size: var(--t-small); }
+  .onb-people-row { grid-template-columns: minmax(0, 1fr); }
+  .onb-picks.onb-meals { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .onb-meals .onb-pick { position: relative; flex-direction: column; align-items: flex-start; gap: 8px; min-height: 78px; padding: 12px; }
+  .onb-meals .onb-pick .onb-tick { position: absolute; top: 10px; right: 10px; }
+  .onb-flips { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .onb-flips.one { max-width: none; }
+  .onb-face { min-height: 112px; padding: 14px 16px 16px; gap: 8px; }
+  .onb-proof { grid-template-columns: minmax(0, 1fr); grid-template-areas: "k" "big" "f" "m" "c"; padding: 16px; }
+  .onb-soon { grid-template-columns: minmax(0, 1fr); }
+  .sheet.onb.onb-card .onb-stage { min-height: 356px; }
+  .sheet.onb.onb-card .row2 { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onb-flip-in, .onb-person.new, .sheet.onb.onb-card .onb-level, .onb-proof, .sheet-body > .onb-more2, .onb-ghost.demo, .onb-head, .sheet.onb.onb-card > .actions { transition: none !important; animation: none !important; }
+}
+body.calm .onb-flip-in, body.calm .onb-person.new, body.calm .onb-proof, body.calm .sheet-body > .onb-more2, body.calm .sheet.onb.onb-card .onb-level { transition: none; animation: none; }

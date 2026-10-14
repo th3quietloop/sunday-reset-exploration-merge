@@ -14,16 +14,17 @@
   ];
 
   /* What gets in the way of a week. Each one picks the research shown, the before and after line, a
-     note on the part of the board it's about, which tries come up, and what the plan says to lean on. */
+     note on the part of the board it's about, which tries come up, and what the plan says to lean on.
+     how: one plain line for the gold side of its card on the research step, what the board does about it. */
   const PAINS = [
-    { id: 'head', name: 'Too much lives in my head', line: 'Dates, to dos, who needs what', icon: 'note2', before: 'In your head', after: 'On the board', research: 'scullin', lean: 'To do and the Sunday Reset', tries: ['todo'] },
-    { id: 'slip', name: 'Things slip through the cracks', line: 'A due date sneaks up on me', icon: 'flag', before: 'Remembered late', after: 'A day and a time', research: 'gollwitzer', lean: 'Due soon and the notepad', tries: ['todo'] },
-    { id: 'runs', name: 'The week runs me', line: 'It’s Thursday before I look up', icon: 'calendar', before: 'Thursday already?', after: 'Set on Sunday', research: 'masicampo', lean: 'The Sunday Reset', tries: [] },
-    { id: 'crash', name: 'My plans fall apart', line: 'The day never fits what I planned', icon: 'overlap', before: 'More than fits', after: 'You see when a day is full', research: 'buehler', lean: 'Kinds of day and moving blocks', tries: [] },
-    { id: 'me', name: 'I never get time for myself', line: 'Everything else comes first', icon: 'sun', before: 'Squeezed out', after: 'Hours that are yours', research: 'sharif', lean: 'Block library and the hours that are yours', tries: [], focus: 'make' },
-    { id: 'dinner', name: 'Dinner is a nightly scramble', line: 'What’s for dinner, at 5 pm', icon: 'pot', before: 'The 5 pm scramble', after: 'Decided on Sunday', research: 'ducrot', lean: 'Dinners and the grocery list', tries: ['dinner'], help: 'dinners' },
-    { id: 'us', name: 'Not enough time together', line: 'We’re two people passing', icon: 'heart', before: 'Whenever we can', after: 'An evening each week', research: 'tonietto', lean: 'Time together', tries: [], help: 'together', partnered: true },
-    { id: 'load', name: 'I carry the planning for everyone', line: 'Noticing, deciding, remembering', icon: 'people', before: 'Carried alone', after: 'Written down, ready to hand off', research: 'daminger', lean: 'To do groups and the Sunday Reset', tries: ['todo'], notAlone: true, focus: 'home' }
+    { id: 'head', name: 'Too much lives in my head', line: 'Dates, to-dos, who needs what', icon: 'note2', before: 'In your head', after: 'On the board', how: 'Dates and to-dos live on your week, where you can see them.', research: 'scullin', lean: 'To-dos and the Sunday Reset', tries: ['todo'] },
+    { id: 'slip', name: 'Things slip through the cracks', line: 'A due date sneaks up on me', icon: 'flag', before: 'Remembered late', after: 'A day and a time', how: 'Each to-do gets a due date and a time to do it.', research: 'gollwitzer', lean: 'Due soon and the notepad', tries: ['todo'] },
+    { id: 'runs', name: 'The week runs me', line: 'It’s Thursday before I look up', icon: 'calendar', before: 'Thursday already?', after: 'Set on Sunday', how: 'About 20 minutes on Sunday lays out the week ahead.', research: 'masicampo', lean: 'The Sunday Reset', tries: [] },
+    { id: 'crash', name: 'My plans fall apart', line: 'The day never fits what I planned', icon: 'overlap', before: 'More than fits', after: 'You see when a day is full', how: 'On the board, time is length, so a full day looks full.', research: 'buehler', lean: 'Kinds of day and moving blocks', tries: [] },
+    { id: 'me', name: 'I never get time for myself', line: 'Everything else comes first', icon: 'sun', before: 'Squeezed out', after: 'Hours that are yours', how: 'Time for you goes on the board, and it counts your hours.', research: 'sharif', lean: 'Block library and the hours that are yours', tries: [], focus: 'make' },
+    { id: 'dinner', name: 'Dinner is a nightly scramble', line: 'What’s for dinner, at 5 pm', icon: 'pot', before: 'The 5 pm scramble', after: 'Decided on Sunday', how: 'Pick the week’s dinners once, and the grocery list fills in.', research: 'ducrot', lean: 'Dinners and the grocery list', tries: ['dinner'], help: 'dinners' },
+    { id: 'us', name: 'Not enough time together', line: 'We’re two people passing', icon: 'heart', before: 'Whenever we can', after: 'An evening each week', how: 'An evening together stays on the board, every week.', research: 'tonietto', lean: 'Time together', tries: [], help: 'together', partnered: true },
+    { id: 'load', name: 'I carry the planning for everyone', line: 'Noticing, deciding, remembering', icon: 'people', before: 'Carried alone', after: 'Written down, ready to hand off', how: 'What you keep track of is written down, where others can see it.', research: 'daminger', lean: 'To-do groups and the Sunday Reset', tries: ['todo'], notAlone: true, focus: 'home' }
   ];
   const painById = (id) => PAINS.find((p) => p.id === id);
   /* the pains that fit who's at home: nobody living alone is asked about time together */
@@ -34,7 +35,7 @@
   const RESEARCH = {
     scullin: { big: '10 min sooner', small: 'People who wrote down what was next fell asleep in about 15 minutes, not 25.', finding: 'People who spent five minutes writing down what they had to do next fell asleep faster than people who wrote about what they’d already done: about 15 minutes instead of 25.', means: 'The Sunday Reset puts the week on the board, so it isn’t waiting in your head.', who: 'Scullin and colleagues', where: 'Journal of Experimental Psychology: General', year: 2018, url: 'https://doi.org/10.1037/xge0000374' },
     masicampo: { big: 'A plan quiets it', small: 'Making a plan for an unfinished goal stopped it pulling at people’s attention.', finding: 'Unfinished goals kept pulling at people’s attention. Making a specific plan for them, before doing any of them, stopped the pull.', means: 'A week laid out on Sunday is a plan for everything in it.', who: 'Masicampo and Baumeister', where: 'Journal of Personality and Social Psychology', year: 2011, url: 'https://doi.org/10.1037/a0024192' },
-    gollwitzer: { big: '94 studies', small: 'Deciding when and where you’ll do something makes it more likely to happen.', finding: 'Across 94 studies, people who decided when and where they would act on a goal reached it more often than people who only meant to.', means: 'Giving a to do a day and a time is that decision.', who: 'Gollwitzer and Sheeran', where: 'Advances in Experimental Social Psychology', year: 2006, url: 'https://doi.org/10.1016/S0065-2601(06)38002-1' },
+    gollwitzer: { big: '94 studies', small: 'Deciding when and where you’ll do something makes it more likely to happen.', finding: 'Across 94 studies, people who decided when and where they would act on a goal reached it more often than people who only meant to.', means: 'Giving a to-do a day and a time is that decision.', who: 'Gollwitzer and Sheeran', where: 'Advances in Experimental Social Psychology', year: 2006, url: 'https://doi.org/10.1016/S0065-2601(06)38002-1' },
     buehler: { big: '56 days, not 34', small: 'Students guessed their thesis would take 34 days. It took 56, longer than their worst guess.', finding: 'Students guessed their thesis would take 34 days. On average it took 56, longer than even their worst case guess.', means: 'On the board time is length, so you see when a day is already full.', who: 'Buehler, Griffin, and Ross', where: 'Journal of Personality and Social Psychology', year: 1994, url: 'https://doi.org/10.1037/0022-3514.67.3.366' },
     sharif: { big: '2 to 5 hours', small: 'Under about two hours a day of your own, people felt worse. Past five, more didn’t help.', finding: 'People with less than about two hours a day to spend as they liked reported lower well-being. Past about five hours, more didn’t help.', means: 'The board counts the hours that are yours, so you can see when you’re short.', who: 'Sharif, Mogilner, and Hershfield', where: 'Journal of Personality and Social Psychology', year: 2021, url: 'https://doi.org/10.1037/pspp0000391' },
     ducrot: { big: '40,554 adults', small: 'People who planned their meals ate a more varied, better diet.', finding: 'In a study of 40,554 adults, people who planned their meals were more likely to eat a varied, higher quality diet.', means: 'Dinners get decided on Sunday, and the grocery list comes from what you picked.', who: 'Ducrot and colleagues', where: 'International Journal of Behavioral Nutrition and Physical Activity', year: 2017, url: 'https://doi.org/10.1186/s12966-017-0461-7' },
@@ -46,7 +47,7 @@
      others are the modules in settings.modules. */
   const PARTS = [
     { id: 'yours', name: 'Your own time', line: 'Workouts, creative time, rest. The board counts the hours that are yours.', icon: 'sun', always: true, pains: ['me'] },
-    { id: 'todos', name: 'To dos', line: 'Each one gets a due date, steps if it needs them, and a time on a day.', icon: 'flag', always: true, pains: ['head', 'slip', 'load'] },
+    { id: 'todos', name: 'To-dos', line: 'Each one gets a due date, steps if it needs them, and a time on a day.', icon: 'flag', always: true, pains: ['head', 'slip', 'load'] },
     { id: 'dinners', name: 'Dinners', line: 'What’s for dinner each night, who cooks, and the grocery list.', icon: 'pot', module: 'dinners', pains: ['dinner'] },
     { id: 'together', name: 'Time together', line: 'An idea for an evening together, each week.', icon: 'heart', module: 'together', partner: true, pains: ['us'] },
     { id: 'reset', name: 'The Sunday Reset', line: 'A 20 minute walk through the week ahead, every Sunday.', icon: 'sliders', always: true, pains: ['runs', 'crash'] }
@@ -80,7 +81,7 @@
      after the picks were cleared; kids, after the household changed) resumes on the nearest one before it. */
   const ORDER = ['name', 'home', 'pains', 'why', 'help', 'days', 'work', 'kids', 'calendar', 'try', 'ahead', 'dinner', 'todo', 'reset', 'build', 'plan'];
   /* each step's short name, for Dev's list of steps to open */
-  const STEP_NAMES = { name: 'Name', pains: 'What gets in the way', why: 'The research', home: 'Who’s at home', help: 'What it helps with', days: 'Days', work: 'Work', kids: 'Drop off and pick up', calendar: 'A calendar', try: 'Try it', ahead: 'See further ahead', dinner: 'Dinner', todo: 'A to do', reset: 'The reset time', build: 'Building', plan: 'The plan' };
+  const STEP_NAMES = { name: 'Name', pains: 'What gets in the way', why: 'What changes', home: 'Who’s at home', help: 'What it helps with', days: 'Days', work: 'Work', kids: 'Drop off and pick up', calendar: 'A calendar', try: 'Try it', ahead: 'See further ahead', dinner: 'Dinner', todo: 'A to-do', reset: 'The reset time', build: 'Building', plan: 'The plan' };
   function nearestStep(steps, id) {
     if (steps.some((s) => s.id === id)) return id;
     const k = ORDER.indexOf(id);
@@ -99,14 +100,19 @@
     });
   }
 
-  /* The before and after rows and the research cards for the picks, in the order they were picked. */
+  /* The studies from strongest to weakest evidence: a review of 94 studies, then large samples, then
+     single experiments, then interviews. The research step leads with the strongest one picked. */
+  const STRENGTH = ['gollwitzer', 'ducrot', 'sharif', 'buehler', 'masicampo', 'scullin', 'tonietto', 'daminger'];
+  /* The before and after rows for the first three picks, in the order they were picked (name is their
+     own words, how is what the board does), and up to two research cards, the strongest first. */
   function reflect(pains) {
     const picked = (pains || []).map(painById).filter(Boolean);
-    const rows = picked.slice(0, 3).map((p) => ({ id: p.id, before: p.before, after: p.after, icon: p.icon }));
+    const rows = picked.slice(0, 3).map((p) => ({ id: p.id, name: p.name, before: p.before, after: p.after, how: p.how, icon: p.icon }));
     const seen = new Set();
     const cards = [];
-    picked.forEach((p) => { if (!seen.has(p.research) && cards.length < 2) { seen.add(p.research); cards.push(Object.assign({ id: p.research, about: p.name }, RESEARCH[p.research])); } });
-    return { rows, cards };
+    picked.forEach((p) => { if (!seen.has(p.research)) { seen.add(p.research); cards.push(Object.assign({ id: p.research, about: p.name }, RESEARCH[p.research])); } });
+    cards.sort((x, y) => STRENGTH.indexOf(x.id) - STRENGTH.indexOf(y.id));
+    return { rows, cards: cards.slice(0, 2) };
   }
 
   /* A thing coming up gets a mark that fits what it is. */
@@ -159,7 +165,7 @@
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sunday Reset//Sunday Reset//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
       'BEGIN:VEVENT', 'UID:' + uid + '@sundayreset', 'DTSTAMP:' + utc, 'DTSTART:' + local, 'DURATION:PT20M',
       'RRULE:FREQ=WEEKLY;BYDAY=' + DAY_CODE[at.day], 'SUMMARY:Sunday Reset',
-      'DESCRIPTION:' + icsText('Set up the week ahead: to dos, dinners, and your own time.' + (url ? '\nOpen Sunday Reset: ' + url : '')),
+      'DESCRIPTION:' + icsText('Set up the week ahead: to-dos, dinners, and your own time.' + (url ? '\nOpen Sunday Reset: ' + url : '')),
       url ? 'URL:' + url : null,
       'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT10M', 'DESCRIPTION:Sunday Reset in 10 minutes', 'END:VALARM',
       'END:VEVENT', 'END:VCALENDAR'
@@ -243,7 +249,7 @@
     const out = [
       { when: 'Now', what: 'Your week opens on the board. Move anything, and it saves on this device.' },
       { when: 'Each morning', what: 'Today opens on what you’re in and what’s next' + (opts && opts.dinners ? ', and asks about dinner from 3 pm.' : '.') },
-      { when, what: 'Your first Sunday Reset: to dos, ' + (opts && opts.dinners ? 'dinners, ' : '') + 'and the week ahead.' },
+      { when, what: 'Your first Sunday Reset: to-dos, ' + (opts && opts.dinners ? 'dinners, ' : '') + 'and the week ahead.' },
       { when: 'Every ' + M.DAY_LONG[at.day] + ' after', what: 'The same short walk through the week, and the week is set.' }
     ];
     return { first, list: out };
@@ -289,7 +295,7 @@
       if (x.kind === 'soon') out.push('Marking ' + x.name);
       else if (x.kind === 'block' && x.date) out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + (x.start != null ? ' at ' + M.clock(x.start) : ''));
       else if (x.kind === 'dinner' && x.date) out.push(x.name ? x.name + ' for dinner on ' + dayOf(x.date) : 'Dinner on ' + dayOf(x.date) + ', decided');
-      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to To do');
+      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to your to-dos');
     });
     out.push('Counting the hours that are yours');
     return out;
@@ -303,7 +309,7 @@
     stretch: { name: 'Stretch a block', line: 'Drag the right edge of a block you placed.', phone: 'On a computer, drag the right edge of a block you placed.' },
     month: { name: 'See the month', line: 'The same blocks, from further away.' },
     dinner: { name: 'Pick a dinner', line: 'Tap a Dinner block and say how it’s happening.' },
-    todo: { name: 'Add a to do', line: 'In plain words, like Call the dentist by Friday.' },
+    todo: { name: 'Add a to-do', line: 'In plain words, like Call the dentist by Friday.' },
     desk: { name: 'Open the desk', line: 'One day, with blocks you can move.' },
     reset: { name: 'Do your first Sunday Reset', line: 'About 20 minutes, through the week ahead.' }
   };
