@@ -3321,6 +3321,12 @@
     get framed() { return framed(); }, get quality() { return quality; },
     /* a block's face color and label ink, the same as on the desk, for flat views like the phone's Today */
     look: (b) => { const lk = look(b); return { base: lk.base, ink: lk.ink }; },
+    /* the desk's own surfaces as pictures (board wood, groove, leather), so a page drawn over the desk can wear them */
+    surface: (k) => {
+      const t = k === 'board' ? boardMat.map : k === 'groove' ? trackMat.map : k === 'leather' ? deskMat.mesh && deskMat.mesh.material.map : k === 'desk' ? deskTop && deskTop.material.map : null;
+      const img = t && t.image;
+      try { return img && img.toDataURL ? img.toDataURL('image/jpeg', 0.86) : null; } catch (e) { return null; }
+    },
     set onWeekLand(fn) { week.onLand = fn; },
     get userZoom() { return user.zoomTo; }, get focused() { return !!focus.pt; },
     xOf, minOf, rowZ, BOARD_Y, BLOCK_D, H_HARD, DB_HMUL,
