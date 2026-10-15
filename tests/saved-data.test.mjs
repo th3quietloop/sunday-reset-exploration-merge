@@ -3,6 +3,8 @@
 // ('p:' and an id), ideas[].for and .who, state.meals, and state.mealbook. Each has to be additive (an
 // old board loads without it, and code that doesn't know it leaves it alone), and two devices that
 // each change one have to keep both changes when their boards merge (Model.mergeBoards).
+// V11 goals (Oct 14) made it version 8: migrate adds state.goals and keeps all of the above as it was
+// (tests/migration.test.mjs has the rest).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appRig, mealRig, srOf, plain, M, D } from './v11-rig.mjs';
@@ -26,20 +28,23 @@ function v11Board() {
 }
 const NEW = (st) => ({ people: st.profile.people, move: st.settings.move, holidays: st.settings.holidays, with: st.dinners['2026-10-16'].with, cook: st.dinners['2026-10-17'].cook, idea: st.ideas.find((i) => i.id === 'i-ada'), meals: st.meals, mealbook: st.mealbook });
 
-test('the version stays 7, and migrating a V11 board leaves every new field as it was', () => {
-  assert.equal(D.VERSION, 7);
+test('the version is 8, and migrating a V11 board saved as 7 leaves every V11 field as it was', () => {
+  assert.equal(D.VERSION, 8);
   const st = v11Board(), before = copy(NEW(st));
+  st.v = 7; delete st.goals;
   const out = D.migrate(copy(st));
-  assert.equal(out.v, 7);
+  assert.equal(out.v, 8);
+  assert.deepEqual(out.goals, [], 'goals start empty');
   assert.deepEqual(copy(NEW(out)), before);
 });
 
 test('an old board (version 4 on) comes forward without any of them, and V11 reads it', () => {
   const old = D.sampleState(today);
   old.v = 4;
-  delete old.settings; delete old.shopping; delete old.calendars; delete old.groups; delete old.profile.people;
+  delete old.settings; delete old.shopping; delete old.calendars; delete old.groups; delete old.profile.people; delete old.goals;
   const st = D.migrate(old);
-  assert.equal(st.v, 7);
+  assert.equal(st.v, 8);
+  assert.deepEqual(st.goals, []);
   for (const k of ['meals', 'mealbook']) assert.equal(st[k], undefined, k + ' is never added by a migration');
   assert.equal(st.profile.people, undefined);
   assert.equal(st.settings.move, undefined);

@@ -307,13 +307,16 @@
         list = lay(list, { key: 'mt:' + m.id, base: 'mt:' + m.id, meeting: m.id, name: m.name, cat: 'work', icon: 'people', start: m.start, dur: m.dur, fixed: true });
       });
     }
-    (dd.adds || []).slice().sort(byStart).forEach((a) => {
+    /* V11 goals: a skipped goal session stays in the adds as a record but takes no time on the day */
+    (dd.adds || []).filter((a) => !a.skipped).sort(byStart).forEach((a) => {
       const b = {
         key: 'add:' + a.id, base: 'add:' + a.id, add: a.id, src: a.src || null,
         name: addName(state, a, tasks), cat: a.cat || 'yours', icon: a.icon || 'star',
         start: a.start, dur: a.dur, done: addDone(state, a, tasks)
       };
       if (a.dinner) b.dinner = true;
+      if (a.pinned) b.pinned = true;
+      if (a.makes) b.makes = a.makes;
       list = lay(list, b);
     });
     list = clip(list, wake, bed);
@@ -335,7 +338,23 @@
   /* The complete schedule is independent of the hours the desk happens to show. Build neighboring
      actual dates on one continuous line, then clip only the returned view. Original identity is
      kept for edits; resolved spans are kept separately for calendar export after soft blocks split. */
+  /* V11 goals: while a planner reads many days in a row without changing anything (withRecMemo), each
+     date's records are worked out once */
+  let recMemo = null;
+  function withRecMemo(state, fn) {
+    const was = recMemo;
+    recMemo = { state, map: new Map() };
+    try { return fn(); } finally { recMemo = was; }
+  }
   function calendarRecords(state, ownerDate) {
+    if (recMemo && recMemo.state === state) {
+      let hit = recMemo.map.get(ownerDate);
+      if (!hit) { hit = buildRecords(state, ownerDate); recMemo.map.set(ownerDate, hit); }
+      return hit;
+    }
+    return buildRecords(state, ownerDate);
+  }
+  function buildRecords(state, ownerDate) {
     const tpl = templateFor(state, ownerDate), dd = state.dates[ownerDate] || {}, edits = dd.edits || {};
     const wake = clamp(dd.wake != null ? dd.wake : tpl.wake, 0, 1439);
     const bed = clamp(dd.bed != null ? dd.bed : tpl.bed, wake + 1, 1740);
@@ -361,7 +380,7 @@
     }
     timedOn(state, ownerDate).forEach((e) => put({ key: 'ev:' + e.id, base: 'ev:' + e.id, event: e.id, cal: e.cal || null, name: e.name, cat: e.cat || 'family', icon: e.icon || 'star', start: e.start, dur: e.dur, fixed: true, big: !!e.big }, 3));
     if (!trip && !off) state.meetings.filter((m) => (m.days || []).includes(weekday(ownerDate))).forEach((m) => put({ key: 'mt:' + m.id, base: 'mt:' + m.id, meeting: m.id, name: m.name, cat: 'work', icon: 'people', start: m.start, dur: m.dur, fixed: true }, 4));
-    (dd.adds || []).forEach((a) => put(Object.assign({ key: 'add:' + a.id, base: 'add:' + a.id, add: a.id, src: a.src || null, name: addName(state, a, tasks), cat: a.cat || 'yours', icon: a.icon || 'star', start: a.start, dur: a.dur, done: addDone(state, a, tasks) }, a.dinner ? { dinner: true } : {}), 5));
+    (dd.adds || []).filter((a) => !a.skipped).forEach((a) => put(Object.assign({ key: 'add:' + a.id, base: 'add:' + a.id, add: a.id, src: a.src || null, name: addName(state, a, tasks), cat: a.cat || 'yours', icon: a.icon || 'star', start: a.start, dur: a.dur, done: addDone(state, a, tasks) }, a.dinner ? { dinner: true } : {}, a.pinned ? { pinned: true } : {}, a.makes ? { makes: a.makes } : {}), 5));
     records.forEach((b) => {
       if (!b.dinner) return;
       const dinner = state.dinners[ownerDate];
@@ -546,6 +565,9 @@
     const dd = dateRec(state, r.date);
     dd.adds = dd.adds || [];
     const a = Object.assign({}, add, { id: add.id || newId('a'), start: r.start });
+    /* V11 goals: a step or a goal session someone puts on a day stays there when its plan is worked out
+       again (the planners place theirs another way, unpinned) */
+    if (pinnable(a) && add.pinned == null) a.pinned = true;
     dd.adds.push(a);
     return Object.assign(r, { add: a });
   }
@@ -564,6 +586,9 @@
     dd.adds = dd.adds.filter((x) => x.id !== id);
     return f;
   }
+  /* V11 goals: a goal session or a to-do's step that someone places or moves by hand is pinned, so
+     planning it again (planGoal, reflowTask) leaves it where they put it */
+  const pinnable = (a) => !!(a && a.src && (a.src.type === 'goal' || a.src.type === 'step'));
   function moveAdd(state, id, date, start) {
     const f = findAdd(state, id);
     if (!f) return { ok: false };
@@ -572,6 +597,7 @@
     removeAdd(state, id);
     const r = placeAdd(state, date, add, start);
     if (!r.ok) state.dates = before;
+    else if (pinnable(r.add)) r.add.pinned = true;
     return r;
   }
   /* Slide a template block (a routine) to a new start on its own date. */
@@ -610,7 +636,7 @@
       dd.edits[id] = Object.assign({}, dd.edits[id], { start: r.recordStart, dur: r.dur });
     } else if (key.startsWith('add:')) {
       const a = (dd.adds || []).find((x) => x.id === key.slice(4));
-      if (a) a.dur = r.dur;
+      if (a) { a.dur = r.dur; if (pinnable(a)) a.pinned = true; }
     }
     return r;
   }
@@ -703,6 +729,8 @@
     for (let k = 0; today && due && due < today && k < 1000; k++) due = nextDue(due, t.repeat);
     nt.due = due;
     nt.steps = (t.steps || []).map((s) => Object.assign({}, s, { id: newId('s'), done: false }));
+    /* V11 goals: the next copy spreads the same way, toward its own due date */
+    if (nt.spread) { nt.spread = Object.assign({}, nt.spread); delete nt.spread.by; }
     state.tasks.push(nt);
     t.next = nt.id;
     return nt;
@@ -720,10 +748,9 @@
       delete t.next;
     }
   }
+  /* Steps a to-do might break into, at the medium size: [{ name, dur }] (V11 goals: breakdown, below) */
   function suggestSteps(name, Data) {
-    const n = (name || '').toLowerCase();
-    const hit = Data.BREAKDOWNS.find((b) => b.words.some((w) => n.includes(w)));
-    return clone(hit ? hit.steps : Data.BREAKDOWN_ANY);
+    return breakdown(name, { size: 'medium' }, Data).steps.map((s) => ({ name: s.name, dur: s.dur }));
   }
 
   /* == day recipes == */
@@ -745,26 +772,33 @@
   }
   /* Try a day recipe on a date. The last recipe's blocks come off first, unless this one only adds.
      Returns how many of its blocks found room. */
+  /* V11 goals: what a kind of day never takes off: to-dos and steps, goal sessions, Meal prep blocks,
+     and a skipped session (a record that takes no time) */
+  const KEEPS = ['task', 'step', 'goal', 'prep'];
+  const keepsOnDay = (a) => !!a.skipped || !!(a.src && KEEPS.includes(a.src.type));
   function applyPreset(state, date, preset, palette) {
     const dd = dateRec(state, date);
-    /* your usual puts the day back the way it goes most weeks; to dos and steps you gave a time stay */
+    /* your usual puts the day back the way it goes most weeks; to dos and steps you gave a time stay,
+       and so do goal sessions and Meal prep (kept counts the to-dos and steps, as before) */
     if (preset.usual) {
-      const keep = (dd.adds || []).filter((a) => a.src && (a.src.type === 'task' || a.src.type === 'step'));
+      const keep = (dd.adds || []).filter(keepsOnDay);
       delete dd.edits; delete dd.wake; delete dd.bed; delete dd.preset;
       if (keep.length) dd.adds = keep; else delete dd.adds;
-      return { ok: true, placed: 0, kept: keep.length };
+      return { ok: true, placed: 0, kept: keep.filter((a) => a.src && (a.src.type === 'task' || a.src.type === 'step')).length };
     }
     /* a rough day: what isn't locked comes off except meals, and to dos placed today go back to the
-       list, still due, so nothing is lost and nothing is asked of today */
+       list, still due, so nothing is lost and nothing is asked of today. V11 goals: goal sessions come
+       off too and go back to the plan (goals counts them); the planners leave an easy day alone */
     if (preset.easy) {
       const day = resolveDay(state, date);
       dd.edits = dd.edits || {};
       for (const b of day.blocks) if (b.tpl && !b.fixed && !b.sleep && b.cat !== 'meals' && !b.dinner) dd.edits[b.tpl] = { gone: true };
       const before = (dd.adds || []).length;
       const back = (dd.adds || []).filter((a) => a.src && (a.src.type === 'task' || a.src.type === 'step')).length;
-      dd.adds = (dd.adds || []).filter((a) => a.dinner || a.cat === 'meals');
+      const goals = (dd.adds || []).filter((a) => !a.skipped && a.src && a.src.type === 'goal' && a.cat !== 'meals').length;
+      dd.adds = (dd.adds || []).filter((a) => a.dinner || a.cat === 'meals' || a.skipped);
       dd.preset = preset.id;
-      return { ok: true, placed: 0, back, off: before - dd.adds.length };
+      return { ok: true, placed: 0, back, goals, off: before - dd.adds.length };
     }
     if (!preset.additive) dd.adds = (dd.adds || []).filter((a) => !(a.src && a.src.type === 'preset'));
     /* a blank slate, or a saved kind of day that starts from one: routines that aren't locked come off */
@@ -772,7 +806,7 @@
       const day = resolveDay(state, date);
       dd.edits = dd.edits || {};
       for (const b of day.blocks) if (b.tpl && !b.fixed && !b.sleep) dd.edits[b.tpl] = { gone: true };
-      dd.adds = (dd.adds || []).filter((a) => a.src && (a.src.type === 'task' || a.src.type === 'step'));
+      dd.adds = (dd.adds || []).filter(keepsOnDay);
       if (preset.empty) { dd.preset = 'empty'; return { ok: true, placed: 0 }; }
     }
     let placed = 0;
@@ -794,7 +828,8 @@
   function presetFromDay(state, date, name, opts) {
     const clear = !!(opts && opts.clear);
     const dd = state.dates[date] || {};
-    const items = (dd.adds || []).filter((a) => !(a.src && (a.src.type === 'task' || a.src.type === 'step'))).sort((a, b) => a.start - b.start)
+    /* V11 goals: a goal session belongs to its goal, so a saved kind of day leaves it out */
+    const items = (dd.adds || []).filter((a) => !a.skipped && !(a.src && (a.src.type === 'task' || a.src.type === 'step' || a.src.type === 'goal'))).sort((a, b) => a.start - b.start)
       .map((a) => Object.assign({ name: a.name, cat: a.cat, icon: a.icon, dur: a.dur, start: a.start, when: a.start < 720 ? 'morning' : a.start < 1080 ? 'afternoon' : 'evening', p: a.src && (a.src.block || (a.src.type === 'block' ? a.src.id : null)) }, a.dinner ? { dinner: true } : {}));
     const names = items.map((x) => x.name).slice(0, 3).join(', ');
     const line = clear ? (items.length ? 'A clear day with ' + names : 'A clear day. Only locked blocks stay') : names || 'Nothing placed yet';
@@ -802,25 +837,29 @@
   }
 
   /* == dinners == */
+  /* V11 goals: each line also says how many servings its meals make (serves, the meal and its linked
+     leftovers, from servingsOf) and which meals those are (servings: [{ date, slot, serves }]). What
+     counts as on the list, and so in the cart, is the same as before. */
   function groceries(state, dates) {
     const byId = new Map(state.pantry.map((p) => [p.id, p]));
     const out = new Map();
     const NOT = ['out', 'order', 'skip', 'leftovers'];
-    const add = (ids, d) => {
+    const add = (ids, d, slot) => {
       for (const id of ids || []) {
         const p = byId.get(id);
         if (!p) continue;
-        if (!out.has(id)) out.set(id, { id, name: p.name, kind: p.kind, days: [] });
+        if (!out.has(id)) out.set(id, { id, name: p.name, kind: p.kind, days: [], serves: 0, servings: [] });
         const x = out.get(id);
         if (!x.days.includes(d)) x.days.push(d);
+        if (!x.servings.some((s) => s.date === d && s.slot === slot)) { const n = servingsOf(state, d, slot); x.servings.push({ date: d, slot, serves: n }); x.serves += n; }
       }
     };
     for (const d of dates) {
       const dn = state.dinners[d];
-      if (dn && !NOT.includes(dn.cook)) add(dn.items, d);
+      if (dn && !NOT.includes(dn.cook)) add(dn.items, d, 'dinner');
       /* breakfast and lunch, where a version plans them on the board too (state.meals) */
       const ml = state.meals && state.meals[d];
-      if (ml) for (const k of ['breakfast', 'lunch']) { const m = ml[k]; if (m && typeof m === 'object' && !NOT.includes(m.how)) add(m.items, d); }
+      if (ml) for (const k of ['breakfast', 'lunch']) { const m = ml[k]; if (m && typeof m === 'object' && !NOT.includes(m.how)) add(m.items, d, k); }
     }
     const order = { protein: 0, veg: 1, base: 2, extra: 3 };
     return Array.from(out.values()).sort((a, b) => ((order[a.kind] ?? 3) - (order[b.kind] ?? 3)) || a.name.localeCompare(b.name));
@@ -1415,11 +1454,28 @@
       }
       return pick(b, m, t, name);
     };
+    /* V11 goals: goals merge by id, and a goal both devices changed merges by field: its check in answers
+       per date, its rhythm per field, and its parts by id, so one device's answer for Tuesday and the
+       other's for Wednesday both stay. A goal one side removed and the other changed goes the way mine went. */
+    const goalList = (b, m, t) => {
+      const bm = new Map((Array.isArray(b) ? b : []).map((x) => [x.id, x])), ml = Array.isArray(m) ? m : [], tl = Array.isArray(t) ? t : [];
+      const mm = new Map(ml.map((x) => [x.id, x])), tm = new Map(tl.map((x) => [x.id, x]));
+      const order = ml.map((x) => x.id).concat(tl.map((x) => x.id).filter((id) => !mm.has(id)));
+      const list = [];
+      for (const id of order) {
+        const bv = bm.get(id), mv = mm.get(id), tv = tm.get(id);
+        const v = isObj(mv) && isObj(tv) ? deep(bv, mv, tv, 'goals ' + id, { answers: 1, rhythm: 1 }, false) : pick(bv, mv, tv, 'goals ' + id);
+        if (v !== undefined) list.push(v);
+      }
+      return list;
+    };
     const out = {};
     const keys = new Set([...Object.keys(base), ...Object.keys(mine), ...Object.keys(theirs)]);
     for (const k of keys) {
       const b = base[k], m = mine[k], t = theirs[k];
-      if (MAP_KEYS.includes(k) && (m || t)) {
+      if (k === 'goals' && (Array.isArray(m) || Array.isArray(t)) && [b, m, t].every((v) => v == null || Array.isArray(v))) {
+        out[k] = goalList(b, m, t);
+      } else if (MAP_KEYS.includes(k) && (m || t)) {
         const o = {}, sub = new Set([...Object.keys(b || {}), ...Object.keys(m || {}), ...Object.keys(t || {})]);
         for (const s of sub) { const v = pick((b || {})[s], (m || {})[s], (t || {})[s], k + ' ' + s); if (v !== undefined) o[s] = v; }
         out[k] = o;
@@ -1520,6 +1576,1078 @@
     return out;
   }
 
+  /* == V11 goals: big things, small blocks ==
+     Breaking a big thing down, spreading its steps over the days before it's due, finding new times when
+     a day is missed, goals with a date, and cook once, eat twice (docs/PRODUCT-STRATEGY.md). The full
+     list of what's here, with arguments and an example of each, is the API block after this section.
+     Every planner here uses quiet time only: open gaps, and soft time that's yours or open (free time
+     last), on the 15 minute grid, and every placement is checked with canPlace to push nothing. Locked
+     blocks never move, and neither does anything else. */
+  const SLOTS = ['breakfast', 'lunch', 'dinner'];
+  const NOT_COOKING = ['out', 'order', 'skip', 'leftovers'];
+  /* the parts of a day, as presetSlot has them, in minutes of the day */
+  const PART_SPAN = { morning: [0, 720], afternoon: [720, 1080], evening: [1080, 1440], any: [0, 1440] };
+  const ceilGrid = (m) => Math.ceil(m / STEP) * STEP;
+  const floorGrid = (m) => Math.floor(m / STEP) * STEP;
+  const minDate = (a, b) => (a < b ? a : b);
+  const maxDate = (a, b) => (a > b ? a : b);
+  const lcFirst = (s) => (s && s.length > 1 && s[1] === s[1].toLowerCase() ? s[0].toLowerCase() + s.slice(1) : s);
+  const capFirst = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  /* 'today', 'tomorrow', a weekday this week, or a date */
+  function dayWord(date, today) {
+    const n = diffDays(today, date);
+    if (n === 0) return 'today';
+    if (n === 1) return 'tomorrow';
+    if (n > 1 && n < 7) return DAY_LONG[weekday(date)];
+    return dateText(date);
+  }
+  const onDay = (date, today) => { const w = dayWord(date, today); return w === 'today' || w === 'tomorrow' ? w : 'on ' + w; };
+  const doneBy = (date, today) => (date === today ? 'today' : 'by ' + dayWord(date, today));
+  /* 15 minutes, 1 h 15 min (spreading); 45 min, 2 h, 2.5 h (goals) */
+  const minutesText = (m) => (m < 60 ? m + (m === 1 ? ' minute' : ' minutes') : dur(m));
+  const hoursText = (m) => (m < 60 ? Math.round(m) + ' min' : hours(m));
+  const joinWords = (list) => (list.length <= 1 ? list.join('') : list.length === 2 ? list[0] + ' and ' + list[1] : list.slice(0, -1).join(', ') + ', and ' + list[list.length - 1]);
+  const partOf = (start) => (start < 720 ? 'morning' : start < 1080 ? 'afternoon' : 'evening');
+
+  /* == V11 goals: quiet time ==
+     A soft block that's yours or open (Creative projects, Breathing room, a Free evening) makes room
+     without moving; Work, an evening with someone, and everything hard don't. */
+  const quietBlock = (b) => !!b.soft && !b.sleep && (b.cat === 'yours' || b.cat === 'open');
+  /* The quiet stretches of a date inside a part of the day, from `after` on, snapped to the grid:
+     [{ start, end, free }] (free: inside time kept free on purpose). Trips have none. */
+  function quietWindows(state, date, when, after) {
+    if (tripOn(state, date)) return [];
+    const span = PART_SPAN[when] || PART_SPAN.any;
+    const lo = Math.max(span[0], after || 0), hi = span[1];
+    if (hi - lo < STEP) return [];
+    const day = calendarDay(state, date);
+    const pieces = [];
+    let c = lo;
+    for (const b of day.blocks.filter((x) => x.start < hi && x.start + x.dur > lo).sort(byStart)) {
+      const s = Math.max(lo, b.start), e = Math.min(hi, b.start + b.dur);
+      if (s > c) pieces.push({ start: c, end: s, free: false });
+      if (quietBlock(b) && e > Math.max(s, c)) pieces.push({ start: Math.max(s, c), end: e, free: !!b.free });
+      c = Math.max(c, e);
+    }
+    if (c < hi) pieces.push({ start: c, end: hi, free: false });
+    const merged = [];
+    for (const p of pieces) {
+      const last = merged[merged.length - 1];
+      if (last && last.end >= p.start && last.free === p.free) last.end = Math.max(last.end, p.end);
+      else merged.push(Object.assign({}, p));
+    }
+    return merged.map((w) => ({ start: ceilGrid(w.start), end: floorGrid(w.end), free: w.free })).filter((w) => w.end - w.start >= STEP);
+  }
+  /* the parts of the day to try, in order: the one asked for, then the rest (strict: only that one) */
+  const partsFor = (when, strict) => (!when || when === 'any' ? ['any'] : strict ? [when] : [when, 'afternoon', 'morning', 'evening'].filter((v, i, a) => a.indexOf(v) === i));
+  /* the windows of a part, and the runs they make where open time meets free time */
+  function quietRuns(state, date, part, after) {
+    const ws = quietWindows(state, date, part, after), runs = [];
+    for (const w of ws) {
+      const last = runs[runs.length - 1];
+      if (last && last.end >= w.start) last.end = w.end; else runs.push({ start: w.start, end: w.end });
+    }
+    return { ws, runs };
+  }
+  /* where to look, in order: the open windows first, then every run, free time and all */
+  function windowsInOrder(state, date, part, after) {
+    const q = quietRuns(state, date, part, after);
+    return q.ws.filter((w) => !w.free).concat(q.runs);
+  }
+  /* The first start on `date` where `len` minutes fit in quiet time and nothing moves, or null.
+     opts: { when: 'any' | 'morning' | 'afternoon' | 'evening', strict, after (minute) } */
+  function quietSlot(state, date, len, opts) {
+    const o = opts || {}, d15 = gridDur(len);
+    for (const part of partsFor(o.when, o.strict)) {
+      for (const w of windowsInOrder(state, date, part, o.after)) {
+        for (let s = w.start; s + d15 <= w.end; s += STEP) {
+          const r = canPlace(state, date, d15, s);
+          if (r.ok && !(r.pushes || []).length && r.date === date) return s;
+        }
+      }
+    }
+    return null;
+  }
+  /* is [start, start + len) quiet on `date`, with nothing to move? */
+  function quietAt(state, date, len, start, after) {
+    const d15 = gridDur(len);
+    if (start < (after || 0)) return false;
+    if (!quietRuns(state, date, 'any', 0).runs.some((w) => w.start <= start && start + d15 <= w.end)) return false;
+    const r = canPlace(state, date, d15, start);
+    return r.ok && !(r.pushes || []).length && r.date === date;
+  }
+  /* put an add on a date at a start already found quiet (no pushes to apply) */
+  function putAdd(state, date, add, start) {
+    const dd = dateRec(state, date);
+    dd.adds = dd.adds || [];
+    const a = Object.assign({}, add, { id: add.id || newId('a'), start, dur: gridDur(add.dur) });
+    dd.adds.push(a);
+    return a;
+  }
+  const easyDay = (state, date) => !!(state.dates[date] && state.dates[date].preset === 'easy');
+
+  /* == V11 goals: breaking it down ==
+     The library (Data.BREAKDOWNS) first, then rules that read the verb and the thing in the name, then
+     Data.BREAKDOWN_ANY. The rules know clean, write, email, text, study, read, fix, plan, buy, call,
+     organize, learn, practice, pack, cook, and prep; a room, the whole house, or a count (3 chapters,
+     5 thank you notes) shapes the steps. */
+  const FN_WORDS = new Set(['the', 'a', 'an', 'my', 'our', 'your', 'his', 'her', 'their', 'to', 'for', 'of', 'up', 'out', 'on', 'in', 'with', 'and', 'at', 'by', 'from', 'off', 'down', 'into', 'about']);
+  const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /* lowercase words with single spaces and a space at each end; kid's room is kid room */
+  const bdNorm = (s) => ' ' + String(s || '').toLowerCase().replace(/[’‘`]/g, '\'').replace(/'s\b/g, '').replace(/s'(?=\s|$)/g, 's').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+  /* a word and its usual endings: clean, cleans, cleaned, cleaning; tidy, tidies; shop, shopping */
+  function wordRx(w) {
+    if (FN_WORDS.has(w) || /\d/.test(w)) return reEsc(w);
+    if (/[^aeiou]y$/.test(w)) return reEsc(w.slice(0, -1)) + '(?:y|ies|ied|ying)';
+    if (/e$/.test(w)) return reEsc(w.slice(0, -1)) + '(?:e|es|ed|ing|er|ers)';
+    if (/^[^aeiou]*[aeiou][^aeiouwxy]$/.test(w)) return reEsc(w) + '(?:s|es|ed|ing|ers?|' + w.slice(-1) + '(?:ed|ing|ers?))?';
+    return reEsc(w) + '(?:s|es|ed|ing|ers?)?';
+  }
+  const rxCache = new Map();
+  function phraseIn(n, phrase) {
+    const p = phrase.replace(/^~/, '');
+    let r = rxCache.get(p);
+    if (!r) { r = new RegExp(' ' + bdNorm(p).trim().split(' ').filter(Boolean).map(wordRx).join(' ') + ' '); rxCache.set(p, r); }
+    return r.test(n);
+  }
+  /* the verbs the rules read, by any of their usual endings */
+  const VERB_OF = {
+    clean: 'clean', tidy: 'clean', scrub: 'clean', wipe: 'clean', straighten: 'clean',
+    write: 'write', draft: 'write', email: 'email', text: 'text',
+    study: 'study', review: 'study', revise: 'study', cram: 'study', memorize: 'study',
+    read: 'read', reread: 'read', fix: 'fix', repair: 'fix', patch: 'fix', mend: 'fix',
+    plan: 'plan', schedule: 'plan', book: 'plan', arrange: 'plan', research: 'plan', figure: 'plan',
+    buy: 'buy', purchase: 'buy', order: 'buy', shop: 'buy', call: 'call', phone: 'call', ring: 'call',
+    organize: 'organize', organise: 'organize', sort: 'organize', declutter: 'organize', rearrange: 'organize',
+    learn: 'learn', practice: 'practice', practise: 'practice', rehearse: 'practice',
+    pack: 'pack', cook: 'cook', bake: 'cook', prep: 'prep', prepare: 'prep'
+  };
+  const FILLER = new Set(['to', 'go', 'need', 'needs', 'have', 'has', 'got', 'must', 'should', 'finally', 'start', 'finish', 'try', 'i', 'we', 'let', 'lets', 'please', 'quick', 'quickly']);
+  const FOOD = /^(dinner|lunch|breakfast|brunch|soup|chili|stew|pasta|pizza|tacos|salad|curry|meal|meals|food|dessert|pie|bread|cookies|cake|muffins|eggs)$/;
+  function verbOf(tok) {
+    const t = tok.toLowerCase().replace(/[^a-z]/g, '');
+    const tries = [t, t.replace(/s$/, ''), t.replace(/es$/, ''), t.replace(/ing$/, ''), t.replace(/ing$/, 'e'), t.replace(/(.)\1ing$/, '$1'), t.replace(/ed$/, ''), t.replace(/ed$/, 'e'), t.replace(/(.)\1ed$/, '$1'), t.replace(/ies$/, 'y'), t.replace(/ied$/, 'y'), t.replace(/ying$/, 'y')];
+    for (const x of tries) if (x && VERB_OF[x]) return VERB_OF[x];
+    return null;
+  }
+  /* the verb in the first words of a name, and what comes after it, as typed: { verb, x, at } or null */
+  function readVerb(name) {
+    const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+    for (let i = 0; i < Math.min(words.length, 4); i++) {
+      const low = words[i].toLowerCase().replace(/[^a-z]/g, '');
+      if (FILLER.has(low)) continue;
+      let verb = verbOf(words[i]);
+      if (!verb && /^mak(e|es|ing)$/.test(low) && words[i + 1] && FOOD.test(words[i + 1].toLowerCase().replace(/[^a-z]/g, ''))) verb = 'cook';
+      if (!verb) return null;
+      let rest = words.slice(i + 1);
+      while (rest.length && /^(up|out|through|over|for|about|down|off)$/i.test(rest[0])) rest = rest.slice(1);
+      const x = rest.join(' ').replace(/[.,;:!?]+$/, '').trim() || null;
+      /* getting ready for a test is studying */
+      if (verb === 'prep' && x && /\b(test|exam|quiz|midterm|final)/i.test(x)) verb = 'study';
+      return { verb, x, at: i };
+    }
+    return null;
+  }
+  const NUMS = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+  const ORD = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
+  /* "3 chapters", "five thank you notes": { n, noun } for 2 or more */
+  function countIn(x) {
+    const m = /^(\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(.+)$/i.exec(x || '');
+    if (!m) return null;
+    const n = /^\d+$/.test(m[1]) ? +m[1] : NUMS[m[1].toLowerCase()];
+    return n >= 2 && n <= 500 ? { n, noun: m[2].toLowerCase() } : null;
+  }
+  const HOME_X = /^(?:the |my |our )?(?:whole |entire )?(?:house|home|apartment|flat|place|condo)$/i;
+  const bs = (name, len, sub) => (sub ? { name, dur: len, sub: sub.map(([n, d, w]) => (w ? { name: n, dur: d, whole: true } : { name: n, dur: d })) } : { name, dur: len });
+  const bw = (name, len) => ({ name, dur: len, whole: true });
+  /* a count in chunks that fit: the first 2, 2 more, the last one */
+  function countSteps(q, per, verbWord, head, tail) {
+    const k = Math.max(1, Math.floor(30 / per)), chunks = Math.ceil(q.n / k), out = head.slice();
+    for (let i = 0; i < chunks; i++) {
+      const size = Math.min(k, q.n - i * k);
+      const what = i === 0 ? (size === 1 ? 'the first one' : 'the first ' + size) : i === chunks - 1 ? (size === 1 ? 'the last one' : 'the last ' + size) : size === 1 ? 'the next one' : size + ' more';
+      out.push(bs(verbWord + ' ' + what, size * per));
+    }
+    return out.concat(tail);
+  }
+  const ROOMS = ['kitchen', 'bathroom', 'living room', 'bedrooms'];
+  const roomSteps = (verbWord, per, head, tail) => head.concat(ROOMS.map((r) => bs(verbWord + ' the ' + r, per)), tail);
+  function ruleSteps(verb, x, q) {
+    const home = !!x && HOME_X.test(x);
+    switch (verb) {
+      case 'clean':
+        if (home) return roomSteps('Clean', 25, [bs('Do a quick lap with a trash bag', 10)], [bs('Take out the trash', 5)]);
+        if (q && /^rooms?\b/.test(q.noun) && q.n <= 12) return [bs('Pick the room to start with', 5)].concat(ORD.slice(0, q.n).map((o) => bs('Clean the ' + o + ' room', 20)));
+        return x ? [bs('Gather what you need to clean ' + x, 5), bs('Clear it off and pick up', 10), bs('Wipe or scrub it down', 20), bs('Sweep or vacuum', 10), bs('Put things back', 10)]
+          : [bs('Pick up the clutter', 10), bs('Wipe the counters', 15), bs('Vacuum or sweep', 20), bs('Take out the trash', 5)];
+      case 'write':
+        if (q) return countSteps(q, 10, 'Write', [bs('Get the list, the paper, and a pen', 5)], [bs('Send them or mail them', 10)]);
+        return [bs(x ? 'Jot down what ' + x + ' needs to say' : 'Jot down the main points', 10), bs('Write a rough draft', 30, [['Write the first half', 15], ['Write the second half', 15]]), bs('Read it over and fix what’s off', 15), bs('Send it or turn it in', 5)];
+      case 'email':
+        if (q) return countSteps(q, 10, 'Answer', [bs('Make a list of who needs an answer', 5)], [bs('Archive what’s done', 5)]);
+        return [bs('Jot down what to say', 5), bs('Write the email' + (x ? ' to ' + x : ''), 15), bs('Read it over and send it', 5)];
+      case 'text':
+        return [bs('Write the text' + (x ? ' to ' + x : ''), 5), bs('Send it', 5)];
+      case 'study':
+        if (q && /^chapters?\b/.test(q.noun) && q.n <= 12) return [bs('Gather your notes and set a timer', 5)].concat(Array.from({ length: q.n }, (_, i) => bs('Study chapter ' + (i + 1), 30, [['Read chapter ' + (i + 1), 15], ['Note the key points', 15]])), [bs('Do practice questions', 20)]);
+        return [bs(x ? 'Gather your notes for ' + x : 'Gather your notes and set a timer', 5), bs('Review the material', 30, [['Review the first half', 15], ['Review the second half', 15]]), bs('Do practice questions', 25, [['Do a few practice questions', 15], ['Do a few more', 10]]), bs('Go over what you missed', 15)];
+      case 'read': {
+        if (q && /^pages?\b/.test(q.noun)) {
+          const out = [bs('Find your place and get comfortable', 5)], per = 12;
+          for (let p = 1; p <= q.n && out.length < 40; p += per) { const to = Math.min(q.n, p + per - 1); out.push(bs('Read pages ' + p + ' to ' + to, Math.max(5, Math.round((to - p + 1) * 2 / 5) * 5))); }
+          return out.concat([bs('Jot down what stuck', 5)]);
+        }
+        if (q && /^chapters?\b/.test(q.noun)) {
+          const out = [bs('Find your place and get comfortable', 5)], k = q.n > 12 ? Math.ceil(q.n / 12) : 1;
+          for (let c = 1; c <= q.n; c += k) { const to = Math.min(q.n, c + k - 1); out.push(c === to ? bs('Read chapter ' + c, 30) : bs('Read chapters ' + c + ' to ' + to, 30 * (to - c + 1))); }
+          return out.concat([bs('Jot down what stuck', 5)]);
+        }
+        return [bs('Find your place and get comfortable', 5), bs('Read for 25 minutes', 25), bs('Read for 25 more minutes', 25), bs('Jot down what stuck', 5)];
+      }
+      case 'fix':
+        return [bs('Look at what’s wrong' + (x ? ' with ' + x : ''), 10), bs('Look up how to fix it', 15), bs('Get the parts or tools', 30, [['List the parts and tools', 10], ['Get them', 20, true]]), bs('Fix it', 30, [['Start the fix', 15], ['Finish the fix', 15]]), bs('Test that it works', 5)];
+      case 'plan':
+        return [bs('Write down what you want' + (x ? ' from ' + x : ''), 10), bs('Look at options', 20), bs('Pick one', 10), bs('Book it or set it up', 15), bs('Tell whoever needs to know', 5)];
+      case 'buy':
+        return [bs('Decide what you need', 10), bs('Compare a few options', 15), bs('Order it or buy it', 15), bs('Put it away or set it up', 10)];
+      case 'call':
+        if (q) return countSteps(q, 10, 'Call', [bs('List who to call and their numbers', 5)], [bs('Write down what each one said', 5)]);
+        return [bs('Find the number and what to say', 5), bw('Call' + (x ? ' ' + x : ''), 20), bs('Write down what you agreed', 5)];
+      case 'organize':
+        if (home) return roomSteps('Organize', 45, [bs('Pick the room that bugs you most', 5)], [bw('Drop off the give away pile', 20)]);
+        return [bs('Pick one small corner' + (x ? ' of ' + x : '') + ' to start', 5), bs('Take everything out', 15), bs('Sort into keep, give away, and trash', 20), bs('Put back what you keep', 15), bw('Drop off the give away pile', 20)];
+      case 'learn':
+        return [bs('Find one good place to learn ' + (x || 'it') + ' from', 10), bs('Learn the basics', 30, [['Do the first lesson', 15], ['Try the first exercise', 15]]), bs('Practice what you learned', 20), bs('Try it on something real', 20)];
+      case 'practice':
+        return [bs('Set up and warm up', 5), bs('Practice the hard part', 20), bs('Practice the whole thing', 20), bs('Note what to work on next', 5)];
+      case 'pack':
+        return [bs('Make a list', 10), bs('Gather everything in one place', 15), bs('Pack it', 20), bs('Check the list', 5)];
+      case 'cook':
+        return [bs('Check you have what you need', 5), bs('Prep the ingredients', 15), bw('Cook' + (x ? ' ' + x : ''), 30), bs('Clean up', 15)];
+      case 'prep':
+        return [bs('Pick what to make', 10), bs('Shop for it', 45, [['Write the list', 10], ['Shop', 35, true]]), bs('Cook the batch', 60, [['Start the rice or grains', 10], ['Cook the protein', 30, true], ['Chop the vegetables', 20]]), bs('Portion it into containers', 15), bs('Clean up', 15)];
+    }
+    return null;
+  }
+  /* The best library entry for a name: the longest phrase that matches. A weak word (~) counts only
+     with no verb, or with the entry's own verb. */
+  function libraryMatch(n, verb, Data) {
+    let best = null;
+    (Data.BREAKDOWNS || []).forEach((e, i) => {
+      let score = 0;
+      for (const w of e.words) {
+        if (!phraseIn(n, w)) continue;
+        const weak = w[0] === '~';
+        if (weak && verb && e.verb !== verb) continue;
+        score = Math.max(score, (weak ? 0 : 1000) + w.length);
+      }
+      if (score && (!best || score > best.score)) best = { e, score, i };
+    });
+    return best ? best.e : null;
+  }
+  /* sizes: small expands sub steps and cuts anything over 20 minutes; big merges into four at most */
+  function cutStep(s) {
+    if (s.whole || s.dur <= 20) return [{ name: s.name, dur: s.dur, whole: s.whole }];
+    const n = Math.ceil(s.dur / 20), base = Math.floor(s.dur / n / 5) * 5;
+    let extra = s.dur - base * n;
+    return Array.from({ length: n }, (_, i) => {
+      const d = base + (extra > 0 ? 5 : 0);
+      extra -= extra > 0 ? 5 : 0;
+      return { name: s.name + (n === 2 ? (i ? ', second half' : ', first half') : ', part ' + (i + 1) + ' of ' + n), dur: d };
+    });
+  }
+  function mergeName(list) {
+    const names = list.map((s, i) => (i ? lcFirst(s.name) : s.name));
+    if (names.length <= 3) return joinWords(names);
+    return names[0] + ', ' + names[1] + ', and ' + (names.length - 2) + ' more';
+  }
+  function sizeSteps(steps, size) {
+    if (size === 'small') {
+      const out = [];
+      for (const s of steps) for (const x of (s.sub && s.sub.length ? s.sub : [s])) out.push(...cutStep(x));
+      return out;
+    }
+    const flat = steps.map((s) => ({ name: s.name, dur: s.dur, whole: s.whole }));
+    if (size !== 'big' || flat.length <= 4) return flat;
+    /* the starter stays on its own; the rest go into three runs of about the same length */
+    const head = flat[0], rest = flat.slice(1), total = rest.reduce((a, s) => a + s.dur, 0), G = 3, groups = [];
+    let i = 0, cum = 0;
+    for (let g = 1; g <= G; g++) {
+      if (g === G) { groups.push(rest.slice(i)); break; }
+      const target = total * g / G, start = i;
+      cum += rest[i].dur; i++;
+      while (i < rest.length - (G - g) && Math.abs(cum + rest[i].dur - target) <= Math.abs(cum - target)) { cum += rest[i].dur; i++; }
+      groups.push(rest.slice(start, i));
+    }
+    return [head].concat(groups.filter((x) => x.length).map((x) => ({ name: mergeName(x), dur: x.reduce((a, s) => a + s.dur, 0) })));
+  }
+  /* the first step is 10 minutes or less: a longer one splits off its first 10 minutes */
+  function starterFirst(steps) {
+    const f = steps[0];
+    if (!f || f.dur <= 10) return steps;
+    if (f.whole) return [{ name: 'Get what you need for it', dur: 5 }].concat(steps);
+    return [{ name: f.name + ', first 10 minutes', dur: 10 }, { name: f.name + ', the rest', dur: f.dur - 10 }].concat(steps.slice(1));
+  }
+  function breakdown(name, opts, Data) {
+    const o = opts || {}, D = Data || {};
+    const n = bdNorm(name), v = readVerb(name);
+    const entry = libraryMatch(n, v && v.verb, D);
+    let steps = null, source = 'rules', match = null;
+    if (entry) { steps = entry.steps; source = 'library'; match = entry.id; }
+    if (!steps && v) { steps = ruleSteps(v.verb, v.x, countIn(v.x)); match = v.verb + (v.x ? ' ' + v.x : ''); }
+    if (!steps) steps = D.BREAKDOWN_ANY || [{ name: 'Write down what done looks like', dur: 5 }, { name: 'Do the first part', dur: 25 }, { name: 'Finish it and put things away', dur: 20 }];
+    /* a step about a partner or a kid only where there is one (kids or partner false, or 0, or '') */
+    const noKid = o.kids === false || o.kids === 0, noPartner = o.partner === false || o.partner === '';
+    const keep = (s) => !(noKid && /\{kid\}/.test(s.name)) && !(noPartner && /\{partner\}/.test(s.name));
+    steps = clone(steps).filter(keep).map((s) => (s.sub ? Object.assign(s, { sub: s.sub.filter(keep) }) : s));
+    const out = starterFirst(sizeSteps(steps, o.size || 'medium')).map((s) => ({ name: s.name, dur: s.dur }));
+    return { steps: out, total: out.reduce((a, s) => a + s.dur, 0), source, match };
+  }
+  /* an exam from Data.EXAMS: the longest phrase, or a short name in capitals (SAT, ACT) */
+  function examMatch(name, Data) {
+    const n = bdNorm(name), raw = String(name || '');
+    let best = null;
+    for (const e of (Data && Data.EXAMS) || []) {
+      let score = 0;
+      for (const w of e.words) if (phraseIn(n, w)) score = Math.max(score, w.length);
+      for (const c of e.caps || []) if (new RegExp('(^|[^A-Za-z])' + c + '([^A-Za-z]|$)').test(raw)) score = Math.max(score, c.length);
+      if (score && (!best || score > best.score)) best = { e, score };
+    }
+    return best ? best.e : null;
+  }
+  /* exams, certifications, races, theses, launches: something with a date that takes weeks */
+  function looksLikeGoal(name, Data) {
+    const n = bdNorm(name);
+    if (!n.trim()) return false;
+    if (examMatch(name, Data)) return true;
+    const first = n.trim().split(' ')[0];
+    if (!((Data && Data.GOAL_WORDS) || []).some((w) => phraseIn(n, w) && !(w === 'test' && first === 'test'))) return false;
+    return !((Data && Data.GOAL_NOT) || []).some((w) => phraseIn(n, w));
+  }
+  /* parts for a goal: an exam's subjects, or a start for a project, a skill, a race, or an event */
+  function goalForExam(name, Data) {
+    const typed = String(name || '').trim(), e = examMatch(name, Data);
+    const mins = (list) => list.map(([nm, h]) => ({ name: nm, min: Math.round(h * 60) }));
+    if (e) return { name: typed, exam: e.name, kind: 'exam', cat: 'work', parts: mins(e.parts), hours: e.hours, note: e.hours ? 'About ' + e.hours + ' hours is a common estimate.' : '', source: 'exam', match: e.id };
+    const n = bdNorm(name), list = (Data && Data.GOAL_TEMPLATES) || [];
+    let best = null;
+    for (const t of list) {
+      let score = 0;
+      for (const w of t.words) if (phraseIn(n, w)) score = Math.max(score, w.length);
+      if (score && (!best || score > best.score)) best = { t, score };
+    }
+    const t = best ? best.t : list.find((x) => x.id === 'other') || { id: 'other', kind: 'other', parts: [] };
+    return { name: typed, exam: null, kind: t.kind, cat: 'yours', parts: mins(t.parts), hours: null, note: '', source: 'template', match: t.id };
+  }
+
+  /* == V11 goals: spreading it out ==
+     A to-do's steps go over the days before it's due, a little each day, under a cap. Housework spreads
+     15 minutes a day by default and everything else 30. */
+  const HOUSEWORK = /\b(clean|cleans|cleaning|tidy|tidying|vacuum|vacuuming|dust|dusting|mop|mopping|sweep|scrub|wipe|laundry|dishes|declutter|decluttering|chores|housework|kitchen|bathrooms?|bedroom|my room|closet|garage|fridge|fold|ironing|sheets|windows|trash|yard|rake|mow|weeds?|gutters)\b/i;
+  const spreadCap = (name) => (HOUSEWORK.test(String(name || '')) ? 15 : 30);
+  const dayRule = (days) => (Array.isArray(days) ? (wd) => days.includes(wd) : days === 'weekdays' ? (wd) => wd >= 1 && wd <= 5 : days === 'weekends' ? (wd) => wd === 0 || wd === 6 : () => true);
+  function spreadOpts(t, opts, today) {
+    const o = Object.assign({}, t.spread || {}, opts || {});
+    const from = o.from && o.from > today ? o.from : today;
+    return { days: o.days || 'daily', cap: Math.max(STEP, Number(o.cap) || spreadCap(t.name)), when: PART_SPAN[o.when] ? o.when : 'any', from, by: o.by || t.due || addDays(from, 6) };
+  }
+  /* how many days of `cap` minutes some steps need, in order, a long one on a day of its own */
+  function daysFor(lens, cap) {
+    let n = 0, cur = Infinity;
+    for (const d of lens) {
+      if (cur + d <= cap) cur += d;
+      else { n++; cur = d > cap ? Infinity : d; }
+    }
+    return n;
+  }
+  function shortText(n, by, today) {
+    if (by < today) return 'Its due date has gone by. Pick a day to be done by.';
+    const more = n === 1 ? 'one more day' : n + ' more days';
+    if (by === today) return 'This needs ' + more + ' after today.';
+    return 'This needs ' + more + (n === 1 ? ' than is' : ' than are') + ' left before ' + dayWord(by, today) + '.';
+  }
+  function spreadPlan(state, taskId, opts, today, nowMin) {
+    const t = state.tasks.find((x) => x.id === taskId);
+    const o = t ? spreadOpts(t, opts, today) : null;
+    const res = { ok: false, days: [], unplaced: [], need: 0, room: 0, by: o ? o.by : null, message: '', opts: o, today, nowMin: nowMin == null ? null : nowMin };
+    if (!t) return Object.assign(res, { message: 'That to-do is gone.' });
+    if (!(t.steps || []).length) return Object.assign(res, { message: 'Break it into steps first, then spread them out.' });
+    const open = t.steps.filter((s) => !s.done);
+    if (t.done || !open.length) return Object.assign(res, { ok: true, message: 'Every step is done.' });
+    const now = nowMin == null ? 0 : nowMin;
+    const pl = placements(state).get(t.id) || [];
+    const ahead = (p) => windowTime(today, p.date, p.add.start) + p.add.dur > now;
+    /* steps with a time still ahead stay where they are; the rest need one */
+    const todo = open.filter((s) => !pl.some((p) => p.step === s.id && ahead(p)));
+    if (!todo.length) return Object.assign(res, { ok: true, message: 'Every step already has a time.' });
+    const moving = new Set(todo.map((s) => s.id));
+    const used = {}, replaces = {};
+    const sim = clone(state);
+    pl.forEach((p) => {
+      if (p.step && moving.has(p.step)) { (replaces[p.step] = replaces[p.step] || []).push(p.add.id); removeAdd(sim, p.add.id); return; }
+      used[p.date] = (used[p.date] || 0) + p.add.dur;
+    });
+    const allowed = dayRule(o.days), days = [];
+    for (let d = o.from; d <= o.by && days.length < 366; d = addDays(d, 1)) if (allowed(weekday(d)) && !tripOn(state, d) && !easyDay(state, d)) days.push(d);
+    const startOf = (d) => (d === today ? ceilGrid(now) : 0);
+    res.need = todo.reduce((a, s) => a + gridDur(s.dur), 0);
+    res.room = withRecMemo(state, () => days.reduce((a, d) => a + Math.max(0, Math.min(o.cap - (used[d] || 0), quietMinutes(state, d, 'any', startOf(d)))), 0));
+    const items = [];
+    let di = 0, lastEnd = null;
+    for (const s of todo) {
+      const len = gridDur(s.dur);
+      let put = null;
+      for (let k = di; k < days.length && !put; k++) {
+        const d = days[k], u = used[d] || 0;
+        if (!(u + len <= o.cap || (u === 0 && len > o.cap))) continue;
+        const at = quietSlot(sim, d, len, { when: o.when, after: Math.max(startOf(d), k === di && lastEnd != null ? lastEnd : 0) });
+        if (at == null) continue;
+        putAdd(sim, d, { name: s.name, cat: t.cat, icon: t.icon, dur: len, src: { type: 'step', task: t.id, id: s.id } }, at);
+        used[d] = u + len;
+        put = { date: d, step: s.id, name: s.name, start: at, dur: len, part: partOf(at), replaces: replaces[s.id] || [] };
+        di = k; lastEnd = at + len;
+      }
+      if (put) items.push(put); else res.unplaced.push(s.id);
+    }
+    items.forEach((it) => {
+      let day = res.days[res.days.length - 1];
+      if (!day || day.date !== it.date) { day = { date: it.date, items: [] }; res.days.push(day); }
+      day.items.push({ step: it.step, name: it.name, start: it.start, dur: it.dur, part: it.part, replaces: it.replaces });
+    });
+    res.ok = !res.unplaced.length;
+    const total = items.reduce((a, x) => a + x.dur, 0), last = res.days.length ? res.days[res.days.length - 1].date : null;
+    if (res.ok) {
+      const steps = items.length === 1 ? 'One step' : items.length + ' steps';
+      res.message = res.days.length === 1 ? steps + ' ' + onDay(last, today) + ', ' + minutesText(total) + '.'
+        : steps + ' over ' + res.days.length + ' days, about ' + minutesText(Math.max(5, Math.round(total / res.days.length / 5) * 5)) + ' a day, done ' + doneBy(last, today) + '.';
+    } else {
+      const lens = res.unplaced.map((id) => gridDur((t.steps.find((s) => s.id === id) || {}).dur));
+      res.message = shortText(Math.max(1, daysFor(lens, o.cap)), o.by, today);
+    }
+    return res;
+  }
+  /* Place a plan from spreadPlan (re-checking each time: a spot taken since goes to the next quiet one
+     that day) and keep how it was spread on the to-do (task.spread). Returns how many steps were placed. */
+  function applySpread(state, taskId, plan, opts) {
+    const t = state.tasks.find((x) => x.id === taskId);
+    if (!t || !plan) return 0;
+    const today = plan.today || todayIso(), now = plan.nowMin == null ? 0 : plan.nowMin;
+    const o = Object.assign({}, plan.opts || spreadOpts(t, opts, today), opts || {});
+    const pl = placements(state).get(t.id) || [];
+    const ahead = (id) => pl.some((p) => p.step === id && windowTime(today, p.date, p.add.start) + p.add.dur > now);
+    let n = 0;
+    for (const day of plan.days || []) {
+      let after = day.date === today ? ceilGrid(now) : 0;
+      for (const it of day.items || []) {
+        const s = (t.steps || []).find((x) => x.id === it.step);
+        if (!s || s.done || ahead(s.id)) continue;
+        (it.replaces || []).forEach((id) => removeAdd(state, id));
+        const add = { name: s.name, cat: t.cat, icon: t.icon, dur: gridDur(it.dur || s.dur), src: { type: 'step', task: t.id, id: s.id } };
+        let at = it.start >= after && quietAt(state, day.date, add.dur, it.start, after) ? it.start : null;
+        if (at == null) at = quietSlot(state, day.date, add.dur, { when: o.when, after });
+        if (at == null) continue;
+        putAdd(state, day.date, add, at);
+        after = at + add.dur;
+        n++;
+      }
+    }
+    t.spread = { days: o.days || 'daily', cap: o.cap || spreadCap(t.name), when: o.when || 'any' };
+    if (o.by && o.by !== t.due) t.spread.by = o.by;
+    return n;
+  }
+
+  /* == V11 goals: finding new times == */
+  /* Open steps whose every time has gone by: [{ task, step, name, date, start, dur, add }] */
+  function missedSteps(state, today, nowMin) {
+    const pl = placements(state), now = nowMin == null ? 0 : nowMin, out = [];
+    for (const t of state.tasks) {
+      if (t.done || t.archived) continue;
+      const where = pl.get(t.id) || [];
+      for (const s of t.steps || []) {
+        if (s.done) continue;
+        const mine = where.filter((p) => p.step === s.id);
+        if (!mine.length || mine.some((p) => windowTime(today, p.date, p.add.start) + p.add.dur > now)) continue;
+        const last = mine.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.add.start - a.add.start))[0];
+        out.push({ task: t.id, step: s.id, name: s.name, date: last.date, start: last.add.start, dur: last.add.dur, add: last.add.id });
+      }
+    }
+    return out;
+  }
+  /* A to-do's missed steps move forward, the way it was spread (task.spread, or the default): a missed
+     step takes the next day's room and later steps slide a day when their day would go over its cap.
+     Steps that can't fit by the date come off the board and are named in unplaced, so no day goes over.
+     A step you pinned stays put. Calling it again moves nothing: nothing is missed any more.
+     opts.preview: work it out without changing the board. */
+  function reflowTask(state, taskId, today, nowMin, opts) {
+    const st = opts && opts.preview ? clone(state) : state;
+    const res = { moved: [], unplaced: [], message: '' };
+    const t = st.tasks.find((x) => x.id === taskId);
+    if (!t || t.done) return res;
+    const now = nowMin == null ? 0 : nowMin;
+    const pl = placements(st).get(t.id) || [];
+    const isAhead = (p) => windowTime(today, p.date, p.add.start) + p.add.dur > now;
+    const byTime = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.add.start - b.add.start);
+    const info = (t.steps || []).filter((s) => !s.done).map((s) => {
+      const mine = pl.filter((p) => p.step === s.id), ahead = mine.filter(isAhead).sort(byTime)[0] || null;
+      return { s, mine, ahead, missed: mine.length && !ahead ? mine.slice().sort(byTime).pop() : null };
+    });
+    if (!info.some((x) => x.missed)) return res;
+    const sp = spreadOpts(t, null, today);
+    const lastAhead = pl.filter(isAhead).map((p) => p.date).sort().pop() || null;
+    let by = (t.spread && t.spread.by) || t.due || maxDate(lastAhead || today, addDays(today, 6));
+    const late = by < today;
+    if (late) by = addDays(today, 13);
+    /* the steps that can move: the missed ones and the ones ahead that weren't pinned, in order */
+    const seq = info.filter((x) => x.missed || (x.ahead && !x.ahead.add.pinned));
+    /* a missed step leaves all its times; a step ahead leaves the time it has, and may get it back */
+    const leaving = new Set();
+    seq.forEach((x) => { if (x.missed) x.mine.forEach((p) => leaving.add(p.add.id)); else leaving.add(x.ahead.add.id); });
+    const used = {};
+    pl.forEach((p) => { if (!leaving.has(p.add.id)) used[p.date] = (used[p.date] || 0) + p.add.dur; });
+    leaving.forEach((id) => removeAdd(st, id));
+    const allowed = dayRule(sp.days);
+    const okDay = (d) => allowed(weekday(d)) && !tripOn(st, d) && !easyDay(st, d);
+    const fits = (d, len) => { const u = used[d] || 0; return u + len <= sp.cap || (u === 0 && len > sp.cap); };
+    let pointer = today, lastDay = null, lastEnd = 0;
+    for (const x of seq) {
+      const len = gridDur(x.s.dur), base = x.ahead ? x.ahead.add : x.missed.add;
+      const after = (d) => Math.max(d === today ? ceilGrid(now) : 0, d === lastDay ? lastEnd : 0);
+      /* a step ahead keeps its time when its day still has room under the cap */
+      if (x.ahead && fits(x.ahead.date, len) && quietAt(st, x.ahead.date, len, base.start, after(x.ahead.date))) {
+        putAdd(st, x.ahead.date, base, base.start);
+        used[x.ahead.date] = (used[x.ahead.date] || 0) + len;
+        pointer = maxDate(pointer, x.ahead.date); lastDay = x.ahead.date; lastEnd = base.start + len;
+        continue;
+      }
+      let d = x.ahead ? maxDate(pointer, x.ahead.date) : maxDate(pointer, maxDate(today, addDays(x.missed.date, 1)));
+      let at = null;
+      for (; d <= by; d = addDays(d, 1)) {
+        if (!okDay(d) || !fits(d, len)) continue;
+        at = quietSlot(st, d, len, { when: sp.when, after: after(d) });
+        if (at != null) break;
+      }
+      if (at == null) { res.unplaced.push(x.s.id); continue; }
+      const copy = Object.assign({}, base);
+      delete copy.pinned;
+      const a = putAdd(st, d, copy, at);
+      used[d] = (used[d] || 0) + len;
+      pointer = d; lastDay = d; lastEnd = at + len;
+      res.moved.push({ step: x.s.id, name: x.s.name, from: x.ahead ? x.ahead.date : x.missed.date, to: d, start: at, add: a.id, missed: !!x.missed });
+    }
+    const missedMoves = res.moved.filter((m) => m.missed);
+    let line = '';
+    if (missedMoves.length === 1) line = missedMoves[0].name + ' moved to ' + dayWord(missedMoves[0].to, today) + '.';
+    else if (missedMoves.length > 1) {
+      const to = Array.from(new Set(missedMoves.map((m) => m.to)));
+      line = to.length === 1 ? joinWords(missedMoves.map((m, i) => (i ? lcFirst(m.name) : m.name))) + ' moved to ' + dayWord(to[0], today) + '.'
+        : missedMoves.length + ' steps moved to ' + (to.length <= 3 ? joinWords(to.sort().map((d) => dayWord(d, today))) : 'the days ahead') + '.';
+    }
+    if (res.unplaced.length) {
+      const lens = res.unplaced.map((id) => gridDur((t.steps.find((s) => s.id === id) || {}).dur));
+      line += (line ? ' ' : '') + shortText(Math.max(1, daysFor(lens, sp.cap)), late ? today : by, today);
+    } else if (line) {
+      const lastNow = (placements(st).get(t.id) || []).filter(isAhead).map((p) => p.date).sort().pop() || today;
+      line += late ? ' Done ' + doneBy(lastNow, today) + '.' : ' Still done ' + doneBy(by, today) + '.';
+    }
+    res.message = line;
+    return res;
+  }
+
+  /* == V11 goals: goals ==
+     A goal has a date, parts with minutes, and a rhythm: which days, how long on a weekday and on a
+     weekend day (wd, we: the most a day takes), when in the day, and the longest session (chunk). Its
+     sessions are adds (src { type: 'goal', id, part }); one the person dragged is pinned and stays,
+     and one that didn't happen is skipped: it stays as a record and takes no time on the board. */
+  const GOAL_KINDS = ['exam', 'project', 'skill', 'event', 'other'];
+  const GOAL_ICON = { exam: 'book', project: 'note', skill: 'star', event: 'calendar', other: 'flag' };
+  function newGoal(fields) {
+    const f = fields || {};
+    const kind = GOAL_KINDS.includes(f.kind) ? f.kind : 'other';
+    const list = Array.isArray(f.parts) && f.parts.length ? f.parts : [{ name: '', min: f.min || 0 }];
+    const r = Object.assign({ days: [0, 1, 2, 3, 4, 5, 6], wd: 60, we: 60, when: 'any', chunk: 60 }, f.rhythm || {});
+    return {
+      id: f.id || newId('g'), name: String(f.name || '').trim(), kind, date: f.date || null, start: f.start || f.today || todayIso(),
+      parts: list.map((p) => ({ id: p.id || newId('gp'), name: String(p.name || '').trim(), min: Math.max(0, Math.round(Number(p.min) || 0)), done: !!p.done })),
+      rhythm: { days: (Array.isArray(r.days) ? r.days : [0, 1, 2, 3, 4, 5, 6]).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6), wd: Math.max(0, Number(r.wd) || 0), we: Math.max(0, Number(r.we) || 0), when: PART_SPAN[r.when] ? r.when : 'any', chunk: Math.max(STEP, Number(r.chunk) || 60) },
+      cat: f.cat || (kind === 'exam' ? 'work' : 'yours'), icon: f.icon || GOAL_ICON[kind], paused: !!f.paused, archived: !!f.archived, answers: Object.assign({}, f.answers)
+    };
+  }
+  const goalOf = (state, goal) => (goal && typeof goal === 'object' ? goal : (state.goals || []).find((g) => g.id === goal) || null);
+  /* every session of a goal, in time order: [{ date, add }] */
+  function goalSessions(state, goalId) {
+    const out = [];
+    for (const date of Object.keys(state.dates)) for (const a of state.dates[date].adds || []) if (a.src && a.src.type === 'goal' && a.src.id === goalId) out.push({ date, add: a });
+    return out.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.add.start - y.add.start));
+  }
+  const goalCap = (g, date) => { const wd = weekday(date), r = g.rhythm || {}; return (r.days || []).includes(wd) ? ((wd === 0 || wd === 6 ? r.we : r.wd) || 0) : 0; };
+  /* the days a goal can use, from today (or the day it starts, if that's later) to the day before its date */
+  function goalDays(state, g, today) {
+    const out = [];
+    if (!g.date) return out;
+    for (let d = maxDate(today, g.start || today); d < g.date && out.length < 1100; d = addDays(d, 1)) if (goalCap(g, d) > 0 && !tripOn(state, d) && !easyDay(state, d)) out.push(d);
+    return out;
+  }
+  /* what a goal's sessions add up to: done (ended, not skipped) and still ahead, by part and by day */
+  function goalTally(state, g, today, nowMin) {
+    const now = nowMin == null ? 0 : nowMin, sessions = goalSessions(state, g.id);
+    const ended = (x) => windowTime(today, x.date, x.add.start) + x.add.dur <= now;
+    const t = { sessions, doneBy: {}, aheadBy: {}, spent: {}, own: {}, ended };
+    for (const x of sessions) {
+      const k = x.add.src.part || '';
+      if (x.add.skipped || ended(x)) t.spent[x.date] = (t.spent[x.date] || 0) + x.add.dur;
+      if (x.add.skipped) continue;
+      if (ended(x)) t.doneBy[k] = (t.doneBy[k] || 0) + x.add.dur;
+      else { t.aheadBy[k] = (t.aheadBy[k] || 0) + x.add.dur; t.own[x.date] = (t.own[x.date] || 0) + x.add.dur; }
+    }
+    return t;
+  }
+  const quietMinutes = (state, date, when, after) => quietWindows(state, date, when, after).reduce((a, w) => a + w.end - w.start, 0);
+  function goalProgress(state, goal, today, nowMin) {
+    const g = goalOf(state, goal);
+    if (!g) return null;
+    return withRecMemo(state, () => progressOf(state, g, today, nowMin));
+  }
+  function progressOf(state, g, today, nowMin) {
+    const now = nowMin == null ? 0 : nowMin, tl = goalTally(state, g, today, nowMin);
+    const parts = (g.parts || []).map((p) => {
+      const did = tl.doneBy[p.id] || 0;
+      return { id: p.id, name: p.name, min: p.min, done: !!p.done, doneMin: p.done ? p.min : Math.min(p.min, did), leftMin: p.done ? 0 : Math.max(0, p.min - did) };
+    });
+    const totalMin = parts.reduce((a, p) => a + p.min, 0), doneMin = parts.reduce((a, p) => a + p.doneMin, 0), leftMin = totalMin - doneMin;
+    const days = goalDays(state, g, today);
+    let capacityMin = 0;
+    for (const d of days) {
+      const room = Math.max(0, goalCap(g, d) - (tl.spent[d] || 0));
+      capacityMin += Math.min(room, floorGrid(quietMinutes(state, d, (g.rhythm || {}).when, d === today ? ceilGrid(now) : 0) + (tl.own[d] || 0)));
+    }
+    const ws = weekStart(today), we = addDays(ws, 6), week = { plannedMin: 0, doneMin: 0 };
+    let next = null;
+    for (const x of tl.sessions) {
+      if (x.add.skipped) continue;
+      if (x.date >= ws && x.date <= we) { week.plannedMin += x.add.dur; if (tl.ended(x)) week.doneMin += x.add.dur; }
+      if (!next && !tl.ended(x)) next = { date: x.date, start: x.add.start, dur: x.add.dur, name: x.add.name, part: x.add.src.part || null, add: x.add.id };
+    }
+    const behindMin = Math.max(0, leftMin - capacityMin);
+    return {
+      totalMin, doneMin, leftMin, daysLeft: g.date ? Math.max(0, diffDays(today, g.date)) : null, capacityMin, behindMin, onTrack: behindMin === 0,
+      week, nextSession: next, partsLeft: parts.filter((p) => !p.done && p.leftMin > 0).length, parts,
+      perDay: days.length ? Math.round(leftMin / days.length) : 0
+    };
+  }
+  /* Spread `total` minutes over days in proportion to each day's weight (its cap), never over a day's
+     room: the share rises evenly until it meets each day's room. Returns { alloc, short }. */
+  function evenShares(total, list) {
+    const alloc = list.map(() => 0);
+    const room = list.reduce((a, d) => a + d.c, 0);
+    if (room <= total) return { alloc: list.map((d) => d.c), short: total - room };
+    const act = list.map((d, i) => ({ i, w: d.w, c: d.c })).filter((d) => d.w > 0 && d.c > 0).sort((a, b) => a.c / a.w - b.c / b.w);
+    let rest = total, wsum = act.reduce((a, d) => a + d.w, 0);
+    for (let k = 0; k < act.length; k++) {
+      const lam = rest / wsum, d = act[k];
+      if (d.c <= lam * d.w) { alloc[d.i] = d.c; rest -= d.c; wsum -= d.w; continue; }
+      for (let j = k; j < act.length; j++) alloc[act[j].i] = lam * act[j].w;
+      break;
+    }
+    return { alloc, short: 0 };
+  }
+  /* Plan a goal's next days (opts.horizon, 14 by default): its sessions there that haven't started come
+     off, unless pinned or skipped, and what's left goes back on, spread evenly over every day it can use
+     until its date, in proportion to each day's cap, within the quiet time of the part of the day it
+     likes, in sessions no longer than its chunk, parts in order. Nothing goes on a trip day, an easy
+     day, or the goal's own date. Returns { placed, removed, shortMin, message }. */
+  function planGoal(state, goalId, today, nowMin, opts) {
+    const g = goalOf(state, goalId);
+    const res = { placed: 0, removed: 0, shortMin: 0, message: '' };
+    if (!g) return Object.assign(res, { message: 'That goal is gone.' });
+    const now = nowMin == null ? 0 : nowMin, H = Math.max(1, (opts && opts.horizon) || 14);
+    const last = g.date ? addDays(g.date, -1) : addDays(today, H - 1), hEnd = minDate(addDays(today, H - 1), last);
+    for (const x of goalSessions(state, g.id)) {
+      if (x.add.pinned || x.add.skipped || x.date < today || x.date > hEnd || windowTime(today, x.date, x.add.start) < now) continue;
+      removeAdd(state, x.add.id);
+      res.removed++;
+    }
+    if (g.archived) return res;
+    if (g.paused) return Object.assign(res, { message: 'Paused. Nothing new goes on the board.' });
+    if (!g.date) return Object.assign(res, { message: 'Give it a date to plan toward.' });
+    if (g.date <= today) return Object.assign(res, { message: g.date === today ? 'Today’s the day.' : 'Its date has gone by.' });
+    const tl = goalTally(state, g, today, nowMin);
+    const queue = (g.parts || []).map((p) => ({ p, left: p.done ? 0 : Math.max(0, p.min - (tl.doneBy[p.id] || 0) - (tl.aheadBy[p.id] || 0)) })).filter((x) => x.left > 0);
+    const toPlace = queue.reduce((a, x) => a + x.left, 0);
+    if (!toPlace) return Object.assign(res, { message: (g.parts || []).every((p) => p.done) ? 'Every part is done.' : weekLine(state, g, today, nowMin) || 'Everything left already has a time.' });
+    const when = (g.rhythm || {}).when, chunk = Math.max(STEP, floorGrid((g.rhythm || {}).chunk || 60));
+    const days = withRecMemo(state, () => goalDays(state, g, today).map((d) => {
+      const room = Math.max(0, goalCap(g, d) - (tl.spent[d] || 0) - (tl.own[d] || 0));
+      return { d, w: goalCap(g, d), c: floorGrid(Math.min(room, quietMinutes(state, d, when, d === today ? ceilGrid(now) : 0))) };
+    }));
+    const share = evenShares(toPlace, days);
+    res.shortMin = Math.round(share.short);
+    /* each day's share on the grid, carrying what rounding leaves to the next day */
+    let acc = 0, given = 0, qi = 0;
+    for (let i = 0; i < days.length; i++) {
+      acc += share.alloc[i];
+      const give = Math.max(0, Math.min(days[i].c, Math.round(acc / STEP) * STEP - given));
+      given += give;
+      if (days[i].d > hEnd || !give) continue;
+      /* sessions in the day's quiet windows, earliest first, free time last */
+      let left = give;
+      const d = days[i].d;
+      for (const w of windowsInOrder(state, d, when || 'any', d === today ? ceilGrid(now) : 0)) {
+        let s = w.start;
+        while (left >= STEP && w.end - s >= STEP && qi < queue.length) {
+          const cur = queue[qi];
+          const len = floorGrid(Math.min(left, chunk, w.end - s, ceilGrid(cur.left)));
+          if (len < STEP) break;
+          const r = canPlace(state, d, len, s);
+          if (!r.ok || (r.pushes || []).length) { s += STEP; continue; }
+          putAdd(state, d, { name: cur.p.name || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: cur.p.id } }, s);
+          res.placed++;
+          cur.left -= len; left -= len; s += len;
+          if (cur.left <= 0) qi++;
+        }
+        if (left < STEP || qi >= queue.length) break;
+      }
+      /* room that turned out to be in pieces too small goes on the shortfall */
+      if (left >= STEP && qi < queue.length) res.shortMin += left;
+    }
+    res.message = res.shortMin >= STEP ? 'Behind by ' + hoursText(res.shortMin) + '. Add a day, make days a little longer, or move the date.'
+      : weekLine(state, g, today, nowMin) || (g.start && g.start > today ? 'It starts ' + dayWord(g.start, today) + '.' : '');
+    return res;
+  }
+  /* '10 h this week, about 2 h a day.': the next seven days from today */
+  function weekLine(state, g, today, nowMin) {
+    const now = nowMin == null ? 0 : nowMin, end = addDays(today, 6), byDay = {};
+    for (const x of goalSessions(state, g.id)) {
+      if (x.add.skipped || x.date < today || x.date > end || windowTime(today, x.date, x.add.start) + x.add.dur <= now) continue;
+      byDay[x.date] = (byDay[x.date] || 0) + x.add.dur;
+    }
+    const n = Object.keys(byDay).length, total = Object.values(byDay).reduce((a, m) => a + m, 0);
+    if (!n) return '';
+    return hoursText(total) + ' this week, about ' + hoursText(total / n) + ' a day.';
+  }
+  /* a session that didn't happen: skipped, or shortened to what was done. Returns the minutes freed. */
+  function markSkip(a, how, minutes) {
+    if (how === 'some' && minutes > 0) {
+      const did = Math.max(STEP, Math.round(minutes / STEP) * STEP);
+      if (did >= a.dur) return 0;
+      const back = a.dur - did;
+      a.dur = did;
+      return back;
+    }
+    a.skipped = true;
+    return a.dur;
+  }
+  const aheadByDay = (state, gid, today, nowMin) => {
+    const now = nowMin == null ? 0 : nowMin, out = {};
+    for (const x of goalSessions(state, gid)) if (!x.add.skipped && windowTime(today, x.date, x.add.start) + x.add.dur > now) out[x.date] = (out[x.date] || 0) + x.add.dur;
+    return out;
+  };
+  /* Skip a session (how 'all'), or keep what was done of it (how 'some', minutes done), then plan the
+     goal again so the time spreads forward. Returns planGoal's result with { ok, skipped, back, spread }:
+     back is the minutes that went back into the plan, spread the days that gained time. */
+  function skipGoalSession(state, date, addId, today, nowMin, how, minutes) {
+    const dd = state.dates[date], a = dd && (dd.adds || []).find((x) => x.id === addId);
+    if (!a || !a.src || a.src.type !== 'goal') return { ok: false, placed: 0, removed: 0, shortMin: 0, message: '' };
+    const g = goalOf(state, a.src.id), before = aheadByDay(state, a.src.id, today, nowMin);
+    /* skipping one already skipped frees nothing new */
+    const back = a.skipped ? 0 : markSkip(a, how, minutes);
+    const r = planGoal(state, a.src.id, today, nowMin);
+    const after = aheadByDay(state, a.src.id, today, nowMin);
+    const spread = Object.keys(after).filter((d) => after[d] > (before[d] || 0)).sort().map((d) => ({ date: d, min: after[d] - (before[d] || 0) }));
+    if (back && r.shortMin < STEP && g && g.date && g.date > today) r.message = capFirst(hoursText(back)) + ' spread over the days before ' + dateText(g.date) + '.';
+    return Object.assign(r, { ok: true, skipped: addId, how: how === 'some' ? 'some' : 'all', back, spread });
+  }
+  /* Yesterday's sessions with no answer yet, one entry a goal, for the morning question */
+  function goalCheckIn(state, today) {
+    const y = addDays(today, -1), out = [];
+    for (const g of state.goals || []) {
+      if (g.archived || g.paused || (g.answers && g.answers[y])) continue;
+      const list = goalSessions(state, g.id).filter((x) => x.date === y && !x.add.skipped);
+      if (!list.length) continue;
+      out.push({ goal: g.id, name: g.name, date: y, min: list.reduce((a, x) => a + x.add.dur, 0), sessions: list.map((x) => ({ add: x.add.id, name: x.add.name, start: x.add.start, dur: x.add.dur, part: x.add.src.part || null })) });
+    }
+    return out;
+  }
+  /* Keep the answer for a day: yes, some, or no. Some and no keep what was done (opts.minutes for some,
+     half by default) and plan the goal again from opts.today (the day after) at opts.nowMin. */
+  function answerCheckIn(state, goalId, date, answer, opts) {
+    const g = goalOf(state, goalId), o = opts || {};
+    if (!g || !['yes', 'some', 'no'].includes(answer)) return { ok: false, placed: 0, removed: 0, shortMin: 0, message: '' };
+    g.answers = Object.assign({}, g.answers, { [date]: answer });
+    if (answer === 'yes') return { ok: true, answer, placed: 0, removed: 0, shortMin: 0, back: 0, message: '' };
+    const list = goalSessions(state, g.id).filter((x) => x.date === date && !x.add.skipped);
+    const total = list.reduce((a, x) => a + x.add.dur, 0);
+    let did = answer === 'no' ? 0 : o.minutes != null ? Math.max(0, Number(o.minutes) || 0) : Math.max(STEP, floorGrid(total / 2));
+    let back = 0;
+    for (const x of list) {
+      if (did >= x.add.dur) { did -= x.add.dur; continue; }
+      back += did > 0 ? markSkip(x.add, 'some', did) : markSkip(x.add, 'all');
+      did = 0;
+    }
+    const today = o.today || addDays(date, 1);
+    const r = planGoal(state, g.id, today, o.nowMin == null ? null : o.nowMin);
+    if (back && r.shortMin < STEP && g.date && g.date > today) r.message = capFirst(hoursText(back)) + ' spread over the days before ' + dateText(g.date) + '.';
+    return Object.assign(r, { ok: true, answer, back });
+  }
+
+  /* == V11 goals: cook once, eat twice ==
+     Leftovers know the meal they come from: from: { date, slot } on the dinner (state.dinners) or the
+     breakfast or lunch (state.meals) that eats them. */
+  function mealRec(state, date, slot) {
+    if (slot === 'dinner') return (state.dinners && state.dinners[date]) || null;
+    const m = state.meals && state.meals[date] && state.meals[date][slot];
+    return m == null ? null : typeof m === 'string' ? { name: m } : m;
+  }
+  /* how a meal happens: home (cooking), or out, order, skip, leftovers */
+  const mealHow = (rec, slot) => (!rec ? '' : NOT_COOKING.includes(slot === 'dinner' ? rec.cook : rec.how) ? (slot === 'dinner' ? rec.cook : rec.how) : 'home');
+  const mealSet = (rec, slot) => !!rec && (slot !== 'dinner' || !!(rec.name || rec.cook));
+  const isCooking = (rec, slot) => mealSet(rec, slot) && mealHow(rec, slot) === 'home';
+  const laterSlot = (a, b) => b.date > a.date || (b.date === a.date && SLOTS.indexOf(b.slot) > SLOTS.indexOf(a.slot));
+  /* the meals that are leftovers of one meal, within two weeks of it: [{ date, slot }] */
+  function leftoversOf(state, date, slot) {
+    const out = [];
+    for (const d of range(date, 15)) for (const k of SLOTS) {
+      const r = mealRec(state, d, k);
+      if (r && r.from && r.from.date === date && r.from.slot === slot) out.push({ date: d, slot: k });
+    }
+    return out;
+  }
+  /* a meal and the leftovers it makes, as servings */
+  function servingsOf(state, date, slot) {
+    const r = mealRec(state, date, slot);
+    return (mealSet(r, slot) ? 1 : 0) + leftoversOf(state, date, slot).filter((x) => mealHow(mealRec(state, x.date, x.slot), x.slot) === 'leftovers').length;
+  }
+  function writeMeal(state, date, slot, rec) {
+    if (slot === 'dinner') { state.dinners[date] = rec; return; }
+    state.meals = state.meals || {};
+    const day = state.meals[date] && typeof state.meals[date] === 'object' ? state.meals[date] : {};
+    state.meals[date] = Object.assign({}, day, { [slot]: rec });
+  }
+  const leftoverName = (src) => (src && src.name ? 'Leftovers: ' + src.name : 'Leftovers');
+  const leftoverRec = (slot, name, link) => (slot === 'dinner' ? { name, cook: 'leftovers', items: [], from: Object.assign({}, link) } : { name, how: 'leftovers', from: Object.assign({}, link) });
+  /* Cook extra: each later meal in `to` becomes leftovers of the meal at `from`. Only a meal being
+     cooked makes leftovers. A dinner that's leftovers needs a Dinner block to show on the board;
+     this writes the meal, not the block. Returns { ok, linked, name, to }. */
+  function cookExtra(state, from, to) {
+    const src = from && mealRec(state, from.date, from.slot);
+    if (!from || !SLOTS.includes(from.slot) || !isCooking(src, from.slot)) return { ok: false, linked: 0, name: '', to: [] };
+    const name = leftoverName(src), link = { date: from.date, slot: from.slot }, done = [];
+    for (const x of [].concat(to || [])) {
+      if (!x || !SLOTS.includes(x.slot) || !laterSlot(link, x)) continue;
+      writeMeal(state, x.date, x.slot, leftoverRec(x.slot, name, link));
+      done.push({ date: x.date, slot: x.slot });
+    }
+    return { ok: done.length > 0, linked: done.length, name, to: done };
+  }
+  /* After any meal changes: leftovers follow their meal's name, and when that meal is gone or isn't
+     cooked any more they stay leftovers with no name of their own and no link. Call it inside the same
+     change. Returns how many meals it changed. */
+  function syncLeftovers(state) {
+    let n = 0;
+    const fix = (d, k) => {
+      const r = mealRec(state, d, k);
+      if (!r || typeof r !== 'object' || !r.from) return;
+      const src = mealRec(state, r.from.date, r.from.slot), auto = /^Leftovers(?::|$)/.test(r.name || '');
+      if (mealHow(r, k) === 'leftovers' && isCooking(src, r.from.slot) && laterSlot(r.from, { date: d, slot: k })) {
+        const want = leftoverName(src);
+        if (auto && r.name !== want) { r.name = want; n++; }
+        return;
+      }
+      delete r.from;
+      if (auto) r.name = '';
+      n++;
+    };
+    Object.keys(state.dinners || {}).forEach((d) => fix(d, 'dinner'));
+    Object.keys(state.meals || {}).forEach((d) => ['breakfast', 'lunch'].forEach((k) => fix(d, k)));
+    return n;
+  }
+  const DIET_OUT = { vegetarian: ['chicken', 'turkey', 'beef', 'pork', 'fish', 'shellfish'], vegan: ['chicken', 'turkey', 'beef', 'pork', 'fish', 'shellfish', 'eggs', 'dairy'], pescatarian: ['chicken', 'turkey', 'beef', 'pork'] };
+  /* A prep week to look at, not applied: two batch cooks (Sunday and Wednesday dinners, or Monday and
+     Thursday on a Monday week; opts.days to choose), each covering the next two or three lunches as
+     leftovers (dinners when there aren't lunches), and fresh nights for the other dinners. The home's
+     own meals come first (recent dinners, recipes, the meal book), then Data.BATCH, without what the
+     home leaves out. Only empty meals are suggested, and none on a trip day or before opts.today.
+     Returns { week, batches, fresh, list, block, message }: list is everything to apply, in order
+     ({ date, slot, kind: 'batch' | 'leftovers' | 'fresh', name, meal }, meal as the board keeps it),
+     block a Meal prep block for the first batch day's afternoon, when there's quiet time for it. */
+  function prepPlan(state, weekStart, opts, Data) {
+    const o = opts || {}, B = (Data && Data.BATCH) || { words: [], meals: [] };
+    const today = o.today || weekStart, dates = range(weekStart, 7);
+    const batchWds = Array.isArray(o.days) && o.days.length ? o.days : weekday(weekStart) === 1 ? [1, 4] : [0, 3];
+    const usable = (d) => d >= today && !tripOn(state, d);
+    const taken = new Set();
+    const free = (d, k) => usable(d) && !mealSet(mealRec(state, d, k), k) && !taken.has(d + '|' + k);
+    const n = (s) => bdNorm(s);
+    const any = (name, list) => (list || []).some((w) => phraseIn(n(name), w));
+    const batchy = (name) => !!name && any(name, B.words) && !any(name, B.not);
+    const score = (name) => (any(name, B.strong) ? 2 : 1);
+    const book = state.mealbook || {}, out = new Set([].concat(book.out || [], DIET_OUT[book.diet] || []));
+    /* the home's own meals, most like a batch cook first, then the ones made most lately */
+    const had = new Map();
+    for (const d of range(addDays(weekStart, -28), 28)) {
+      const r = state.dinners[d];
+      if (!isCooking(r, 'dinner') || !r.name) continue;
+      const key = r.name.toLowerCase().trim(), x = had.get(key) || { name: r.name, items: (r.items || []).slice(), recipe: r.recipe || null, n: 0, at: '' };
+      x.n++; if (d >= x.at) x.at = d;
+      had.set(key, x);
+    }
+    const own = [];
+    had.forEach((x) => own.push({ name: x.name, items: x.items, recipe: x.recipe, source: 'yours', rank: 0, n: x.n, at: x.at }));
+    (state.recipes || []).forEach((r) => own.push({ name: r.name, items: (r.items || []).slice(), recipe: r.id, source: 'yours', rank: 1, n: 0, at: '' }));
+    (book.own || []).forEach((r) => own.push({ name: r.name, items: [], recipe: null, source: 'yours', rank: 2, n: 0, at: '' }));
+    const uniq = (list, seen) => list.filter((x) => { const k = x.name.toLowerCase().trim(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+    const batchSeen = new Set();
+    const ownBatch = uniq(own.filter((x) => batchy(x.name)).sort((a, b) => score(b.name) - score(a.name) || a.rank - b.rank || b.n - a.n || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)), batchSeen);
+    const listBatch = uniq((B.meals || []).filter((m) => !(m.has || []).some((h) => out.has(h))).map((m) => ({ name: m.name, items: (m.items || []).slice(), recipe: m.recipe && (state.recipes || []).some((r) => r.id === m.recipe) ? m.recipe : null, source: 'list' })), batchSeen);
+    const picks = ownBatch.concat(listBatch), used = new Set();
+    const nextPick = () => { const p = picks.find((x) => !used.has(x.name.toLowerCase())); if (p) used.add(p.name.toLowerCase()); return p || null; };
+    const batches = [];
+    for (const wd of batchWds) {
+      const d0 = dates.find((x) => weekday(x) === wd);
+      if (!d0) continue;
+      let got = null;
+      for (const d of [d0, addDays(d0, 1)]) {
+        if (!dates.includes(d) || !usable(d) || taken.has(d + '|dinner')) continue;
+        const r = mealRec(state, d, 'dinner');
+        if (isCooking(r, 'dinner') && r.name && batchy(r.name)) { got = { date: d, meal: { name: r.name, items: (r.items || []).slice(), recipe: r.recipe || null, source: 'yours' }, keep: true }; used.add(r.name.toLowerCase()); break; }
+        if (free(d, 'dinner')) { const p = nextPick(); if (p) got = { date: d, meal: p, keep: false }; break; }
+      }
+      if (!got) continue;
+      taken.add(got.date + '|dinner');
+      batches.push({ date: got.date, slot: 'dinner', name: got.meal.name, items: got.meal.items || [], recipe: got.meal.recipe || null, source: got.meal.source, keep: got.keep, makes: [] });
+    }
+    batches.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const weekEnd = addDays(weekStart, 7);
+    batches.forEach((b, i) => {
+      const until = i + 1 < batches.length ? batches[i + 1].date : weekEnd, span = range(addDays(b.date, 1), Math.max(0, diffDays(b.date, until) - 1)).filter((d) => dates.includes(d));
+      const cover = o.cover || (span.length >= 3 ? 3 : 2);
+      const slots = span.map((d) => ({ date: d, slot: 'lunch' })).concat(span.map((d) => ({ date: d, slot: 'dinner' })));
+      for (const x of slots) {
+        if (b.makes.length >= cover) break;
+        if (!free(x.date, x.slot)) continue;
+        taken.add(x.date + '|' + x.slot);
+        b.makes.push(x);
+      }
+    });
+    /* fresh nights: the home's other meals, recent ones first, then its recipes */
+    const freshPicks = uniq(own.filter((x) => !used.has(x.name.toLowerCase())).sort((a, b) => a.rank - b.rank || b.n - a.n || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)), new Set());
+    const fresh = [];
+    for (const d of dates) {
+      if (!free(d, 'dinner')) continue;
+      const p = freshPicks.shift();
+      if (!p) break;
+      taken.add(d + '|dinner');
+      fresh.push({ date: d, slot: 'dinner', name: p.name, items: (p.items || []).slice(), recipe: p.recipe || null });
+    }
+    const cook = o.cook || 'home', list = [];
+    const dish = (m) => Object.assign({ name: m.name, cook, items: (m.items || []).slice() }, m.recipe ? { recipe: m.recipe } : {});
+    batches.forEach((b) => {
+      if (!b.keep) list.push({ date: b.date, slot: 'dinner', kind: 'batch', name: b.name, meal: dish(b) });
+      b.makes.forEach((x) => { const nm = leftoverName(b); list.push({ date: x.date, slot: x.slot, kind: 'leftovers', name: nm, meal: leftoverRec(x.slot, nm, { date: b.date, slot: 'dinner' }) }); });
+    });
+    fresh.forEach((f) => list.push({ date: f.date, slot: 'dinner', kind: 'fresh', name: f.name, meal: dish(f) }));
+    let block = null;
+    if (batches.length) {
+      const b0 = batches[0], at = quietSlot(state, b0.date, 90, { when: 'afternoon', strict: true }) ?? quietSlot(state, b0.date, 90, { when: 'any' });
+      const makes = [{ date: b0.date, slot: 'dinner', name: b0.name }].concat(b0.makes.map((x) => ({ date: x.date, slot: x.slot, name: leftoverName(b0) })));
+      if (at != null) block = { date: b0.date, start: at, dur: 90, add: { name: 'Meal prep', cat: 'meals', icon: 'pot', dur: 90, src: { type: 'prep', week: weekStart }, makes } };
+    }
+    const covers = batches.reduce((a, b) => a + b.makes.length, 0);
+    let message = '';
+    if (batches.length) {
+      const named = joinWords(batches.map((b) => DAY_LONG[weekday(b.date)]));
+      message = (batches.length === 2 ? 'Two batch cooks, ' : 'One batch cook, ') + named + ', cover ' + covers + (covers === 1 ? ' more meal' : ' more meals') + (fresh.length ? ', with ' + fresh.length + (fresh.length === 1 ? ' fresh night.' : ' fresh nights.') : '.');
+    } else message = fresh.length ? fresh.length + (fresh.length === 1 ? ' fresh night.' : ' fresh nights.') : 'Every dinner this week already has a plan.';
+    return { week: weekStart, batches, fresh, list, block, message };
+  }
+  /* Write a prep week from prepPlan: each meal that's still empty, then the leftovers' links follow
+     their meals (syncLeftovers). opts.block: put the Meal prep block on too, where nothing moves.
+     Returns { meals, block } (block: the add, or null). */
+  function applyPrepPlan(state, plan, opts) {
+    let meals = 0, block = null;
+    for (const x of (plan && plan.list) || []) {
+      if (!SLOTS.includes(x.slot) || mealSet(mealRec(state, x.date, x.slot), x.slot)) continue;
+      writeMeal(state, x.date, x.slot, clone(x.meal));
+      meals++;
+    }
+    syncLeftovers(state);
+    if (opts && opts.block && plan && plan.block) {
+      const b = plan.block;
+      const at = quietAt(state, b.date, b.dur, b.start, 0) ? b.start : quietSlot(state, b.date, b.dur, { when: 'afternoon' });
+      if (at != null) block = putAdd(state, b.date, clone(b.add), at);
+    }
+    return { meals, block };
+  }
+
+  /* == V11 goals: the API ==
+     The contract for the screens that use it. Dates are 'YYYY-MM-DD', times are minutes after midnight,
+     today is the board's today, and nowMin is the minute it is now (null: the start of the day). A
+     function that changes the board changes `state` in place, so call it inside the app's commit and one
+     Undo takes it back. Words a person reads come back in `message`, ready to show.
+
+     Breaking it down
+       breakdown(name, opts, Data) gives { steps: [{ name, dur }], total, source: 'library' | 'rules', match }
+         opts: { size: 'small' | 'medium' | 'big', kids, partner }. Small uses each step's finer version or
+         cuts anything over 20 minutes in two or more; big keeps the first step and merges the rest into
+         three; the first step is always 10 minutes or less. kids or partner false (or 0, or '') leaves out
+         the steps that name {kid} or {partner}; named() in the app fills in the rest. match is the library
+         entry's id, the verb and thing the rules read, or null for the fallback.
+         breakdown('Clean my room', {}, Data): 6 steps, 70 minutes, Pick up the floor 10, Put away laundry 15...
+       suggestSteps(name, Data) gives the medium steps, [{ name, dur }], the shape it always had.
+       looksLikeGoal(name, Data): 'Pass the bar exam' true, 'Eye exam' false.
+       goalForExam(name, Data) gives { name, exam, kind, cat, parts: [{ name, min }], hours, note, source: 'exam' | 'template', match }
+         goalForExam('CFA Level I', Data): ten parts, hours 300, note 'About 300 hours is a common estimate.'
+
+     Quiet time, the only time any planner here uses
+       quietWindows(state, date, when, after) gives [{ start, end, free }]; when: 'any' | 'morning' | 'afternoon' | 'evening'.
+       quietSlot(state, date, minutes, { when, strict, after }) gives the first start where it fits and nothing moves, or null.
+
+     Spreading a to-do's steps
+       spreadCap(name) gives 15 for housework and 30 for the rest.
+       spreadPlan(state, taskId, opts, today, nowMin) gives { ok, days: [{ date, items: [{ step, name, start, dur, part, replaces }] }],
+         unplaced: [stepId], need, room, by, message, opts, today, nowMin } and changes nothing.
+         opts: { days: 'daily' | 'weekdays' | 'weekends' | [weekday numbers], cap, when, from, by }; each falls back to
+         task.spread, then to the default (cap by spreadCap, when 'any', from today, by the due date or six days on).
+         Clean my room due Saturday, from Monday: '6 steps over 6 days, about 15 minutes a day, done by Saturday.'
+         Short of days: 'This needs 2 more days than are left before Saturday.'
+       applySpread(state, taskId, plan, opts) places the plan, re-checking each spot, and gives how many steps it placed.
+         It keeps task.spread = { days, cap, when } (and by, when that isn't the due date). A step's missed times
+         (an item's replaces) come off as it moves.
+
+     Finding new times
+       missedSteps(state, today, nowMin) gives [{ task, step, name, date, start, dur, add }].
+       reflowTask(state, taskId, today, nowMin, { preview }) gives { moved: [{ step, name, from, to, start, add, missed }], unplaced, message }:
+         'Put away laundry moved to tomorrow. Still done by Saturday.' A step that can't fit by the date comes off the
+         board and is named in unplaced, so no day goes over its cap: '... This needs one more day than is left
+         before Saturday.' Pinned steps stay. Calling it again moves nothing. preview: true works it out on a copy.
+
+     Goals
+       newGoal(fields) gives { id, name, kind, date, start, parts: [{ id, name, min, done }], rhythm: { days, wd, we, when, chunk },
+         cat, icon, paused, archived, answers } with ids and defaults; push it onto state.goals.
+       goalSessions(state, goalId) gives [{ date, add }] in time order.
+       goalProgress(state, goalOrId, today, nowMin) gives { totalMin, doneMin, leftMin, daysLeft, capacityMin, behindMin, onTrack,
+         week: { plannedMin, doneMin }, nextSession, partsLeft, parts: [{ id, name, min, done, doneMin, leftMin }], perDay }.
+         About 20 ms for a goal four months away, so work it out once a render.
+       planGoal(state, goalId, today, nowMin, { horizon: 14 }) gives { placed, removed, shortMin, message }:
+         '14.5 h this week, about 2 h a day.' or 'Behind by 137 h. Add a day, make days a little longer, or move the date.'
+       skipGoalSession(state, date, addId, today, nowMin, 'all' | 'some', minutesDone) gives planGoal's result with { ok, skipped, how,
+         back, spread }: '1 h spread over the days before Feb 24.'
+       goalCheckIn(state, today) gives yesterday's unanswered sessions, one entry a goal: [{ goal, name, date, min, sessions }].
+       answerCheckIn(state, goalId, date, 'yes' | 'some' | 'no', { today, nowMin, minutes }) gives planGoal's result with { ok, answer, back }.
+       A session is an add: { name, cat, icon, dur, start, src: { type: 'goal', id, part }, pinned, skipped }. moveAdd and
+       resizeBlock pin a session or a step; a skipped session stays in the adds and takes no time on the board.
+
+     Cook once, eat twice (slot: 'breakfast' | 'lunch' | 'dinner')
+       cookExtra(state, { date, slot }, [{ date, slot }]) gives { ok, linked, name, to }. From Sunday's dinner to Monday's
+         lunch, Monday's lunch becomes { name: 'Leftovers: Chicken and rice', how: 'leftovers', from: { date, slot } }.
+       servingsOf(state, date, slot): the meal and its leftovers, 3 for a dinner with two leftover lunches.
+       leftoversOf(state, date, slot) gives [{ date, slot }].
+       syncLeftovers(state) gives how many meals it changed; call it after any meal change, in the same commit.
+       groceries() lines also carry serves and servings: [{ date, slot, serves }].
+       prepPlan(state, weekStart, { today, days, cover, cook }, Data) gives { week, batches, fresh, list, block, message },
+         not applied: 'Two batch cooks, Sunday and Wednesday, cover 5 more meals, with 5 fresh nights.'
+       applyPrepPlan(state, plan, { block }) gives { meals, block }. A Meal prep block is an add with
+         src { type: 'prep', week } and makes: [{ date, slot, name }]. */
+
   const api = {
     parseIcs, liveEvents, zoneToUtc, inZone,
     RAIL0, RAIL1, STEP, MIN_LEN, snap, clamp, overlaps, clone, newId,
@@ -1535,6 +2663,13 @@
   };
   /* V11: Look ahead, getting ready, and kept holidays */
   Object.assign(api, { READY, READY_FOR, readyKeys, readyFor, lookAhead, holidayEvents, holidayTwins, holidayReady });
+  /* V11 goals: breaking it down, spreading it out, finding new times, goals, and cook once, eat twice */
+  Object.assign(api, {
+    breakdown, looksLikeGoal, goalForExam,
+    quietWindows, quietSlot, spreadCap, spreadPlan, applySpread, missedSteps, reflowTask,
+    newGoal, goalSessions, goalProgress, planGoal, skipGoalSession, goalCheckIn, answerCheckIn,
+    cookExtra, servingsOf, leftoversOf, syncLeftovers, prepPlan, applyPrepPlan
+  });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Model = api;
 })(typeof window !== 'undefined' ? window : globalThis);
