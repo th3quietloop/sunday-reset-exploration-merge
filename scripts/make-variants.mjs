@@ -31,6 +31,8 @@ for (const id of ids) {
   if (existsSync(join(root, 'variants', id, 'lab'))) cpSync(join(root, 'variants', id, 'lab'), join(out, 'lab'), { recursive: true });
   /* a version's own pictures (a rendered bag, say) go next to its page */
   if (existsSync(join(root, 'variants', id, 'assets'))) cpSync(join(root, 'variants', id, 'assets'), join(out, 'assets'), { recursive: true });
+  /* a version's own server functions (V11's smart breakdowns) go in api/, where Vercel serves each as /api/<name> */
+  if (existsSync(join(root, 'variants', id, 'api'))) cpSync(join(root, 'variants', id, 'api'), join(out, 'api'), { recursive: true });
   let html = readFileSync(join(out, 'index.html'), 'utf8');
   html = html.replace('<link rel="stylesheet" href="src/merge.css">', '<link rel="stylesheet" href="src/kit.css">\n<link rel="stylesheet" href="src/variant.css">' + (polish ? '\n<link rel="stylesheet" href="src/polish.css">' : '') + areaCss.map((f) => '\n<link rel="stylesheet" href="src/css/' + f + '">').join(''));
   html = html.replace('<script src="src/merge.js"></script>', '<script src="src/kit.js"></script>\n<script src="src/variant.js"></script>');

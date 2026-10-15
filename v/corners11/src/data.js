@@ -310,22 +310,396 @@
     { id: 'easy', name: 'Take it easy', icon: 'leaf', line: 'Locked blocks and meals stay. To dos wait for another day', easy: true }
   ];
 
-  /* Ways to break a to do into small steps, matched by words in its name. First match wins. */
+  /* == Break it down ==
+     Ways to break a to-do into small steps (Model.breakdown), matched by the words in its name: the
+     longest phrase that matches wins, so 'clean the kitchen' beats 'clean'. A word that starts with ~ is
+     weak: a bare noun (kitchen) that counts when no verb is named, or when the verb is the entry's own
+     (verb: 'clean' for housework), so "Organize the kitchen" goes to the rules instead of to cleaning.
+     area: home is housework, which spreads 15 minutes a day by default. Steps are the medium size. A step
+     can carry sub, its finer version for Smaller steps, and whole, for a step that can't be cut (an
+     appointment, a drive, the time something bakes). Minutes are multiples of 5, and the first step is
+     10 minutes or less, so there's always a way to start (tests/breakdown.test.mjs). {partner} and {kid}
+     are the board's people; the app leaves a step out where there's nobody for it. */
+  const St = (name, dur, sub) => (sub ? { name, dur, sub: sub.map(([n, d, w]) => (w ? { name: n, dur: d, whole: true } : { name: n, dur: d })) } : { name, dur });
+  const Wh = (name, dur) => ({ name, dur, whole: true });
+  const BD = (id, area, words, steps, verb) => Object.assign({ id, area, words, steps }, verb ? { verb } : {});
   const BREAKDOWNS = [
-    { words: ['card'], steps: [S('Write the card', 15), S('Address and stamp it', 10), S('Mail it', 15)] },
-    { words: ['birthday', 'bday'], steps: [S('Pick a card or gift', 20), S('Order it or buy it', 15), S('Write a note', 10), S('Call on the day', 30)] },
-    { words: ['gift', 'present'], steps: [S('Make a list of ideas', 15), S('Pick one', 10), S('Order it or buy it', 15), S('Wrap it', 15)] },
-    { words: ['decor', 'christmas', 'tree'], steps: [S('Ask {partner} what to put up this year', 15), S('Bring the boxes down', 30), S('Decorate together', 120), S('Put the boxes away', 20)] },
-    { words: ['bill', 'pay', 'tax'], steps: [S('See what’s due', 15), S('Pay each one', 20), S('Note anything that changed', 5)] },
-    { words: ['laundry', 'wash', 'clothes'], steps: [S('Start a load', 10), S('Move it to the dryer', 5), S('Fold and put away', 30)] },
-    { words: ['clean', 'tidy', 'kitchen', 'bathroom', 'vacuum'], steps: [S('Pick up the clutter', 15), S('Wipe the counters', 15), S('Vacuum or sweep', 20), S('Take out the trash', 5)] },
-    { words: ['pack', 'trip', 'travel', 'flight'], steps: [S('Make a list', 10), S('Pack {kid}’s bag', 30), S('Pack your bag', 20), S('Charge everything', 5)] },
-    { words: ['grocer', 'shop', 'store'], steps: [S('Check the fridge', 10), S('Write the list from dinners', 10), S('Shop', 45), S('Put it away', 15)] },
-    { words: ['call', 'phone'], steps: [S('Pick a good time', 5), S('Call', 30)] },
-    { words: ['email', 'write', 'letter'], steps: [S('Jot the main points', 10), S('Write it', 20), S('Send it', 5)] },
-    { words: ['plan', 'book', 'schedule'], steps: [S('Decide what you want', 15), S('Look at options', 20), S('Book it', 15)] }
+    /* housework */
+    BD('bedroom', 'home', ['clean my room', 'clean the bedroom', 'clean my bedroom', 'clean your room', 'clean up my room', 'tidy my room', 'tidy the bedroom', '~my room', '~bedroom'],
+      [St('Pick up the floor', 10, [['Pick up the clothes', 5], ['Pick up everything else', 5]]), St('Put away laundry', 15, [['Hang what hangs', 5], ['Fold the rest into drawers', 10]]), St('Make the bed', 5), St('Clear the desk', 15, [['Clear the papers', 10], ['Wipe it down', 5]]), St('Dust', 10), St('Vacuum', 15, [['Vacuum the floor', 10], ['Vacuum under the bed', 5]])], 'clean'),
+    BD('kids-room', 'home', ['clean the kids room', 'clean the playroom', 'pick up toys', 'pick up the toys', 'put away toys', 'put away the toys', '~kids room', '~kid room', '~playroom', '~toys'],
+      [St('Set a timer and pick up toys together', 10), St('Sort toys into their bins', 15), St('Put away clean clothes', 10), St('Make the bed', 5), St('Clear under the bed', 10), St('Vacuum', 10)], 'clean'),
+    BD('kitchen', 'home', ['clean the kitchen', 'clean kitchen', 'clean up the kitchen', 'wipe the counters', '~kitchen'],
+      [St('Load or start the dishes', 10), St('Clear and wipe the counters', 15, [['Clear the counters', 10], ['Wipe them down', 5]]), St('Wipe the stove and the sink', 10), St('Wipe the fronts of the fridge and cabinets', 10), St('Sweep and mop the floor', 20, [['Sweep', 10], ['Mop', 10]]), St('Take out the trash and recycling', 5)], 'clean'),
+    BD('bathroom', 'home', ['clean the bathroom', 'clean the bathrooms', 'clean bathroom', 'clean the toilet', 'clean the shower', 'scrub the tub', 'clean the tub', '~bathroom', '~bathrooms'],
+      [St('Clear the counter', 5), St('Spray the tub, sink, and toilet and let it sit', 5), St('Scrub the toilet', 10), St('Scrub the tub or shower', 15), St('Wipe the sink, counter, and mirror', 10), St('Swap the towels and empty the trash', 5), St('Sweep and mop the floor', 10)], 'clean'),
+    BD('living-room', 'home', ['clean the living room', 'tidy the living room', 'clean the family room', '~living room', '~family room', '~den'],
+      [St('Pick up anything that doesn’t belong', 10), St('Fold the blankets and fluff the pillows', 5), St('Clear the coffee table', 5), St('Dust the surfaces and the TV stand', 10), St('Vacuum the floor and the couch', 15)], 'clean'),
+    BD('house', 'home', ['clean the house', 'clean house', 'clean the apartment', 'clean the home', 'clean up the house', 'clean the whole house', 'clean the place', 'house cleaning', 'housework', 'chores'],
+      [St('Do a quick lap with a trash bag', 10), St('Kitchen', 30, [['Dishes', 10], ['Counters and stove', 10], ['Kitchen floor', 10]]), St('Bathroom', 30, [['Toilet', 10], ['Sink and mirror', 10], ['Tub or shower', 10]]), St('Living room', 20), St('Bedrooms', 20), St('Vacuum or mop the floors', 30, [['Vacuum', 15], ['Mop', 15]]), St('Take out the trash', 5)]),
+    BD('deep-clean', 'home', ['deep clean', 'deep cleaning', 'spring clean', 'spring cleaning'],
+      [St('Pick the room to start with', 5), St('Wipe the baseboards and door frames', 30, [['Do the first half of the rooms', 15], ['Do the rest', 15]]), St('Clean inside the fridge and microwave', 30, [['Fridge', 20], ['Microwave', 10]]), St('Clean the oven', 30, [['Spray it and let it sit', 5], ['Scrub and wipe it out', 25]]), St('Wash the windows', 30, [['Inside', 15], ['Outside', 15]]), St('Wash the shower curtain and bath mats', 15), St('Vacuum under the furniture', 20), St('Mop every floor', 30, [['Kitchen and bathroom', 15], ['The rest', 15]])]),
+    BD('tidy', 'home', ['quick tidy', 'tidy the house', 'tidy the apartment', 'straighten up', 'reset the house', 'pick up the house', '~tidy up', '~tidy', '~clean up'],
+      [St('Put the dishes in the sink', 5), St('Put things back in their rooms', 15), St('Clear the counters and the table', 10), St('Fold the blankets and fluff the couch', 5)], 'clean'),
+    BD('laundry', 'home', ['laundry', 'do the laundry', 'wash clothes', 'wash the clothes', 'do the wash', 'load of laundry'],
+      [St('Gather the dirty clothes', 5), St('Start a load', 5), St('Move it to the dryer', 5), St('Fold', 15, [['Fold the shirts and pants', 10], ['Match the socks', 5]]), St('Put it away', 10)]),
+    BD('fold', 'home', ['fold laundry', 'fold the laundry', 'fold clothes', 'put away laundry', 'put away the laundry', 'put away clothes', 'laundry pile'],
+      [St('Dump the basket on the bed', 5), St('Fold the shirts and pants', 15), St('Match the socks', 5), St('Put it all away', 10)]),
+    BD('dishes', 'home', ['dishes', 'do the dishes', 'wash the dishes', 'dishwasher', 'unload the dishwasher', 'load the dishwasher'],
+      [St('Clear the table and the counter', 5), St('Empty the dishwasher', 5), St('Load what fits', 10), St('Hand wash the rest', 15), St('Wipe the sink', 5)]),
+    BD('declutter', 'home', ['declutter', 'decluttering', 'clear out', 'purge', 'get rid of', 'donate', 'give away', 'sort through', 'donation'],
+      [St('Grab three bags for keep, give away, and trash', 5), St('Sort one shelf or drawer', 15), St('Sort the next one', 15), St('Bag the give away pile', 10), St('Drop it off', 30, [['Put the bags in the car', 5], ['Drop them off', 25, true]])]),
+    BD('closet', 'home', ['closet', 'wardrobe', 'dresser', 'organize clothes', 'clean out the closet', 'organize the closet'],
+      [St('Pull out what you haven’t worn this year', 10), St('Try on anything you’re not sure about', 15), St('Bag the give away pile', 10), St('Fold and hang what stays', 20), Wh('Drop off the give away bag', 20)]),
+    BD('garage', 'home', ['garage', 'clean the garage', 'clear out the garage', 'organize the garage'],
+      [St('Open the door and pick one corner', 5), St('Sort into keep, give away, and trash', 60, [['Sort the first corner', 20], ['Sort the next corner', 20], ['Sort the rest', 20]]), St('Take out the trash', 15), St('Drop off the give away pile', 30, [['Load the car', 10], ['Drop it off', 20, true]]), St('Sweep', 20), St('Put the keep pile on shelves', 20)]),
+    BD('fridge', 'home', ['fridge', 'refrigerator', 'clean out the fridge', 'clean the fridge'],
+      [St('Toss anything expired', 10), St('Take out the shelves and drawers', 5), St('Wipe them and the inside', 15), St('Put the food back, oldest in front', 10)]),
+    BD('sheets', 'home', ['sheets', 'change the sheets', 'bedding', 'wash the sheets', 'make the beds', 'bed sheets'],
+      [St('Strip the bed', 5), St('Start the wash', 5), St('Move it to the dryer', 5), St('Put the clean sheets on', 10)]),
+    BD('floors', 'home', ['vacuum', 'vacuuming', 'mop', 'mopping', 'floors', 'sweep the floor', 'sweep the floors'],
+      [St('Pick up things on the floor', 10), St('Vacuum the rugs', 15), St('Sweep the hard floors', 10), St('Mop the kitchen and bathroom', 15), St('Empty the vacuum', 5)]),
+    BD('dust', 'home', ['dust', 'dusting'],
+      [St('Grab a cloth', 5), St('Dust the shelves', 10), St('Dust the surfaces and lamps', 10), St('Dust the ceiling fans', 10)]),
+    BD('windows', 'home', ['windows', 'wash the windows', 'clean the windows'],
+      [St('Get the cleaner and cloths', 5), St('Wash the inside windows', 20), St('Wash the outside windows', 25, [['Front of the house', 10], ['Back of the house', 15]]), St('Wipe the sills and tracks', 10)]),
+    BD('trash', 'home', ['trash', 'garbage', 'recycling', 'take out the trash', 'bins'],
+      [St('Gather the trash from each room', 5), St('Tie up the bags', 5), St('Take them out', 5), St('Rinse and sort the recycling', 10)]),
+    BD('office', 'home', ['clear the desk', 'clean the desk', 'home office', 'workspace', '~desk', '~office'],
+      [St('Clear the desk into one pile', 10), St('Sort the pile into do, file, and toss', 20), St('File what stays', 15), St('Wipe the desk and the screen', 5), St('Tidy the cables', 10)], 'clean'),
+    BD('basement', 'home', ['basement', 'attic', 'storage room', 'storage unit', 'crawl space'],
+      [St('Pick one shelf or box to start', 5), St('Sort into keep, give away, and trash', 45, [['Sort the first boxes', 15], ['Sort the next boxes', 15], ['Sort the rest', 15]]), St('Label the boxes you keep', 15), St('Take out the trash', 10), St('Drop off the give away pile', 30, [['Load the car', 10], ['Drop it off', 20, true]])]),
+    BD('pantry', 'home', ['pantry', 'organize the pantry', 'kitchen cabinets', 'cabinets', 'spice rack'],
+      [St('Take everything off one shelf', 10), St('Toss what’s expired', 10), St('Group like things together', 15), St('Put it back, oldest in front', 15), St('Write down what’s running low', 5)]),
+    BD('ironing', 'home', ['ironing', 'iron shirts', 'iron the shirts'],
+      [St('Set up the board and heat the iron', 5), St('Iron the shirts', 20), St('Iron the rest', 15), St('Hang it all up', 5)]),
+    BD('furniture', 'home', ['assemble', 'furniture', 'ikea', 'bookshelf', 'build the', 'put together the'],
+      [St('Unbox it and check the parts', 10), St('Read the instructions', 10), St('Put it together', 45, [['Do the first steps', 15], ['Do the middle steps', 15], ['Do the last steps', 15]]), St('Clean up the box and packing', 10)]),
+    BD('hang', 'home', ['hang pictures', 'hang a picture', 'hang the pictures', 'hang art', 'hang the tv', 'mount the tv', 'hang curtains', 'hang shelves'],
+      [St('Pick the spots and mark them', 10), St('Find the studs and the right hardware', 10), St('Hang them', 20), St('Check they’re level', 5)]),
+    BD('paint', 'home', ['paint the', 'paint a room', 'paint my room', 'painting the', 'repaint'],
+      [St('Pick the color and get samples', 10), St('Buy paint and supplies', 45, [['Make the list', 10], ['Buy it', 35, true]]), St('Move furniture and tape the edges', 30, [['Move furniture', 15], ['Tape the edges', 15]]), St('Paint the first coat', 60, [['Cut in the edges', 20], ['Roll the walls', 30], ['Clean the brushes', 10]]), St('Paint the second coat', 60, [['Cut in the edges', 20], ['Roll the walls', 30], ['Clean the brushes', 10]]), St('Clean up and put things back', 30, [['Pull the tape', 10], ['Put things back', 20]])]),
+    BD('smoke-alarm', 'home', ['smoke alarm', 'smoke alarms', 'smoke detector', 'smoke detectors', 'detector batteries'],
+      [St('Get new batteries', 5), St('Test each alarm', 10), St('Swap the batteries', 15)]),
+    BD('repair-person', 'home', ['plumber', 'electrician', 'handyman', 'contractor', 'repair person', 'hvac', 'furnace'],
+      [St('Write down what’s wrong, with photos', 10), St('Get two or three quotes', 30, [['Ask for the first quote', 15], ['Ask for the others', 15]]), St('Book one', 10), Wh('Be home for the visit', 60)]),
+
+    /* errands */
+    BD('groceries', 'errand', ['groceries', 'grocery', 'grocery shopping', 'food shopping', 'shopping list', 'grocery store', 'supermarket'],
+      [St('Check the fridge and pantry', 10), St('Write the list from this week’s meals', 10), St('Shop', 45, [['Get there', 10, true], ['Shop the list', 30, true], ['Check out and load up', 5]]), St('Put it all away', 15)]),
+    BD('returns', 'errand', ['return', 'returns', 'send back', 'exchange', 'refund'],
+      [St('Find the receipt or the order', 10), St('Start the return online or print the label', 10), St('Pack it up', 10), Wh('Drop it off', 20)]),
+    BD('post-office', 'errand', ['post office', 'mail a package', 'ship a package', 'shipping', 'package'],
+      [St('Box it and seal it', 10), St('Print or write the label', 10), Wh('Drop it off', 20)]),
+    BD('pharmacy', 'errand', ['pharmacy', 'prescription', 'prescriptions', 'refill', 'meds', 'medicine'],
+      [St('Check how much is left', 5), St('Ask for the refill', 10), Wh('Pick it up', 20)]),
+    BD('library', 'errand', ['library', 'library books', 'library book', 'return the books'],
+      [St('Find all the library books', 10), St('Renew or return them', 20), St('Pick out new ones', 20)]),
+    BD('dry-cleaning', 'errand', ['dry cleaning', 'dry cleaner', 'dry cleaners', 'tailor', 'alterations'],
+      [St('Gather what needs to go', 5), Wh('Drop it off', 15), Wh('Pick it up', 15)]),
+    BD('errands', 'errand', ['errands', 'errand', 'run errands'],
+      [St('List every stop', 5), St('Put the stops in order', 5), St('Do the first stops', 30, [['First stop', 15, true], ['Second stop', 15, true]]), St('Do the rest', 30, [['Next stop', 15, true], ['Last stop', 15, true]]), St('Put everything away', 10)]),
+    BD('hardware-store', 'errand', ['hardware store'],
+      [St('List what you need and measure', 10), St('Get it', 45, [['Get there', 15, true], ['Find everything', 30, true]]), St('Put it away or use it', 15)]),
+    BD('bank', 'errand', ['bank', 'deposit a check', 'deposit the check', 'cash a check', 'atm'],
+      [St('Gather the check or what you need', 5), St('Go to the bank or use the app', 15), St('Note it in your budget', 5)]),
+    BD('dmv', 'errand', ['dmv', 'driver license', 'drivers license', 'renew my license', 'license renewal', 'renew license', 'renew the license', 'real id', 'id card'],
+      [St('Check what to bring', 10), St('Book an appointment or renew online', 15), St('Gather the documents', 15), Wh('Go to the appointment', 60), St('Put the new card in your wallet', 5)]),
+    BD('haircut', 'errand', ['haircut', 'hair cut', 'barber', 'hair appointment', 'salon'],
+      [St('Book a time', 5), Wh('Get there', 15), Wh('Get your hair cut', 45)]),
+    BD('babysitter', 'errand', ['babysitter', 'sitter', 'childcare', 'nanny', 'line up a sitter'],
+      [St('Pick the dates and times', 5), St('Ask a few sitters', 15), St('Confirm one', 5), St('Write notes for them', 15)]),
+    BD('vet', 'errand', ['vet', 'vet appointment', 'dog to the vet', 'cat to the vet', 'shots for the dog'],
+      [St('Call the vet and book a time', 10), St('Gather their records and meds', 5), Wh('Go to the visit', 60), St('Note what’s next', 5)]),
+
+    /* money and admin */
+    BD('bills', 'money', ['bill', 'bills', 'pay the bills', 'pay bills', 'pay rent', 'utilities'],
+      [St('See what’s due', 10), St('Pay each one', 20), St('Note anything that changed', 5)]),
+    BD('taxes', 'money', ['tax', 'taxes', 'tax return', 'file taxes', 'do taxes', 'do the taxes', 'tax forms'],
+      [St('Make a folder for this year’s papers', 5), St('Gather your tax forms and receipts', 30, [['List what you’re waiting on', 10], ['Download or find each one', 20]]), St('Enter it in the tax software or send it to your preparer', 60, [['Enter your income', 20], ['Enter deductions', 20], ['Enter credits and the rest', 20]]), St('Check it over', 20), St('File it and save a copy', 10)]),
+    BD('budget', 'money', ['budget', 'budgeting', 'finances', 'money plan', 'spending'],
+      [St('Pull up last month’s spending', 10), St('Sort it into a few groups', 20), St('Set amounts for next month', 15), St('Pick one thing to change', 5)]),
+    BD('claim', 'money', ['insurance claim', 'file a claim', 'claim'],
+      [St('Find the policy number', 5), St('Write down what happened, with dates', 15), St('Take photos or gather receipts', 15), St('Start the claim online or by phone', 20), St('Note the claim number and the next step', 5)]),
+    BD('insurance', 'money', ['insurance', 'compare insurance', 'shop for insurance', 'renew insurance', 'insurance renewal', 'open enrollment', 'health insurance', 'car insurance'],
+      [St('Find your current policy and what it costs', 10), St('Get two or three quotes', 30, [['Get the first quote', 15], ['Get the others', 15]]), St('Compare what each covers', 15), St('Switch or renew', 15)]),
+    BD('subscriptions', 'money', ['subscriptions', 'subscription', 'cancel subscription', 'cancel subscriptions', 'streaming'],
+      [St('List what you pay for each month', 10), St('Mark what you don’t use', 5), St('Cancel those', 15), St('Note what you’ll save', 5)]),
+    BD('paperwork', 'money', ['paperwork', 'file papers', 'filing', 'mail pile', 'sort the mail', 'shred', 'shredding', 'papers'],
+      [St('Gather the papers in one pile', 5), St('Sort into do, file, and shred', 15), St('Do the quick ones', 15), St('File the rest', 10), St('Shred what you don’t need', 10)]),
+    BD('form', 'money', ['application form', 'permission slip', 'fill out the form', 'fill out', '~form', '~forms'],
+      [St('Find the form and read what it needs', 10), St('Gather the information', 15), St('Fill it out', 20), St('Check it and send it', 10)]),
+    BD('savings', 'money', ['retirement', '401k', 'ira', 'savings', 'save money', 'investments', 'emergency fund'],
+      [St('Look up your balances', 10), St('Check how much goes in each month', 10), St('Decide if that should change', 15), St('Make the change', 10)]),
+    BD('will', 'money', ['make a will', 'write a will', 'estate plan', 'estate planning', 'power of attorney', 'living will'],
+      [St('Write down who depends on you', 10), St('List what you own and who it goes to', 20), St('Pick a guardian and an executor', 15), St('Make the will online or with a lawyer', 60, [['Start it', 20], ['Fill in the rest', 20], ['Read it over', 20]]), St('Sign it and store it safely', 20)]),
+    BD('medical-bills', 'money', ['medical bill', 'medical bills', 'hospital bill', 'eob', 'billing error'],
+      [St('Gather the bill and the insurance statement', 10), St('Check they match', 15), Wh('Call about anything that’s off', 20), St('Pay it or set up a plan', 10)]),
+    BD('credit', 'money', ['credit report', 'credit score', 'freeze my credit', 'credit freeze'],
+      [St('Get your free reports', 10), St('Read them for anything wrong', 20), St('Dispute what’s wrong', 20), St('Freeze your credit if you want to', 10)]),
+
+    /* school and study */
+    BD('homework', 'school', ['homework', 'assignment', 'problem set', 'worksheet', 'worksheets'],
+      [St('Read the instructions', 5), St('Do the first half', 20), St('Do the rest', 20), St('Check your answers', 10), St('Put it in the bag', 5)]),
+    BD('essay', 'school', ['essay', 'term paper', 'research paper', 'write a paper', 'paper on', 'paper for'],
+      [St('Write the question in your own words', 5), St('Find sources and take notes', 45, [['Find sources', 15], ['Take notes', 15], ['Take more notes', 15]]), St('Make an outline', 15), St('Write the draft', 60, [['Write the opening', 20], ['Write the middle', 20], ['Write the ending', 20]]), St('Revise it', 20), St('Check the citations and turn it in', 15)]),
+    BD('study', 'school', ['study for', 'study guide', 'quiz', 'midterm', 'midterms', 'final exam', 'finals', '~test', '~exam'],
+      [St('Gather your notes and the study guide', 5), St('List the topics', 10), St('Review the first topics', 30, [['Review the first topic', 15], ['Review the second topic', 15]]), St('Review the rest', 30, [['Review the next topic', 15], ['Review the last topic', 15]]), St('Do practice questions', 25, [['Do a few practice questions', 15], ['Do a few more', 10]]), St('Go over what you missed', 15)], 'study'),
+    BD('book-report', 'school', ['book report', 'book review'],
+      [St('Jot what the book was about', 10), St('Pick the main points', 15), St('Write the draft', 30, [['Write the first half', 15], ['Write the second half', 15]]), St('Read it over and fix it', 15), St('Turn it in', 5)]),
+    BD('presentation', 'work', ['presentation', 'slides', 'slide deck', 'speech', 'keynote'],
+      [St('Write the one thing they should remember', 10), St('Outline the main points', 15), St('Make the slides', 60, [['Make the first slides', 20], ['Make the middle slides', 20], ['Make the last slides', 20]]), St('Practice it out loud', 30, [['First run through', 15], ['Second run through', 15]]), St('Fix what felt off', 15)]),
+    BD('group-project', 'school', ['group project'],
+      [St('List what everyone is doing', 10), St('Do your part', 60, [['Start your part', 20], ['Keep going', 20], ['Finish your part', 20]]), St('Share it with the group', 10), St('Put it together', 20)]),
+    BD('college-apps', 'school', ['college application', 'college applications', 'apply to college', 'personal statement', 'common app'],
+      [St('List the schools and their deadlines', 10), St('Ask for recommendation letters', 15), St('Write the essay', 90, [['Brainstorm', 15], ['Outline', 15], ['Draft the first half', 20], ['Draft the second half', 20], ['Revise', 20]]), St('Fill out each application', 60, [['Fill out the first one', 20], ['Fill out the next one', 20], ['Fill out the rest', 20]]), St('Send test scores and transcripts', 15), St('Submit and save the confirmation', 10)]),
+    BD('financial-aid', 'school', ['fafsa', 'financial aid', 'scholarship', 'scholarships', 'student aid'],
+      [St('Make an account and find the deadline', 10), St('Gather tax info and IDs', 20), St('Fill out the form', 45, [['Fill out the first part', 15], ['Fill out the middle part', 15], ['Fill out the last part', 15]]), St('Submit and save the confirmation', 5)]),
+    BD('school-supplies', 'school', ['school supplies', 'back to school', 'supply list'],
+      [St('Find the supply list', 5), St('Check what you already have', 15), St('Buy the rest', 45, [['Get there', 15, true], ['Shop the list', 30, true]]), St('Label everything', 15)]),
+    BD('course', 'school', ['online course', 'course', 'lesson', 'module', 'tutorial', 'webinar'],
+      [St('Open the course and find the next lesson', 5), St('Watch the lesson', 25), St('Take notes on the key points', 10), St('Do the exercise', 20)]),
+    BD('teacher', 'school', ['parent teacher', 'teacher conference', 'teacher meeting', 'school conference'],
+      [St('Write down your questions', 10), St('Look at recent grades and work', 15), Wh('Go to the meeting', 30), St('Note what to follow up on', 5)]),
+
+    /* work */
+    BD('report', 'work', ['report', 'quarterly report', 'monthly report', 'status report', 'write the report', 'write up'],
+      [St('Write the three things it must say', 10), St('Pull the numbers', 45, [['Pull the first numbers', 15], ['Pull the rest', 15], ['Check them', 15]]), St('Write the draft', 60, [['Write the opening', 20], ['Write the middle', 20], ['Write the ending', 20]]), St('Make the charts', 20), St('Read it over and fix it', 20), St('Send it', 10)]),
+    BD('email', 'work', ['emails', 'inbox', 'email backlog', 'inbox zero', 'catch up on email', 'answer emails', 'reply to emails', 'clear my inbox'],
+      [St('Archive anything you don’t need', 10), St('Reply to the quick ones', 20), St('Flag the ones that need time', 10), St('Answer the first flagged one', 15), St('Answer the next one', 15)]),
+    BD('job-application', 'work', ['job application', 'job applications', 'apply for a job', 'apply for the job', 'apply for', 'apply to', 'job search', 'cover letter'],
+      [St('Read the posting and note what they want', 10), St('Update your resume for it', 30, [['Add what fits this job', 15], ['Cut what doesn’t', 15]]), St('Write the cover letter', 30, [['Draft it', 15], ['Polish it', 15]]), St('Fill out the application', 20), St('Submit it and note the date', 5)]),
+    BD('resume', 'work', ['resume', 'update my resume', 'update the resume', 'cv', 'linkedin'],
+      [St('Open your resume and list what’s new', 10), St('Add your latest role and wins', 20), St('Cut what’s old', 10), St('Fix the formatting', 15), St('Ask someone to read it', 5)]),
+    BD('interview', 'work', ['interview', 'job interview', 'interview prep', 'prep for the interview'],
+      [St('Read the job posting again', 10), St('Research the company', 20), St('Write three stories that show your skills', 30, [['Write the first story', 10], ['Write the second story', 10], ['Write the third story', 10]]), St('Practice answers out loud', 20), St('Pick your clothes and plan the trip', 10)]),
+    BD('meeting', 'work', ['prep for the meeting', 'meeting prep', 'agenda', 'one on one', '1 on 1', '~meeting'],
+      [St('Write the goal of the meeting', 5), St('Write the agenda', 10), St('Gather what people need to read', 15), St('Send it out', 5)]),
+    BD('review', 'work', ['performance review', 'self review', 'self assessment', 'self evaluation', 'annual review'],
+      [St('Open last year’s goals', 5), St('List what you did this year', 20), St('Pick your three biggest wins', 10), St('Write the review', 30, [['Draft it', 15], ['Polish it', 15]]), St('Send it', 5)]),
+    BD('project-plan', 'work', ['project plan', 'kickoff', 'proposal', 'plan the project', 'roadmap'],
+      [St('Write what done looks like', 10), St('List the pieces', 15), St('Put dates on each', 15), St('Share it', 10)]),
+    BD('expenses', 'work', ['expense report', 'expenses', 'reimbursement', 'receipts'],
+      [St('Gather the receipts', 10), St('Enter each one', 20), St('Attach the photos', 10), St('Submit it', 5)]),
+    BD('invoices', 'work', ['invoice', 'invoices', 'bill clients', 'billing'],
+      [St('List the hours or work to bill', 10), St('Make the invoices', 20), St('Send them', 5), St('Note when they’re due', 5)]),
+    BD('out-of-office', 'work', ['out of office', 'pto', 'time off', 'vacation days', 'leave request'],
+      [St('Ask for the days off', 10), St('Move recurring meetings', 15), St('Hand off anything urgent', 15), St('Set an away message', 5)]),
+
+    /* travel and packing */
+    BD('pack', 'travel', ['packing', 'pack for', 'pack a bag', 'pack the bags', 'suitcase', 'pack for the trip', '~trip', '~travel', '~flight'],
+      [St('Check the weather and make a list', 10), St('Pack {kid}’s bag', 30, [['Pack clothes for each day', 15], ['Pack toys and books for the trip', 15]]), St('Lay out your clothes for each day', 15), St('Pack toiletries and meds', 10), St('Pack it all', 15), St('Charge everything', 5)], 'pack'),
+    BD('baby-trip', 'travel', ['pack for the baby', 'travel with the baby', 'trip with the baby', 'diaper bag', 'pack the baby', 'baby bag', 'travel with a baby', 'flying with a baby', 'fly with the baby'],
+      [St('Make a list of diapers, wipes, food, and sleep things', 10), St('Pack the diaper bag for the ride', 15), St('Pack {kid}’s clothes and a few extra', 20), St('Pack the bottles, formula, or food', 15), St('Pack the travel crib or car seat', 15), St('Pack your bag', 20), St('Charge everything and load the car', 10)]),
+    BD('kids-trip', 'travel', ['pack for the kids', 'pack the kids', 'kids bags', 'family trip', 'trip with the kids', 'travel with the kids', 'road trip with the kids'],
+      [St('Make a list for each person', 10), St('Pack {kid}’s bag', 30, [['Pack clothes for each day', 15], ['Pack toys and books for the ride', 15]]), St('Pack your bag', 20), St('Pack snacks and things for the ride', 10), St('Charge everything', 5)]),
+    BD('trip-plan', 'travel', ['plan a trip', 'plan the trip', 'plan our trip', 'book a trip', 'vacation', 'getaway', 'road trip'],
+      [St('Pick the dates', 10), St('Look at places to stay', 20), St('Book the stay', 15), St('Book travel', 20), St('Make a loose plan for each day', 20), St('Tell anyone who needs to know', 5)]),
+    BD('flights', 'travel', ['flights', 'book a flight', 'book flights', 'book the flight', 'plane tickets', 'airfare'],
+      [St('Pick dates and times that work', 10), St('Compare prices', 20), St('Book it', 15), St('Add it to the calendar and share it', 5)]),
+    BD('hotel', 'travel', ['hotel', 'airbnb', 'place to stay', 'lodging', 'book a hotel'],
+      [St('Set a budget and an area', 5), St('Compare a few places', 20), St('Book it', 10), St('Save the confirmation', 5)]),
+    BD('passport', 'travel', ['passport', 'renew passport', 'passport renewal', 'visa application'],
+      [St('Check the expiration date and what you need', 10), Wh('Get a photo taken', 20), St('Fill out the form', 20), St('Mail it or book an appointment', 15), St('Mark when it should arrive', 5)]),
+    BD('pet-sitter', 'travel', ['pet sitter', 'house sitter', 'dog sitter', 'cat sitter', 'kennel', 'boarding'],
+      [St('Ask who’s free', 10), St('Book them', 10), St('Write the instructions', 15), St('Leave keys and supplies', 10)]),
+    BD('unpack', 'travel', ['unpack', 'unpacking', 'after the trip'],
+      [St('Empty the bags in one spot', 10), St('Start the laundry', 5), St('Put things away', 20), St('Put the bags away', 5)]),
+    BD('camping', 'travel', ['camping', 'camping trip', 'campsite', 'go camping'],
+      [St('Check the reservation and the weather', 10), St('Pull out the gear and check it', 30, [['Check the tent and sleeping bags', 15], ['Check the stove and lights', 15]]), St('Plan the meals and shop', 45, [['Plan the meals', 15], ['Shop', 30, true]]), St('Pack the car', 30, [['Load the big things', 15], ['Load the rest', 15]])]),
+    BD('leave-home', 'travel', ['before the trip', 'before we leave', 'get the house ready', 'house ready'],
+      [St('Take out the trash', 5), St('Empty the fridge of what will spoil', 10), St('Water the plants', 5), St('Set the thermostat and lock up', 5)]),
+
+    /* events and gifts */
+    BD('birthday', 'event', ['birthday', 'bday', 'birthday gift', 'birthday present'],
+      [St('Jot a few gift ideas', 10), St('Pick a card or gift', 15), St('Order it or buy it', 15), St('Write a note', 10), Wh('Call on the day', 30)]),
+    BD('party', 'event', ['birthday party', 'party', 'kids party', 'host a party', 'throw a party', 'party for', 'housewarming', 'get together', 'cookout', 'bbq'],
+      [St('Pick a date and a few people', 10), St('Send the invites', 15), St('Plan the food and the cake', 20), St('Shop for supplies', 45, [['Make the list', 10], ['Shop', 35, true]]), St('Decorate and set up', 45, [['Clean the main room', 15], ['Decorate', 15], ['Set out the food and drinks', 15]]), St('Clean up after', 30, [['Do the trash and dishes', 15], ['Do the rest', 15]])]),
+    BD('holiday-dinner', 'event', ['thanksgiving', 'host thanksgiving', 'holiday dinner', 'friendsgiving', 'christmas dinner', 'easter dinner'],
+      [St('Decide who’s coming', 10), St('Plan the menu and who brings what', 20), St('Order or buy the turkey', 15), St('Shop for the rest', 60, [['Make the list', 15], ['Shop', 45, true]]), St('Clean and set the table', 45, [['Clean the main rooms', 30], ['Set the table', 15]]), St('Make the dishes that keep', 60, [['Make the first one', 20], ['Make the next one', 20], ['Make the last one', 20]])]),
+    BD('decorations', 'event', ['decor', 'decorations', 'christmas decorations', 'holiday decorations', 'decorate', 'christmas tree', '~tree'],
+      [St('Ask {partner} what to put up this year', 10), St('Bring the boxes down', 30, [['Find the boxes', 15], ['Bring them down', 15]]), St('Decorate', 120, [['Put up the lights', 30], ['Do the tree', 45], ['Do the rest of the house', 45]]), St('Put the boxes away', 20)]),
+    BD('holiday-gifts', 'event', ['christmas gifts', 'holiday gifts', 'gifts for everyone', 'family gifts', 'gifts', 'christmas shopping', 'holiday shopping', 'hanukkah gifts'],
+      [St('List who', 10), St('Set a budget for each', 10), St('Pick gifts', 45, [['Pick the first few', 15], ['Pick a few more', 15], ['Pick the rest', 15]]), St('Order them', 30, [['Order the first half', 15], ['Order the rest', 15]]), St('Wrap them', 45, [['Wrap the first few', 15], ['Wrap a few more', 15], ['Wrap the rest', 15]])]),
+    BD('gift', 'event', ['gift', 'present', 'gift for', 'buy a gift'],
+      [St('Make a list of ideas', 10), St('Pick one', 10), St('Order it or buy it', 15), St('Wrap it', 15)]),
+    BD('card', 'event', ['card', 'cards', 'birthday card', 'greeting card', 'sympathy card', 'get well card', 'anniversary card', 'mom card', 'dad card'],
+      [St('Write the card', 10), St('Address and stamp it', 10), St('Mail it', 15)]),
+    BD('holiday-cards', 'event', ['christmas cards', 'christmas card', 'holiday cards', 'holiday card', 'new year cards'],
+      [St('Pick a photo', 10), St('Order the cards', 20), St('Update the address list', 20), St('Address them', 45, [['Address the first few', 15], ['Address a few more', 15], ['Address the rest', 15]]), St('Stamp and mail them', 15)]),
+    BD('thank-you', 'event', ['thank you notes', 'thank you note', 'thank you cards', 'thank you card', 'thank yous'],
+      [St('List who to thank and for what', 10), St('Write the first few', 20), St('Write the rest', 20), St('Address, stamp, and mail them', 15)]),
+    BD('wedding-guest', 'event', ['wedding', 'go to the wedding', 'wedding gift', 'rsvp'],
+      [St('RSVP', 5), St('Pick a gift from the registry', 15), St('Plan what to wear', 20), St('Book travel and a room if you need them', 30, [['Book travel', 15], ['Book a room', 15]]), St('Write a card', 10)]),
+    BD('wedding-plan', 'event', ['plan the wedding', 'plan our wedding', 'plan a wedding', 'wedding planning', 'our wedding'],
+      [St('Talk about what matters most', 10), St('Set the budget', 20), St('Make the guest list', 30, [['Make the first draft', 15], ['Make the final list', 15]]), St('Pick a date and a venue', 60, [['Look at venues', 20], ['Visit the top two', 20, true], ['Book one', 20]]), St('Book the big vendors', 60, [['Book the photographer', 20], ['Book the food', 20], ['Book the music', 20]]), St('Send save the dates', 30, [['Make them', 15], ['Send them', 15]])]),
+    BD('shower', 'event', ['baby shower', 'bridal shower', 'shower gift'],
+      [St('RSVP', 5), St('Pick a gift from the registry', 15), St('Order it', 10), St('Wrap it and write a card', 15)]),
+    BD('move', 'event', ['moving', 'move out', 'move in', 'move house', 'move to', 'moving day', 'pack the house', 'moving boxes', 'the move', 'new apartment', 'new house'],
+      [St('Pick a moving date', 10), St('Book movers or a truck', 30, [['Get quotes', 15], ['Book one', 15]]), St('Get boxes and tape', 30, [['Find boxes', 15], ['Pick them up', 15, true]]), St('Pack room by room', 180, [['Pack the kitchen', 60], ['Pack the bedrooms', 60], ['Pack everything else', 60]]), St('Change your address', 20), St('Set up internet and utilities', 30, [['Set up the internet', 15], ['Set up power and water', 15]]), St('Clean the old place', 120, [['Clean the kitchen', 30], ['Clean the bathroom', 30], ['Clean the floors', 30], ['Clean the walls and closets', 30]]), St('Unpack the essentials first', 60, [['Set up the beds', 20], ['Unpack the kitchen basics', 20], ['Unpack the bathroom', 20]])]),
+    BD('anniversary', 'event', ['anniversary', 'anniversary plans'],
+      [St('Think about what {partner} would love', 10), St('Pick what to do', 10), St('Book it', 15), St('Line up a sitter for {kid}', 15), St('Get a card or a gift', 20), St('Write a note', 10)]),
+    BD('date-night', 'event', ['date night', 'plan a date', 'date with'],
+      [St('Pick a night', 5), St('Pick what to do', 10), St('Book it', 10), St('Line up a sitter for {kid}', 15), St('Tell {partner} the plan', 5)]),
+    BD('costume', 'event', ['costume', 'costumes', 'halloween costume', 'halloween'],
+      [St('Ask {kid} what they want to be', 5), St('Pick a costume idea', 10), St('List what you need', 10), St('Buy or make the pieces', 45, [['Buy the pieces', 15], ['Make what you can', 30]]), St('Try it on and fix it', 15)]),
+    BD('guests', 'event', ['house guests', 'guests staying', 'company coming', 'family visiting', 'in laws visiting', 'visitors'],
+      [St('Ask when they arrive and leave', 5), St('Make up the guest bed', 15), St('Clear space in the bathroom', 10), St('Plan a few meals', 15), St('Shop', 45, [['Make the list', 10], ['Shop', 35, true]])]),
+
+    /* health */
+    BD('doctor', 'health', ['doctor', 'doctor appointment', 'checkup', 'check up', 'physical', 'annual physical', 'pediatrician', 'well visit', 'specialist', 'dermatologist', 'eye doctor', 'eye exam'],
+      [St('Call and book a time', 10), St('Write down questions and what’s changed', 10), St('Find your insurance card', 5), Wh('Go to the appointment', 60), St('Note what’s next and book any follow up', 10)]),
+    BD('dentist', 'health', ['dentist', 'dental', 'teeth cleaning', 'book a cleaning', 'dental cleaning', 'cleaning for', 'orthodontist'],
+      [St('Call and book a time', 10), St('Find the insurance card', 5), Wh('Go to the appointment', 60), St('Book the next one before you leave', 5)]),
+    BD('lab', 'health', ['blood test', 'blood work', 'lab work', 'labs', 'x ray', 'mammogram'],
+      [St('Check if you need to fast or book ahead', 5), St('Book a time', 10), Wh('Go', 45), St('Watch for the results', 5)]),
+    BD('routine', 'health', ['routine', 'habit', 'new routine', 'start a routine', 'morning routine', 'bedtime routine', 'new habit', 'build a habit'],
+      [St('Pick one small first version', 5), St('Pick when it happens each day', 5), St('Set up what you need the night before', 10), St('Do it the first time', 15), St('Note how it went', 5)]),
+    BD('exercise', 'health', ['exercise', 'get in shape', 'start running', 'workout plan', 'fitness', 'start working out', 'get fit', 'start exercising'],
+      [St('Pick two days this week', 5), St('Pick a simple plan', 15), St('Get your gear ready', 10), Wh('Do the first workout', 30), St('Note how it felt', 5)]),
+    BD('therapy', 'health', ['therapist', 'therapy', 'counselor', 'counseling', 'mental health'],
+      [St('Write down what you want help with', 10), St('Check what insurance covers', 15), St('Look at a few therapists', 20), St('Book a first visit', 10)]),
+    BD('vaccine', 'health', ['flu shot', 'vaccine', 'vaccines', 'booster', 'covid shot', 'shots'],
+      [St('Find a place and a time', 10), St('Book it', 5), Wh('Go get it', 30), St('Save the record', 5)]),
+    BD('sleep', 'health', ['sleep schedule', 'better sleep', 'go to bed earlier', 'earlier bedtime'],
+      [St('Pick a bedtime', 5), St('Set a wind down alarm', 5), St('Get the room dark and cool', 15), St('Put the phone away at the alarm', 5)]),
+
+    /* meals and cooking */
+    BD('meal-prep', 'meals', ['meal prep', 'prep meals', 'batch cook', 'batch cooking', 'cook ahead', 'prep lunches', 'prep for the week', 'cook once'],
+      [St('Pick two things to batch cook', 10), St('Write the shopping list', 10), St('Shop', 45, [['Get there', 10, true], ['Shop the list', 35, true]]), St('Start the rice or grains', 10), Wh('Cook the protein', 30), St('Chop the vegetables', 20), St('Portion it into containers', 15), St('Clean up', 15)]),
+    BD('meal-plan', 'meals', ['meal plan', 'plan meals', 'plan dinners', 'plan the meals', 'weekly menu', 'menu'],
+      [St('Check the calendar for busy nights', 5), St('Pick dinners for each night', 15), St('Pick one batch to eat twice', 5), St('Write the grocery list', 10)]),
+    BD('new-recipe', 'meals', ['new recipe', 'try a recipe', 'try a new recipe', 'cook something new'],
+      [St('Read the recipe all the way through', 5), St('Check you have everything', 5), St('Prep the ingredients', 20), Wh('Cook', 40), St('Clean up', 15)]),
+    BD('bake', 'meals', ['bake', 'baking', 'make cookies', 'bake a cake', 'make a cake', 'banana bread', 'cupcakes', 'muffins'],
+      [St('Read the recipe and preheat', 5), St('Measure everything out', 15), St('Mix it', 15), Wh('Bake', 30), St('Clean up while it bakes', 15)]),
+    BD('dinner-party', 'meals', ['dinner party', 'host dinner', 'host a dinner', 'have people over', 'people over', 'guests over'],
+      [St('Pick a menu', 10), St('Shop', 45, [['Make the list', 10], ['Shop', 35, true]]), St('Clean the main rooms', 30, [['Clean the kitchen', 15], ['Clean the living room', 15]]), St('Cook', 60, [['Start what takes longest', 20], ['Make the sides', 20], ['Finish and plate', 20]]), St('Set the table', 10)]),
+    BD('lunches', 'meals', ['pack lunches', 'pack lunch', 'school lunches', 'lunches for the week', 'make lunches'],
+      [St('Pick lunches for the week', 10), St('Shop for what’s missing', 30, [['Make the list', 10], ['Shop', 20, true]]), St('Prep the fruit and snacks', 15), St('Pack the first few', 15)]),
+    BD('freezer-meals', 'meals', ['freezer meals', 'freezer meal', 'stock the freezer'],
+      [St('Pick three freezer meals', 10), St('Shop', 45, [['Make the list', 10], ['Shop', 35, true]]), St('Cook them', 90, [['Cook the first one', 30, true], ['Cook the second one', 30, true], ['Cook the third one', 30, true]]), St('Label and freeze them', 15)]),
+
+    /* the car */
+    BD('registration', 'car', ['registration', 'car registration', 'renew the registration', 'tags', 'emissions', 'smog check', 'emissions test', 'car inspection'],
+      [St('Find the renewal notice', 10), Wh('Get the emissions check if you need one', 30), St('Pay online', 15), St('Put the sticker on', 5)]),
+    BD('car-service', 'car', ['oil change', 'car service', 'service the car', 'car maintenance', 'tires', 'tire', 'mechanic', 'brakes', 'check engine', 'car repair'],
+      [St('Check what’s due in the manual or the app', 5), St('Book a time', 10), Wh('Drop it off or wait', 60), St('Save the receipt', 5)]),
+    BD('car-wash', 'car', ['wash the car', 'car wash', 'clean the car', 'clean out the car', 'vacuum the car', 'detail the car', 'clean my car'],
+      [St('Clear out the trash', 10), St('Take out the mats and shake them', 5), St('Vacuum inside', 15), St('Wipe the dash and the windows', 10), St('Wash the outside', 20)]),
+    BD('buy-car', 'car', ['buy a car', 'buy a new car', 'new car', 'used car', 'car shopping', 'lease'],
+      [St('Set a budget', 10), St('List what you need in a car', 15), St('Compare a few models', 45, [['Look at the first models', 15], ['Look at a few more', 15], ['Narrow it to two', 15]]), Wh('Test drive', 60), St('Get financing quotes', 30, [['Get the first quote', 15], ['Get the others', 15]]), Wh('Buy it', 120)]),
+    BD('car-seat', 'car', ['car seat', 'install the car seat', 'booster seat'],
+      [St('Read the manual', 10), St('Install it', 20), St('Check it’s tight', 5)]),
+
+    /* the yard */
+    BD('mow', 'yard', ['mow', 'mowing', 'mow the lawn', 'lawn', 'grass'],
+      [St('Clear the yard of toys and sticks', 10), St('Mow', 40, [['Mow the front', 20], ['Mow the back', 20]]), St('Edge and trim', 15), St('Sweep the walks', 10)]),
+    BD('garden', 'yard', ['weed', 'weeds', 'weeding', 'garden', 'gardening', 'flower bed', 'flower beds', 'plant flowers', 'planting'],
+      [St('Get gloves and a bag', 5), St('Weed one bed', 20), St('Weed the next one', 20), St('Water', 10), St('Put the tools away', 5)]),
+    BD('leaves', 'yard', ['rake', 'raking', 'leaves', 'yard work', 'yard cleanup', 'fall cleanup', '~yard'],
+      [St('Get the rake and the bags', 5), St('Rake the front', 20), St('Rake the back', 20), St('Bag it', 15), St('Put the bags out', 5)]),
+    BD('gutters', 'yard', ['gutters', 'gutter', 'clean the gutters'],
+      [St('Set up the ladder safely', 10), St('Clear the front gutters', 20), St('Clear the back gutters', 20), St('Run water to check the downspouts', 10)]),
+    BD('snow', 'yard', ['shovel', 'shoveling', 'snow', 'clear the driveway'],
+      [St('Bundle up and get the shovel', 5), St('Clear the walk and the steps', 20), St('Clear the driveway', 30, [['Clear half of it', 15], ['Clear the rest', 15]]), St('Salt the icy spots', 5)]),
+    BD('patio', 'yard', ['deck', 'patio', 'porch', 'power wash', 'pressure wash', 'stain the deck'],
+      [St('Clear the furniture off', 10), St('Sweep it', 15), St('Wash it', 30, [['Wash half', 15], ['Wash the rest', 15]]), St('Let it dry and put things back', 15)]),
+
+    /* digital clutter */
+    BD('photos', 'digital', ['photos', 'pictures', 'camera roll', 'organize photos', 'back up photos', 'sort photos'],
+      [St('Pick one month to start', 5), St('Delete blurry shots and doubles', 20), St('Pick favorites', 15), St('Back them up', 10), St('Move on to the next month', 20)]),
+    BD('photo-book', 'digital', ['photo book', 'photo album', 'photobook', 'scrapbook'],
+      [St('Pick the dates it covers', 5), St('Pick the photos', 45, [['Pick from the first month', 15], ['Pick from the next month', 15], ['Pick from the rest', 15]]), St('Lay out the pages', 45, [['Lay out the first pages', 15], ['Lay out the middle pages', 15], ['Lay out the last pages', 15]]), St('Order it', 10)]),
+    BD('passwords', 'digital', ['passwords', 'password', 'password manager'],
+      [St('Pick a password manager', 10), St('Add your email and bank logins first', 20), St('Turn on two step sign in for those', 15), St('Add the rest over time', 20)]),
+    BD('files', 'digital', ['phone storage', 'clean up my phone', 'delete apps', 'downloads folder', 'computer files', 'desktop files', 'digital clutter', 'back up', 'backup', 'files'],
+      [St('Check what’s using space', 5), St('Delete apps you don’t use', 10), St('Clear the downloads folder', 10), St('Back up what matters', 15), St('Sort the rest into folders', 20)]),
+    BD('unsubscribe', 'digital', ['unsubscribe', 'newsletters', 'spam', 'junk mail'],
+      [St('Search your inbox for unsubscribe', 5), St('Unsubscribe from the first ten', 10), St('Unsubscribe from the rest', 15), St('Archive the old ones', 5)]),
+    BD('new-device', 'digital', ['new phone', 'new laptop', 'new computer', 'set up the phone', 'set up the laptop', 'set up my phone'],
+      [St('Charge both and find the cables', 5), St('Back up the old one', 15), Wh('Move your data over', 30), St('Sign in to your apps', 20), St('Wipe the old one', 10)])
   ];
-  const BREAKDOWN_ANY = [S('Decide the first small step', 10), S('Do the first step', 25), S('Finish up', 20)];
+  /* When nothing in the library or the rules fits: say what done looks like, then two parts */
+  const BREAKDOWN_ANY = [St('Write down what done looks like', 5), St('Do the first part', 25, [['Get what you need in one place', 10], ['Start the first part', 15]]), St('Finish it and put things away', 20, [['Finish the rest', 15], ['Put things away', 5]])];
+
+  /* == Goals ==
+     Exams people study for, each with its parts and, where there's a common public estimate, about how
+     many hours it takes (hours; null where there isn't one). Parts are in hours here; Model.goalForExam
+     turns them into minutes. caps: short names that are also everyday words (sat, act) count only in
+     capitals or in one of the phrases. */
+  const EXAMS = [
+    { id: 'bar', name: 'The bar exam', words: ['bar exam', 'bar exams', 'pass the bar', 'take the bar', 'study for the bar', 'sit for the bar', 'bar prep', 'uniform bar', 'ube', 'mbe'], hours: 400,
+      parts: [['Civil Procedure', 35], ['Constitutional Law', 35], ['Contracts', 35], ['Criminal Law and Procedure', 35], ['Evidence', 35], ['Real Property', 35], ['Torts', 35], ['Essay practice', 95], ['Performance tests', 60]] },
+    { id: 'cfa', name: 'CFA Level I', words: ['cfa', 'cfa level 1', 'cfa level i', 'chartered financial analyst'], hours: 300,
+      parts: [['Quantitative Methods', 25], ['Economics', 25], ['Corporate Issuers', 20], ['Financial Statement Analysis', 40], ['Equity Investments', 35], ['Fixed Income', 35], ['Derivatives', 20], ['Alternative Investments', 20], ['Portfolio Management', 35], ['Ethical and Professional Standards', 45]] },
+    { id: 'sie', name: 'The SIE exam', words: ['sie', 'sie exam', 'securities industry essentials'], hours: 50,
+      parts: [['Capital markets', 7], ['Products and their risks', 18], ['Trading, accounts, and prohibited activities', 13], ['The regulatory framework', 4], ['Practice exams', 8]] },
+    { id: 'series7', name: 'The Series 7 exam', words: ['series 7', 'series seven', 'general securities representative'], hours: 80,
+      parts: [['Finding customers', 5], ['Opening accounts', 7], ['Investments and recommendations', 50], ['Placing and confirming trades', 8], ['Practice exams', 10]] },
+    { id: 'cpa', name: 'The CPA exam', words: ['cpa', 'cpa exam', 'certified public accountant'], hours: 350,
+      parts: [['Auditing and Attestation (AUD)', 85], ['Financial Accounting and Reporting (FAR)', 110], ['Taxation and Regulation (REG)', 85], ['Your discipline section (BAR, ISC, or TCP)', 70]] },
+    { id: 'gre', name: 'The GRE', words: ['gre', 'gre exam', 'graduate record exam'], hours: 50,
+      parts: [['Verbal Reasoning', 18], ['Quantitative Reasoning', 18], ['Analytical Writing', 6], ['Practice tests', 8]] },
+    { id: 'gmat', name: 'The GMAT', words: ['gmat'], hours: 100,
+      parts: [['Quantitative Reasoning', 30], ['Verbal Reasoning', 30], ['Data Insights', 25], ['Practice tests', 15]] },
+    { id: 'lsat', name: 'The LSAT', words: ['lsat'], hours: 150,
+      parts: [['Logical Reasoning', 70], ['Reading Comprehension', 45], ['Argumentative Writing', 5], ['Practice tests', 30]] },
+    { id: 'mcat', name: 'The MCAT', words: ['mcat'], hours: 300,
+      parts: [['Chemical and Physical Foundations', 70], ['Critical Analysis and Reasoning (CARS)', 50], ['Biological and Biochemical Foundations', 70], ['Psychological, Social, and Biological Foundations', 50], ['Practice tests', 60]] },
+    { id: 'sat', name: 'The SAT', words: ['sat prep', 'sat test', 'the sat', 'take the sat', 'study for the sat', 'psat'], caps: ['SAT', 'PSAT'], hours: 20,
+      parts: [['Reading and Writing', 8], ['Math', 8], ['Practice tests', 4]] },
+    { id: 'act', name: 'The ACT', words: ['act prep', 'act test', 'the act', 'take the act', 'study for the act'], caps: ['ACT'], hours: 20,
+      parts: [['English', 4], ['Math', 6], ['Reading', 3], ['Science, if you take it', 3], ['Practice tests', 4]] },
+    { id: 'pmp', name: 'The PMP exam', words: ['pmp', 'project management professional'], hours: 60,
+      parts: [['People', 18], ['Process', 24], ['Business Environment', 8], ['Practice exams', 10]] },
+    { id: 'driving', name: 'The driving test', words: ['driving test', 'driver test', 'drivers test', 'road test', 'permit test', 'learner permit', 'driver license test', 'drivers license test', 'driving exam', 'drivers ed', 'driver ed'], hours: null,
+      parts: [['Read the driver’s handbook', 4], ['Practice driving', 20], ['Parking and turns', 4], ['Practice tests', 2]] },
+    { id: 'citizenship', name: 'The citizenship test', words: ['citizenship test', 'citizenship interview', 'citizenship exam', 'naturalization', 'civics test'], hours: null,
+      parts: [['Civics questions', 10], ['Reading and writing', 4], ['Your application answers', 3], ['Practice interview', 3]] }
+  ];
+  /* What makes a to-do look like a goal (Model.looksLikeGoal): an exam above, or one of these. GOAL_NOT
+     names the appointments and errands that also say test or exam (an eye exam, a blood test). */
+  const GOAL_WORDS = ['exam', 'exams', 'test', 'certification', 'certificate', 'get certified', 'license exam', 'licensing exam', 'board exam', 'boards', 'nclex', 'usmle', 'step 1',
+    'marathon', 'half marathon', 'triathlon', 'ironman', '5k', '10k', 'race', 'thesis', 'dissertation', 'capstone', 'manuscript', 'write a book', 'novel', 'launch', 'start a business', 'business plan',
+    'learn spanish', 'learn french', 'learn german', 'learn italian', 'learn japanese', 'learn chinese', 'learn mandarin', 'learn korean', 'learn portuguese', 'learn arabic', 'learn sign language', 'learn a language',
+    'learn guitar', 'learn the guitar', 'learn piano', 'learn the piano', 'learn to code', 'learn coding', 'learn python'];
+  const GOAL_NOT = ['eye', 'eyes', 'dental', 'dentist', 'doctor', 'physical', 'blood', 'covid', 'vision', 'hearing', 'annual', 'checkup', 'check up', 'pap', 'skin', 'allergy', 'drug', 'pregnancy',
+    'smoke', 'alarm', 'emissions', 'smog', 'swab', 'lab', 'urine', 'stress test', 'hair', 'vet', 'car', 'recipe', 'drive'];
+  /* Parts for a goal that isn't an exam, by kind, in hours. They're a start: the person sets their own. */
+  const GOAL_TEMPLATES = [
+    { id: 'race', kind: 'event', words: ['marathon', 'half marathon', 'triathlon', 'ironman', '5k', '10k', 'race'], parts: [['Easy runs', 40], ['Long runs', 35], ['Speed work', 15], ['Strength and stretching', 10]] },
+    { id: 'thesis', kind: 'project', words: ['thesis', 'dissertation', 'capstone', 'manuscript', 'write a book', 'novel'], parts: [['Pick the question and plan', 20], ['Read and take notes', 60], ['Research or gather data', 80], ['Write the draft', 80], ['Revise', 40], ['Finish and turn it in', 10]] },
+    { id: 'launch', kind: 'project', words: ['launch', 'go live', 'website', 'portfolio', 'start a business', 'business plan'], parts: [['Plan the launch', 4], ['Build what’s left', 20], ['Test it', 6], ['Tell people', 6], ['Launch day', 2]] },
+    { id: 'project', kind: 'project', words: ['project', 'renovation', 'remodel', 'build'], parts: [['Plan it', 2], ['Draft it', 10], ['Review it', 5], ['Finish it', 3]] },
+    { id: 'skill', kind: 'skill', words: ['learn', 'practice', 'get better at', 'improve'], parts: [['Learn the basics', 4], ['Practice', 12], ['Try it for real', 4]] },
+    { id: 'event', kind: 'event', words: ['wedding', 'party', 'reunion', 'conference', 'recital', 'performance', 'competition', 'tournament'], parts: [['Decide the big things', 3], ['Book and invite', 4], ['Prepare', 6], ['The last week', 3]] },
+    { id: 'other', kind: 'other', words: [], parts: [['Get started', 3], ['Keep going', 10], ['Finish', 3]] }
+  ];
+
+  /* == Cook once, eat twice ==
+     Meals that keep and reheat well, for Model.prepPlan. words: a meal of your own with one of these in its
+     name is a good batch cook too (not: the ones that don't reheat well). items are pantry ids, so
+     they reach the grocery list; has is what a home that leaves things out would check. */
+  const BATCH = {
+    words: ['rice', 'chicken', 'chili', 'soup', 'stew', 'curry', 'bowls', 'pasta bake', 'sheet pan', 'beans', 'roast'],
+    strong: ['chili', 'soup', 'stew', 'curry', 'bowls', 'pasta bake', 'sheet pan', 'roast'],
+    not: ['salmon', 'fish', 'shrimp', 'salad', 'sushi'],
+    meals: [
+      { id: 'chicken-rice', name: 'Chicken and rice', items: ['chicken', 'rice', 'broccoli'], has: ['chicken'] },
+      { id: 'turkey-chili', name: 'Turkey chili', items: ['turkey', 'beans', 'peppers', 'onion'], has: ['turkey'], recipe: 'chili' },
+      { id: 'bean-chili', name: 'Bean chili', items: ['beans', 'peppers', 'onion'], has: [] },
+      { id: 'burrito-bowls', name: 'Burrito bowls', items: ['chicken', 'rice', 'beans', 'peppers'], has: ['chicken'], recipe: 'burrito' },
+      { id: 'sheet-pan', name: 'Sheet pan chicken', items: ['chicken', 'broccoli', 'sweetpotato'], has: ['chicken'], recipe: 'sheetpan' },
+      { id: 'beef-stew', name: 'Beef stew', items: ['beef', 'potatoes', 'onion'], has: ['beef'] },
+      { id: 'veg-soup', name: 'Vegetable soup', items: ['potatoes', 'onion', 'zucchini', 'greenbeans'], has: [] },
+      { id: 'veg-curry', name: 'Sweet potato curry', items: ['sweetpotato', 'spinach', 'onion', 'rice'], has: [] },
+      { id: 'pasta-bake', name: 'Pasta bake', items: ['pasta', 'spinach', 'onion'], has: ['gluten', 'dairy'] },
+      { id: 'beans-rice', name: 'Black beans and rice', items: ['beans', 'rice', 'peppers'], has: [] },
+      { id: 'roast-chicken', name: 'Roast chicken and potatoes', items: ['chicken', 'potatoes', 'greenbeans'], has: ['chicken'] },
+      { id: 'quinoa-bowls', name: 'Quinoa bowls', items: ['quinoa', 'beans', 'peppers', 'spinach'], has: [] }
+    ]
+  };
 
   /* The Sunday Reset, one job per step. V11's own words for a step are in its feel field: every version
      shares this list, and only V11 plans every meal and every person, so only V11 takes them (app.js, FEEL). */
@@ -348,9 +722,17 @@
   const SUNDAY_V1 = { wake: h(5, 30), bed: h(22), blocks: [B('up', 'Up with Elijah', 'family', 'bottle', h(5, 30), h(8, 30)), B('ready', 'Get ready', 'family', 'shirt', h(8, 30), h(10)), B('church', 'Church', 'family', 'church', h(10), h(12), FIXED), B('lunch', 'Lunch, pack them up', 'family', 'fork', h(12), h(14)), B('reset', 'Sunday Reset', 'yours', 'calendar', h(14), h(14, 45)), B('workout', 'Workout', 'yours', 'dumbbell', h(14, 45), h(15, 45)), B('creative', 'Creative projects', 'yours', 'brush', h(15, 45), h(18), SOFT), B('dinner', 'Dinner', 'meals', 'pot', h(18), h(18, 45), { dinner: true }), B('evening', 'Free evening', 'yours', 'moon', h(18, 45), h(22), SOFT)] };
   const SUNDAY_HOME_V1 = { wake: h(5, 30), bed: h(22), blocks: [B('up', 'Up with Elijah', 'family', 'bottle', h(5, 30), h(8, 30)), B('ready', 'Get ready', 'family', 'shirt', h(8, 30), h(10)), B('church', 'Church', 'family', 'church', h(10), h(12), FIXED), B('lunch', 'Lunch', 'family', 'fork', h(12), h(13)), B('reset', 'Sunday Reset', 'yours', 'calendar', h(13), h(13, 45)), B('afternoon', 'Family afternoon', 'family', 'heart', h(13, 45), h(17), SOFT), B('walk', 'Walk, bath, feed', 'family', 'shoe', h(17), h(19)), B('bedtime', 'Bedtime', 'family', 'moon', h(19), h(19, 45)), B('dinner', 'Dinner', 'meals', 'pot', h(19, 45), h(20, 30), { dinner: true }), B('evening', 'Evening with Kim', 'us', 'heart', h(20, 30), h(22), SOFT)] };
   const stable = (v) => Array.isArray(v) ? '[' + v.map(stable).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v);
-  /* V11: saved data. VERSION stays 7 because every field V11 added is optional, read with a default,
-     and left alone by code that doesn't know it: V11's migrate keeps them (tests/saved-data.test.mjs),
-     and so does V10's, run as it shipped, so V10 opens a V11 board and saves it back whole
+  /* V11 goals (Oct 14): VERSION is 8. Version 8 adds state.goals (a list, empty on every older board),
+     task.spread (how a to-do's steps were spread out), goal sessions (adds whose src.type is 'goal', with
+     pinned and skipped), Meal prep blocks (src.type 'prep', with makes), and leftovers that know where
+     they come from (from: { date, slot } on a dinner or a meal). migrate adds the empty list and changes
+     nothing else (tests/saved-data.test.mjs). V10 and older read version 7, so one of them opening a
+     version 8 board treats it as newer: read only, never written over, and a version 8 backup is refused
+     there. Each version is its own site with its own storage, so a board only meets an older build
+     through a backup file.
+     Before that: VERSION stayed 7 while V11 added optional fields, each read with a default and left
+     alone by code that doesn't know it: V11's migrate keeps them (tests/saved-data.test.mjs),
+     and so does V10's, run as it shipped, so V10 keeps a V11 board's fields whole
      (tests/older-build.test.mjs). The fields: profile.people ({ id, name, group, home }),
      profile.partnerId (the id a partner had before stepping up to the first place), settings.move
      ({ on, n, unit }), settings.holidays (holiday ids), settings.modules.people, an event's holiday,
@@ -371,7 +753,7 @@
      Meals stay in the store's app/core document: an older build writes each month's document with only
      dates and dinners, so meals kept there would be lost. With parts, a year of breakfasts and lunches is
      about 100 KB of core. */
-  const VERSION = 7;
+  const VERSION = 8;
   /* Who the board belongs to. Names in the app's own words (tabs, buttons, lines) come from here,
      never from code. Russell's board keeps Kim, Elijah, and Kim's cookbook. */
   const RUSSELL = { name: 'Russell', partner: 'Kim', kids: ['Elijah'], cookbook: 'https://truffle-recipes.vercel.app' };
@@ -421,6 +803,11 @@
       st.settings = Object.assign({}, st.settings, { hours: Object.assign({ start: 300, end: 1440 }, st.settings && st.settings.hours) });
       st.v = 7;
     }
+    if (st.v === 7) {
+      /* goals with a date, broken into daily sessions. Every other field and date stays as it was. */
+      if (!Array.isArray(st.goals)) st.goals = [];
+      st.v = 8;
+    }
     return st;
   }
 
@@ -446,6 +833,7 @@
       presets: [],
       calendars: [],
       shopping: {},
+      goals: [],
       profile: Object.assign(copy(RUSSELL), { sample: true }),
       settings: { sound: true, motion: 'full', modules: { dinners: true, together: true }, hours: { start: 300, end: 1440 } }
     };
@@ -637,6 +1025,8 @@
     { id: 'nye', name: 'New Year’s Eve', icon: 'star', md: '12-31', ready: [{ k: 'plans', lead: 21, by: 7 }] }
   ];
   api.HOLIDAYS = HOLIDAYS;
+  /* V11 goals: exams and goal parts, the words that look like a goal, and meals that cook once, eat twice */
+  Object.assign(api, { EXAMS, GOAL_WORDS, GOAL_NOT, GOAL_TEMPLATES, BATCH });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Data = api;
 })(typeof window !== 'undefined' ? window : globalThis);

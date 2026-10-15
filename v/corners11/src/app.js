@@ -48,6 +48,8 @@
   const FEEL = document.body.classList.contains('feel');
   /* V11: the Moving step goes after the meals step, in this version only (stepsNow shows it when useMove) */
   if (FEEL && D.MOVE_STEP && !D.STEPS.some((s) => s.key === 'move')) D.STEPS.splice(D.STEPS.findIndex((s) => s.key === 'dinners') + 1, 0, D.MOVE_STEP);
+  /* V11 goals: the Goals step goes after To-dos, in this version only (stepsFor shows it while a goal is in play) */
+  if (FEEL && !D.STEPS.some((s) => s.key === 'goals')) D.STEPS.splice(D.STEPS.findIndex((s) => s.key === 'todo') + 1, 0, { key: 'goals', title: 'Goals', zoom: 'week', line: 'This week’s share of each goal.' });
   /* V11: the steps take their own words (Meals, People, To-dos) from data.js, where other versions keep theirs */
   if (FEEL) D.STEPS.forEach((s) => { if (s.feel) Object.assign(s, s.feel); });
   /* V11: friends have a color of their own (Data.CATS.friends), a kind of time you can pick, after the plum */
@@ -89,11 +91,14 @@
     return (a.date !== date ? M.dateText(a.date, 'day') + ' · ' : '') + M.span(a.start, b.start);
   }
   function canPlaceWindow(date, dur, start, key) {
+    /* (a start that isn't a number never reaches the model, which throws on one: it's no room, said plainly) */
+    if (!Number.isFinite(start) || !Number.isFinite(dur)) return { ok: false, reason: 'none', start: 0, actualDate: date, actualStart: 0 };
     const at = M.dateTime(date, start), r = M.canPlace(state, at.date, dur, at.start, key);
     const land = M.dateTime(r.date || at.date, r.start == null ? at.start : r.start);
     return Object.assign({}, r, { actualDate: land.date, actualStart: land.start, start: M.windowTime(date, land.date, land.start) });
   }
   function magnetWindow(date, start, dur, key) {
+    if (!Number.isFinite(start) || !Number.isFinite(dur)) return start;
     const at = M.dateTime(date, start), m = M.magnet(state, at.date, at.start, dur, key);
     return M.windowTime(date, at.date, m);
   }
@@ -500,6 +505,8 @@
       if (st.key === 'dinners' && !useDinners()) return false;
       if (st.key === 'kim' && !useTogether()) return false;
       if (st.key === 'move' && !useMove()) return false;
+      /* V11 goals: Goals only while a goal is in play */
+      if (st.key === 'goals' && !(FEEL && state && activeGoals().length)) return false;
       /* a board that's newer than last week has nothing to look back on yet */
       if (st.key === 'back' && runWs && nothingBehind(runWs)) return false;
       /* a version of the board can leave steps out of every reset (window.SR_resetSkip) */
@@ -560,7 +567,8 @@
         days.push({ num: k + 1, col: (off + k) % 7, row: Math.floor((off + k) / 7), trip: !!d.trip, marker: d.markers.length > 0, big: M.timedOn(state, date).some((e) => e.big), today: date === today, due: d.due.length > 0 });
       }
       /* a version can mark a month nobody has planned yet as the usual week's hours (window.SR_usualYears) */
-      const usual = !!window.SR_usualYears && mk > M.monthKey(today) && !Object.keys(state.dates).some((d) => d.startsWith(mk) && ((state.dates[d].adds || []).length));
+      /* (V11 goals: a skipped session takes no time, so it doesn't make a month planned) */
+      const usual = !!window.SR_usualYears && mk > M.monthKey(today) && !Object.keys(state.dates).some((d) => d.startsWith(mk) && (state.dates[d].adds || []).some((a) => !a.skipped));
       return { key: mk, name: M.MONTH_LONG[p.m - 1], year: p.y, current: mk === M.monthKey(today), days, list: monthList(ms).map((x) => ({ kind: x.kind, when: x.when, full: x.full, name: x.name })), yours: kindYours() && yours < 60 ? '' : M.hours(yours), usual };
     });
   }
@@ -577,7 +585,25 @@
   /* blocks settling onto the board make soft taps, a few at most */
   const landTick = () => { const n = performance.now(); if (n - landAt > 70) { landAt = n; Snd.tap(); } };
   /* a block set down: with feel, its knock and its clack come at the moment it touches the board */
-  function landed(date, key, size) { if (FEEL) W.land(date, key, size); else { W.squash(date, key); Snd.clack(size); } }
+  function landed(date, key, size) { if (FEEL) { W.land(date, key, size); watchLanding(date, key); } else { W.squash(date, key); Snd.clack(size); } }
+  /* V11: a block set down is a block drawn. A moment after it lands (a held back block shows by 1.4 s), the
+     desk is asked whether it shows it; when the board has it and doesn't show it (a number that went NaN, a
+     block held back that never came back, one still marked as in hand), it's drawn again, and the console
+     and the report hear of it (the drag gate fails on that). This is how the Apple Store's vanished block
+     would have shown up on its own, a moment late */
+  function watchLanding(date, key, tries) {
+    if (!W.blockShown) return;
+    setTimeout(() => {
+      if (!ready || view.phone || view.list || noDesk) return;
+      /* (something in hand, maybe this very block picked up again: ask once it's put down) */
+      if (carryingNow()) { if ((tries || 0) < 20) watchLanding(date, key, (tries || 0) + 1); return; }
+      if (W.blockShown(date, key) !== false) return;
+      try { console.error('Sunday Reset: a block set down on ' + date + ' (' + key + ') was not drawn, and was drawn again'); } catch (e) { /* fine */ }
+      logError('landing', new Error('not drawn: ' + key));
+      W.showBlock(date, key, { stale: !carryingNow() });
+      render();
+    }, 1700);
+  }
   /* The day board's header and bricks. */
   /* On the day board every block prints its time under its name, so the time never has to be read off the ruler. */
   function decorateDay(b, date) {
@@ -754,11 +780,16 @@
       .concat(prints.map((p) => ({ text: p.text, x: p.x + 0.02, z: rowTop(p.row) + labelD * 0.5, size: 0.3, soft: true })));
     return { title: 'Block library', sub: '', icon: 'box', items, depth, width, rowD, compact: below, arrange: below ? 'below' : 'beside', prints: printed, kit: true };
   }
+  /* V11: Now on a window wider than tall and short, the iPhone Duo open (951 by about 600): a book. The band and
+     its question are the left page and the day is the right page, so nothing to tap sits where the Duo folds
+     (duo.css puts the band there; layoutInsets frames the day beside it; renderBoard stacks the day's lanes) */
+  const NOW_BOOK = '(min-width: 760px) and (max-width: 1139px) and (max-height: 700px) and (orientation: landscape)';
+  const nowBook = () => FEEL && inToday() && !view.phone && !phoneDay() && !!window.matchMedia && window.matchMedia(NOW_BOOK).matches;
   function renderBoard(previewDays) {
     /* a portrait phone's desk gets the tall board: four hour lanes stacked, blocks about twice the size */
     /* V11: Now on a portrait tablet stacks the day in five hour lanes too, so the day fills the room instead
-       of a wide board leaving half the screen as bare desk */
-    const tallNow = FEEL && inToday() && !view.phone && window.innerHeight > window.innerWidth * 1.1;
+       of a wide board leaving half the screen as bare desk; so does the open Duo's right page (nowBook) */
+    const tallNow = FEEL && inToday() && !view.phone && (window.innerHeight > window.innerWidth * 1.1 || nowBook());
     /* V11: Dev's phone view is a phone's column in a wide window, so its desk takes the phone's tall board too */
     const tallPhone = phoneDay() && (window.innerHeight > window.innerWidth || (FEEL && devPhone));
     if (W.setDayShape) W.setDayShape(tallPhone || tallNow ? 'tall' : 'wide', tallNow ? 300 : 240);
@@ -914,6 +945,16 @@
       box.appendChild(b);
     });
   }
+  /* V11 goals: a kind of day's line, true to what it does now. Blank slate keeps more than locked blocks and
+     Take it easy sends goal sessions on too (data.js keeps the lines every version shares), so V11 says so */
+  const BLANK_KEEPS = 'Locked blocks, to-dos, goal sessions, and meal prep stay';
+  function kindLine(p) {
+    if (!FEEL) return p.line || '';
+    if (p.empty) return BLANK_KEEPS;
+    if (p.easy) return 'Locked blocks and meals stay. To-dos and goal sessions wait for another day';
+    if (p.clear && /Only locked blocks stay/.test(p.line || '')) return 'A clear day. ' + BLANK_KEEPS;
+    return p.line || '';
+  }
   /* What kind of day: one dropdown in the date card, named for the kind you're on ("Your usual Monday").
      Its list gives each kind its one line, your own kinds with a way to remove them, and Save this day
      at the end. Pick one to try it on; pick another to swap. */
@@ -927,7 +968,7 @@
     const all = D.PRESETS.concat(state.presets || []);
     const onP = all.find((p) => p.id === cur) || D.PRESETS[0];
     const d0 = day(date), t0 = M.totals(d0);
-    const lineOf = (p) => (p.usual ? (cur === 'usual' ? 'Up at ' + M.clock(d0.wake) + ', bed at ' + M.clock(d0.bed) + (kindYours() && !(t0.yours > 0) ? '' : ', ' + M.hours(t0.yours || 0) + ' ' + yoursWord()) : 'How ' + wdName + ' goes most weeks') : p.line || '');
+    const lineOf = (p) => (p.usual ? (cur === 'usual' ? 'Up at ' + M.clock(d0.wake) + ', bed at ' + M.clock(d0.bed) + (kindYours() && !(t0.yours > 0) ? '' : ', ' + M.hours(t0.yours || 0) + ' ' + yoursWord()) : 'How ' + wdName + ' goes most weeks') : kindLine(p));
     let pick = box.querySelector('.kinds-pick');
     if (!pick) {
       pick = el('button', 'kinds-pick');
@@ -1028,7 +1069,7 @@
       let d = now;
       if (p.id !== cur) { const tr = tryOn(() => M.applyPreset(state, date, p, state.palette)); if (tr.r && tr.r.ok !== false) d = daysWith(tr.dates, [date])[date]; }
       const t = M.totals(d), armed = arm && arm.id === p.id;
-      return { id: p.id, name: p.usual ? 'Your usual' : p.name, line: p.usual ? 'How ' + wdName + ' goes most weeks' : p.line || '', icon: p.icon || 'star', current: p.id === cur, yours: t.yours ? M.hours(t.yours) : '', lanes: lanes(d), warn: armed ? 'Takes off ' + arm.names + '. Tap again to use it.' : '', often: often === p.id ? 'Often on ' + wdName + 's' : '' };
+      return { id: p.id, name: p.usual ? 'Your usual' : p.name, line: p.usual ? 'How ' + wdName + ' goes most weeks' : kindLine(p), icon: p.icon || 'star', current: p.id === cur, yours: t.yours ? M.hours(t.yours) : '', lanes: lanes(d), warn: armed ? 'Takes off ' + arm.names + '. Tap again to use it.' : '', often: often === p.id ? 'Often on ' + wdName + 's' : '' };
     });
     /* V11: the cards are the kinds and nothing else; saving this day as a kind is a plain button beside the
        date (variant.js), and what a tap does is said by the note under the pointer */
@@ -1095,16 +1136,24 @@
     $('kinds').classList.remove('open');
     view.got.kindArm = null;
     const date = view.focus, wdName = M.DAY_LONG[M.weekday(date)];
-    const r = commit(() => M.applyPreset(state, date, p, state.palette));
+    const r = commit(() => {
+      const x = M.applyPreset(state, date, p, state.palette);
+      /* V11 goals: an easy day's goal sessions go back to their plans, which spread them over other days */
+      if (FEEL && x && x.ok !== false && p.easy && x.goals) activeGoals().forEach((g) => { M.planGoal(state, g.id, today, nowMin, { horizon: horizonOf(g) }); });
+      return x;
+    });
     if (!r) return;
     if (date === today) markSeen({ kind: true });
     selectBlock(null);
     Snd.good();
     const missed = (p.items || []).length - (r.placed || 0);
     const fit = missed > 0 ? ' ' + plural(missed, 'block didn’t fit.', 'blocks didn’t fit.') : '';
-    if (p.usual) toast('Back to your usual ' + wdName + (r.kept ? '. ' + plural(r.kept, 'to do keeps its time', 'to dos keep their times') + '.' : ''), '', undoSay(wdName + ' is as it was.'));
-    else if (p.empty) toast('A blank ' + wdName + '. Only locked blocks stay.', '', undoSay(wdName + ' is as it was.'));
-    else if (p.easy) toast('An easy ' + wdName + '.' + (r.back ? ' ' + plural(r.back, 'to do is', 'to dos are') + ' back on your list.' : ''), 'good', undoSay(wdName + ' is as it was.'));
+    const todoWord = FEEL ? ['to-do', 'to-dos'] : ['to do', 'to dos'];
+    /* V11 goals: Blank slate says what stayed on this day: locked blocks, and to-dos, goal sessions, or meal prep */
+    const kept = () => { const t = new Set(((state.dates[date] || {}).adds || []).filter((a) => !a.skipped && a.src).map((a) => a.src.type)); const w = ['Locked blocks'].concat(t.has('task') || t.has('step') ? ['to-dos'] : [], t.has('goal') ? ['goal sessions'] : [], t.has('prep') ? ['meal prep'] : []); return w.length < 3 ? w.join(' and ') : w.slice(0, -1).join(', ') + ', and ' + w[w.length - 1]; };
+    if (p.usual) toast('Back to your usual ' + wdName + (r.kept ? '. ' + plural(r.kept, todoWord[0] + ' keeps its time', todoWord[1] + ' keep their times') + '.' : ''), '', undoSay(wdName + ' is as it was.'));
+    else if (p.empty) toast('A blank ' + wdName + '. ' + (FEEL ? kept() + ' stay.' : 'Only locked blocks stay.'), '', undoSay(wdName + ' is as it was.'));
+    else if (p.easy) toast('An easy ' + wdName + '.' + (r.back ? ' ' + plural(r.back, todoWord[0] + ' is', todoWord[1] + ' are') + ' back on your list.' : '') + (FEEL && r.goals ? ' ' + plural(r.goals, 'goal session moves', 'goal sessions move') + ' to other days.' : ''), 'good', undoSay(wdName + ' is as it was.'));
     else if (p.mine) toast(p.name + ' on ' + wdName + '.' + fit, missed > 0 ? '' : 'good');
     else toast('A ' + p.name.toLowerCase() + ' ' + wdName + '.' + fit, missed > 0 ? '' : 'good');
   }
@@ -1187,6 +1236,17 @@
     });
     return e;
   }
+  /* V11: the foot of the chrome along the top that reaches into the column from x0 to the right edge (a side
+     panel's), so on a short window a panel starts under what stands over it, not under everything */
+  function topOver(x0) {
+    let b = 0;
+    document.querySelectorAll('[data-edge="top"]').forEach((x) => {
+      if (x.hidden || x.offsetParent === null) return;
+      const r = x.getBoundingClientRect();
+      if (r.width && r.height && r.right > x0) b = Math.max(b, r.bottom);
+    });
+    return b;
+  }
   /* == V11: a panel and its toasts during the reset ==
      The zoom a thing is drawn at (Bigger text zooms panels and toasts by 1.14): a length set on it in px lands
      that much bigger, so a place measured on the screen is set divided by it */
@@ -1253,9 +1313,11 @@
     const pv = $('preview-bar'), pvOn = !pv.hidden;
     if (view.phone) document.body.style.setProperty('--pv-h', pvOn ? Math.round(pv.offsetHeight + 8) + 'px' : '0px');
     if (phoneDay()) {
-      /* a preview's bar sits under the phone's own bar, and the board starts below both */
+      /* a preview's bar sits under the phone's own bar, and the board starts below both. V11: a preview's bar
+         that its CSS doesn't draw (the Dev chip takes its place) takes no room, so the board starts below the
+         phone's own bar instead of hiding its header behind it */
       pv.style.bottom = ''; pv.style.left = '';
-      const bar = (pvOn ? pv : $('phonebar')).getBoundingClientRect(), tools = $('btools');
+      const bar = (pvOn && (!FEEL || pv.offsetHeight) ? pv : $('phonebar')).getBoundingClientRect(), tools = $('btools');
       const sideTop = Math.min(side.hidden ? window.innerHeight : side.getBoundingClientRect().top, tools.hidden ? window.innerHeight : tools.getBoundingClientRect().top);
       side.style.top = ''; side.style.maxHeight = ''; side._keepTop = null;
       const bottom = Math.round(window.innerHeight - sideTop + 10);
@@ -1281,8 +1343,8 @@
       let top;
       if (doMode) {
         /* an open panel never moves up under the pointer when the question strip folds; it takes the
-           room the next time it opens */
-        top = Math.max(headBottom() + 10, side._keepTop || 0);
+           room the next time it opens. V11: beside the band on the open Duo (nowBook), it starts at the top */
+        top = Math.max((nowBook() ? chromeEdges().top : headBottom()) + 10, side._keepTop || 0);
         side._keepTop = top;
         /* V11 hides Add with its own CSS, so a box with no height means there's nothing to stop above */
         const fr = fab.getBoundingClientRect();
@@ -1292,8 +1354,10 @@
         const cr = corner.getBoundingClientRect();
         top = (cr.top < window.innerHeight / 2 ? cr.bottom : Math.max($('hud').getBoundingClientRect().bottom, $('topright').getBoundingClientRect().bottom)) + 10;
         if (!kinds.hidden) { const kr = kinds.getBoundingClientRect(), sl = window.innerWidth - 16 - side.offsetWidth; if (kr.right > sl - 8) top = Math.max(top, kr.bottom + 10); }
-        /* it ends above the tray bar, never over Set up this week */
-        top = Math.max(top, chromeEdges().top + 10);
+        /* it ends above the tray bar, never over Set up this week. V11: on a short window (the Duo open, 951 by
+           about 600) it clears only what stands over its own column, so with the date card on the left it starts
+           under the zoom switch and has the height for its days, its steppers, and Add (duo.css, topOver) */
+        top = Math.max(top, (FEEL && window.innerHeight < 700 ? topOver(window.innerWidth - 16 - side.offsetWidth) : chromeEdges().top) + 10);
         side.style.maxHeight = view.phone ? '' : Math.round(Math.max(220, Math.min(rackBox().top, window.innerHeight - chromeEdges().bottom) - 10 - top)) + 'px';
       }
       side.style.top = Math.round(top) + 'px';
@@ -1319,13 +1383,16 @@
     placeViewCtl();
     fitBar();
     const edges = chromeEdges();
-    const top = Math.max(headBottom() + 14, edges.top + 14);
+    /* V11: on the open Duo the day is the page beside the band, from the top down (nowBook) */
+    const book = nowBook() && !$('band').hidden;
+    const top = book ? edges.top + 14 : Math.max(headBottom() + 14, edges.top + 14);
     const rack = rackBox();
     let bottom = Math.max(window.innerHeight - rack.top + 12, edges.bottom + 12);
     /* V11: a version that hides Add with its own CSS (V11's bottom bar has it) leaves no room for it */
     if (doMode && !fab.hidden && (!FEEL || fab.offsetParent !== null)) bottom = Math.max(bottom, window.innerHeight - $('fab-add').getBoundingClientRect().top + 12);
-    let right = Math.max($('side').hidden ? 16 : window.innerWidth - $('side').getBoundingClientRect().left + 12, edges.right + 12);
-    const left = Math.max(16, edges.left + 12);
+    /* (on the open Duo a panel opens over the band's page, on the left (duo.css), so the day keeps its page) */
+    let right = Math.max($('side').hidden || book ? 16 : window.innerWidth - $('side').getBoundingClientRect().left + 12, edges.right + 12);
+    const left = Math.max(16, edges.left + 12, book ? Math.max($('band').getBoundingClientRect().right, $('side').hidden ? 0 : $('side').getBoundingClientRect().right) + 16 : 0);
     /* V11: the place panel along the bottom of a sheet's screen: the week fits the whole width above it */
     if (sheetPlace) { right = Math.max(16, edges.right + 12); bottom = Math.max(bottom, window.innerHeight - side.getBoundingClientRect().top + 12); }
     /* V11: any other panel that steps the sheet aside leaves the week where it was, at the size it was, and
@@ -2336,8 +2403,16 @@
   /* V11: the week a reset plans, at a glance: which blocks are placed, which to-dos have a time in it, and
      which meals are planned. The finish compares the week with how it was at the start (resetDid). */
   function resetSnap(ws) {
-    const dates = M.range(ws, 7), blocks = [], todos = [], meals = [];
-    dates.forEach((d) => (((state.dates[d] || {}).adds) || []).forEach((a) => { const t = a.src && a.src.type; if (t !== 'task' && t !== 'step' && !a.dinner) blocks.push(a.id); }));
+    const dates = M.range(ws, 7), blocks = [], todos = [], meals = [], sessions = [];
+    /* V11 goals: a goal's sessions are counted as sessions, never as blocks placed, and a skipped one (a record
+       that takes no time) not at all. A session is known by its day, part, and time, since planning a goal again
+       gives the same session a new id */
+    dates.forEach((d) => (((state.dates[d] || {}).adds) || []).forEach((a) => {
+      const t = a.src && a.src.type;
+      if (a.skipped) return;
+      if (t === 'goal') { sessions.push(d + '|' + a.src.id + '|' + (a.src.part || '') + '|' + a.start + '|' + a.dur); return; }
+      if (t !== 'task' && t !== 'step' && !a.dinner) blocks.push(a.id);
+    }));
     M.placements(state).forEach((list, id) => { if (list.some((p) => p.date >= dates[0] && p.date <= dates[6])) todos.push(id); });
     dates.forEach((d) => {
       const dn = state.dinners[d];
@@ -2347,7 +2422,7 @@
          first change moves it onto the board (window.SR_oldMeal), and this reset didn't plan it */
       ['breakfast', 'lunch'].forEach((k) => { const m = ms && ms[k]; if ((m && (typeof m === 'string' || m.name || m.how)) || (window.SR_oldMeal && window.SR_oldMeal(d, k))) meals.push(d + '|' + k); });
     });
-    return { blocks, todos, meals };
+    return { blocks, todos, meals, sessions };
   }
   /* V11: the first look is kept on this device for half a day too, so a reload in the middle doesn't lose what
      the reset did; never in a preview, and gone once the reset is done */
@@ -2364,9 +2439,11 @@
   function resetDid() {
     const r = view.reset;
     if (!r || !r.snap) return '';
-    const now = resetSnap(r.week), was = r.snap, more = (k) => now[k].filter((x) => !was[k].includes(x)).length;
-    const bits = [], b = more('blocks'), t = more('todos'), m = useDinners() ? more('meals') : 0;
+    /* (a first look kept from before sessions were counted has none) */
+    const now = resetSnap(r.week), was = r.snap, more = (k) => (now[k] || []).filter((x) => !(was[k] || []).includes(x)).length;
+    const bits = [], b = more('blocks'), t = more('todos'), m = useDinners() ? more('meals') : 0, s = FEEL ? more('sessions') : 0;
     if (b) bits.push(plural(b, 'block', 'blocks') + ' placed');
+    if (s) bits.push(plural(s, 'goal session', 'goal sessions') + ' placed');
     if (t) bits.push(plural(t, 'to-do', 'to-dos') + ' given a time');
     if (m) bits.push(plural(m, 'meal', 'meals') + ' planned');
     if (!bits.length) return '';
@@ -2435,7 +2512,9 @@
        redraws that follow, unless something else already has it */
     if (FEEL && r.titleFocus && Date.now() - r.titleFocus < 900) {
       const tt = k.querySelector('.reset-title');
-      setTimeout(() => { const a = document.activeElement; if (tt.isConnected && (!a || a === document.body || !a.isConnected)) { tt.tabIndex = -1; tt.focus({ preventScroll: true }); } }, 0);
+      /* (never while a finger or the mouse is pressing or carrying something: focus moving mid press can scroll
+         the sheet under it on a phone) */
+      setTimeout(() => { const a = document.activeElement; if (tdrag || bdrag) return; if (tt.isConnected && (!a || a === document.body || !a.isConnected)) { tt.tabIndex = -1; tt.focus({ preventScroll: true }); } }, 0);
     }
     /* V11: a step picked up again keeps its own line, so People never says "one thing to bring to Sam" */
     const peopleLine = 'Time with the people in your week. Drop an idea on a day, or keep the week as it is.';
@@ -3249,6 +3328,989 @@
     /* the goal is a setting, so the way to turn Moving off is where the other switches are */
     if (!view.reset) { divider(p); p.appendChild(button('Moving in Settings', 'small quiet', () => { closeSel(); openDrawer('you'); })); }
   }
+  /* == V11 goals: big things, small blocks ==
+     docs/PRODUCT-STRATEGY.md, from Russell's brother: a goal with a date becomes sessions on real days, and
+     when a day doesn't happen the plan spreads its time forward on its own (the engine: Model.newGoal,
+     planGoal, skipGoalSession, goalCheckIn). Here: Goals from the menu, New goal a question at a time with
+     the plan shown before anything goes on the board, a goal's own panel, sessions that skip instead of
+     coming off, the one question about yesterday, and a Goals step in the Sunday Reset. */
+  /* V11 goals: words and sums, no screens (tests/ui-goals.test.mjs cuts from here to "V11 goals: the panels") */
+  /* a session wears its goal's color and this mark, so it reads as a goal's on the board */
+  const GOAL_MARK = 'star';
+  const goalById = (id) => ((state && state.goals) || []).find((g) => g.id === id) || null;
+  /* a goal still in play: not removed, and its date still ahead */
+  const liveGoal = (g) => !!g && !g.archived && !!g.date && g.date > today;
+  /* the goals that place sessions: in play and not paused */
+  const activeGoals = () => ((state && state.goals) || []).filter((g) => liveGoal(g) && !g.paused);
+  /* what Goals lists: every goal not removed, the ones in play first, then by date */
+  const shownGoals = () => ((state && state.goals) || []).filter((g) => !g.archived).sort((a, b) => (liveGoal(b) ? 1 : 0) - (liveGoal(a) ? 1 : 0) || ((a.date || '9999') < (b.date || '9999') ? -1 : (a.date || '9999') > (b.date || '9999') ? 1 : 0));
+  const isSession = (b) => !!(b && b.src && b.src.type === 'goal');
+  /* hours the way the plan says them: 45 min, 2 h, 14.5 h */
+  /* (a number and its unit never break across two lines) */
+  const goalHrs = (m) => (m < 60 ? Math.round(m) + ' min' : M.hours(m).replace(' ', ' '));
+  /* what's done of all of it: 0 of 35 h, 12 of 400 h, 30 min of 2 h */
+  const ofHrs = (done, total) => { const a = done > 0 ? goalHrs(done) : '0', b = goalHrs(total); return (/ h$/.test(a) && / h$/.test(b) ? a.slice(0, -2) : a) + ' of ' + b; };
+  /* how far off a goal's date is: tomorrow, in 12 days, in 19 weeks, in 7 months */
+  function goalAway(date) {
+    const n = M.diffDays(today, date);
+    if (n < 0) return n === -1 ? 'yesterday' : 'gone by';
+    if (n === 0) return 'today';
+    if (n === 1) return 'tomorrow';
+    if (n < 14) return 'in ' + n + ' days';
+    if (n < 182) return 'in ' + Math.round(n / 7) + ' weeks';
+    const mo = Math.round(n / 30.44);
+    return mo === 12 ? 'in a year' : 'in ' + mo + ' months';
+  }
+  /* a goal's date and how far off it is: Feb 24, in 19 weeks (the year too, when it's that far) */
+  function goalWhen(date) {
+    if (!date) return 'No date yet';
+    const n = M.diffDays(today, date), d = M.dateText(date) + (Math.abs(n) > 300 ? ', ' + date.slice(0, 4) : '');
+    return d + ', ' + goalAway(date);
+  }
+  /* a rhythm in a line: Weekdays 2 h, weekends 3 h, mornings, up to 1 h at a time. */
+  function rhythmWords(r) {
+    const on = (r.days || []).filter((d) => ((d === 0 || d === 6) ? r.we : r.wd) > 0);
+    const wds = on.filter((d) => d >= 1 && d <= 5).sort(), wes = on.filter((d) => d === 0 || d === 6).sort((a, b) => b - a);
+    if (!on.length) return 'No days yet.';
+    const bits = [];
+    if (on.length === 7 && r.wd === r.we) bits.push('Every day ' + M.dur(r.wd));
+    else {
+      if (wds.length) bits.push((wds.length === 5 ? 'Weekdays' : wds.map((d) => M.DAY_SHORT[d]).join(', ')) + ' ' + M.dur(r.wd));
+      if (wes.length) bits.push((wes.length === 2 ? 'weekends' : M.DAY_LONG[wes[0]] + 's') + ' ' + M.dur(r.we));
+    }
+    const when = { morning: 'mornings', afternoon: 'afternoons', evening: 'evenings' }[r.when];
+    if (when) bits.push(when);
+    if (Math.max(wds.length ? r.wd : 0, wes.length ? r.we : 0) > (r.chunk || 60)) bits.push('up to ' + M.dur(r.chunk || 60) + ' at a time');
+    const s = bits.join(', ');
+    return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+  }
+  /* the one question about yesterday: Did yesterday's 2 h on Pass the bar exam happen? */
+  const askWords = (x) => 'Did yesterday’s ' + goalHrs(x.min) + ' on ' + x.name + ' happen?';
+  /* how much of a session might have happened, for Some of it: a quarter, a half, three quarters, on the grid */
+  const someChoices = (total) => [0.25, 0.5, 0.75].map((k) => Math.round((total * k) / 15) * 15).filter((m, i, all) => m >= 15 && m < total && all.indexOf(m) === i);
+  /* where a goal stands, in two words: On track, Behind by 4 h, Paused, or its date gone by */
+  const standWords = (g, st) => (g.paused ? 'Paused' : !liveGoal(g) ? 'Its date has gone by' : st.behindMin >= 15 ? 'Behind by ' + goalHrs(st.behindMin) : 'On track');
+  /* a part's hours as a person types them (35, 1.5, 2 h) to minutes on the grid; null when it doesn't read */
+  function partMinutes(text) {
+    const v = parseFloat(String(text == null ? '' : text).replace(',', '.'));
+    return Number.isFinite(v) && v >= 0 ? Math.round((v * 60) / 15) * 15 : null;
+  }
+  /* minutes back to the hours a part's box shows: 35, 1.5, 0.25 */
+  const partHours = (m) => String(Math.round((m / 60) * 100) / 100);
+
+  /* V11 goals: what it holds. Where a goal stands is Model.goalProgress, given the days the board already
+     resolved (day()), so it costs about a millisecond once they're warm; a what if (one more day, longer
+     days, a later date) is the same call on a copy of the goal. Kept until the board or the minute changes */
+  const goalDay = (d) => day(d);
+  const goalProgressOf = (g) => M.goalProgress(state, g, today, nowMin, { day: goalDay });
+  function goalStand(g) {
+    const key = 'gs|' + today + '|' + nowMin + '|' + JSON.stringify([g.id, g.date, g.start, g.rhythm, g.parts, g.paused]);
+    let st = cache.get(key);
+    if (!st) { st = goalProgressOf(g); cache.set(key, st); }
+    return st;
+  }
+  /* What would make a short plan fit, each worked out on the goal as it stands or is drafted: a day it
+     doesn't use yet, longer days, any time of day, a later date, and fewer hours. Each says what it holds,
+     and carries the change to make: [{ id, name, line, fits, patch }]. Kept until the board changes */
+  function goalFixes(g, st) {
+    const key = 'gf|' + today + '|' + nowMin + '|' + JSON.stringify([g.id, g.date, g.start, g.rhythm, g.parts]);
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const out = [], need = st.leftMin;
+    cache.set(key, out);
+    if (!g.date || st.behindMin < 15) return out;
+    const r0 = g.rhythm || {};
+    const room = (patch) => goalProgressOf(Object.assign({}, g, patch)).capacityMin;
+    const says = (min) => (min >= need ? 'That fits' : 'Holds about ' + goalHrs(min) + ', ' + goalHrs(need - min) + ' short');
+    /* a day it doesn't use yet: the one that adds the most, at the time its kind of day has (or the other's) */
+    let best = null;
+    [1, 2, 3, 4, 5, 6, 0].filter((wd) => !(r0.days || []).includes(wd)).forEach((wd) => {
+      const we = wd === 0 || wd === 6, r = Object.assign({}, r0, { days: (r0.days || []).concat(wd) });
+      if (we && !(r.we > 0)) r.we = r.wd > 0 ? r.wd : 60;
+      if (!we && !(r.wd > 0)) r.wd = r.we > 0 ? r.we : 60;
+      const m = room({ rhythm: r });
+      if (!best || m > best.m) best = { wd, r, m };
+    });
+    if (best && best.m >= st.capacityMin + 60) out.push({ id: 'day', name: 'Add ' + M.DAY_LONG[best.wd] + 's', line: says(best.m), fits: best.m >= need, patch: { rhythm: best.r } });
+    /* longer days: the least more that fits, up to two hours more a day; past that, the most it can hold */
+    const wdOn = (r0.days || []).some((d) => d >= 1 && d <= 5), weOn = (r0.days || []).some((d) => d === 0 || d === 6);
+    let longer = null;
+    for (const inc of [15, 30, 45, 60, 90, 120]) {
+      const r = Object.assign({}, r0, { wd: wdOn ? (r0.wd || 0) + inc : r0.wd, we: weOn ? (r0.we || 0) + inc : r0.we });
+      const m = room({ rhythm: r });
+      if (!longer || m > longer.m) longer = { r, m };
+      if (m >= need) break;
+    }
+    if (longer && longer.m >= st.capacityMin + 60) {
+      const r = longer.r, bits = [];
+      if (wdOn) bits.push(M.dur(r.wd) + ' on weekdays');
+      if (weOn) bits.push(M.dur(r.we) + ' on weekends');
+      out.push({ id: 'longer', name: 'Longer days', line: bits.join(', ') + '. ' + says(longer.m), fits: longer.m >= need, patch: { rhythm: r } });
+    }
+    /* any time of day, when it keeps to one part of it */
+    if (r0.when && r0.when !== 'any') {
+      const r = Object.assign({}, r0, { when: 'any' }), m = room({ rhythm: r });
+      if (m >= st.capacityMin + 60) out.push({ id: 'any', name: 'Any time of day', line: 'Not only ' + { morning: 'mornings', afternoon: 'afternoons', evening: 'evenings' }[r0.when] + '. ' + says(m), fits: m >= need, patch: { rhythm: r } });
+    }
+    /* a later date: the first day that holds it all, looked for a week at a time up to half a year more */
+    {
+      let lo = g.date, hi = null;
+      for (let k = 1; k <= 26 && !hi; k++) { const d = M.addDays(g.date, 7 * k); if (room({ date: d }) >= need) hi = d; else lo = d; }
+      if (hi) {
+        while (M.diffDays(lo, hi) > 1) { const mid = M.addDays(lo, Math.floor(M.diffDays(lo, hi) / 2)); if (room({ date: mid }) >= need) hi = mid; else lo = mid; }
+        out.push({ id: 'date', name: 'A later date', line: M.dateText(hi) + (hi.slice(0, 4) !== g.date.slice(0, 4) ? ', ' + hi.slice(0, 4) : '') + ' fits it, ' + goalAway(hi), fits: true, patch: { date: hi } });
+      }
+    }
+    /* fewer hours: every part still to do trimmed in step, to what the days can hold */
+    if (st.capacityMin >= 60) {
+      const k = st.capacityMin / need;
+      const parts = (g.parts || []).map((p) => { const s = st.parts.find((x) => x.id === p.id) || { doneMin: 0 }; return p.done ? Object.assign({}, p) : Object.assign({}, p, { min: s.doneMin + Math.max(0, Math.floor(((p.min - s.doneMin) * k) / 30) * 30) }); });
+      out.push({ id: 'fewer', name: 'Fewer hours', line: 'Trim the parts to ' + goalHrs(parts.reduce((a, p) => a + p.min, 0)) + ' in all. That fits', fits: true, patch: { parts } });
+    }
+    return out;
+  }
+  /* V11 goals: the panels (the end of what tests/ui-goals.test.mjs cuts) */
+  /* the goal's mark on its own color, the way its sessions look on the board */
+  function goalMark(g, size) {
+    const c = cat(g.cat), mk = el('span', 'c-gl-mark');
+    mk.style.setProperty('--bg', c.base);
+    mk.appendChild(icon(GOAL_MARK, size || 10, c.ink));
+    return mk;
+  }
+  /* hours done of all of them, as a bar, with where it stands beside the numbers */
+  function goalBar(g, st) {
+    const box = el('span', 'c-gl-progress'), bar = el('span', 'c-gl-bar'), fill = el('i');
+    const k = st.totalMin ? Math.min(1, st.doneMin / st.totalMin) : 0;
+    fill.style.width = (k > 0 ? Math.max(2, k * 100) : 0).toFixed(1) + '%';
+    fill.style.setProperty('--bg', cat(g.cat).base);
+    bar.appendChild(fill);
+    bar.setAttribute('aria-hidden', 'true');
+    const nums = el('span', 'c-gl-nums');
+    const sw = standWords(g, st), cls = g.paused || !liveGoal(g) ? 'quiet' : st.behindMin >= 15 ? 'behind' : 'ok';
+    nums.append(el('b', '', ofHrs(st.doneMin, st.totalMin)), el('span', 'c-gl-stand ' + cls, sw));
+    box.append(bar, nums);
+    return box;
+  }
+  /* this week's share in a line: This week: 14 h, 2 h done */
+  function weekShare(g, st) {
+    if (g.paused) return 'Paused. Nothing new goes on the board.';
+    if (!liveGoal(g)) return 'Its date has gone by.';
+    if (g.start && g.start > M.addDays(M.weekStart(today), 6)) return 'Starts ' + M.dateText(g.start) + '.';
+    if (!st.week.plannedMin) return 'Nothing this week yet.';
+    return 'This week: ' + goalHrs(st.week.plannedMin) + (st.week.doneMin ? ', ' + goalHrs(st.week.doneMin) + ' done' : '') + '.';
+  }
+  /* Goals: each goal with its date, its hours done, this week's share, and where it stands; New goal last */
+  function goalsPanel(p) {
+    const list = shownGoals(), ws = M.weekStart(today);
+    kicker(p, list.length ? 'This week, ' + M.spanText(ws, M.addDays(ws, 6)) : 'Exams, races, projects', GOAL_MARK);
+    title(p, 'Goals');
+    if (!list.length) line(p, 'Anything with a date becomes a little time each day, on your board. A day that doesn’t happen moves forward on its own.');
+    const box = el('div', 'c-gl-list');
+    list.forEach((g) => {
+      const st = goalStand(g), b = el('button', 'c-gl-card' + (g.paused ? ' paused' : '') + (liveGoal(g) ? '' : ' past'));
+      b.type = 'button';
+      b.dataset.fk = 'gl-card-' + g.id;
+      const head = el('span', 'c-gl-head'), words = el('span', 'c-gl-words');
+      words.append(el('b', 'c-gl-name', g.name || 'Your goal'), el('span', 'c-gl-when', goalWhen(g.date)));
+      head.append(goalMark(g), words);
+      b.append(head, goalBar(g, st), el('span', 'c-gl-week', weekShare(g, st)));
+      b.setAttribute('aria-label', (g.name || 'Your goal') + ', ' + goalWhen(g.date) + '. ' + ofHrs(st.doneMin, st.totalMin) + ' done. ' + standWords(g, st) + '. Opens the goal');
+      b.addEventListener('click', () => { Snd.init(); Snd.pick(); openSel({ type: 'goal', id: g.id }); });
+      box.appendChild(b);
+    });
+    if (list.length) p.appendChild(box);
+    const go = button('New goal', 'go wide', () => openGoalFlow());
+    go.dataset.fk = 'gl-new';
+    p.appendChild(go);
+  }
+  /* New goal, or the change of one part of a goal: a draft kept in view while the panel is open, so a
+     question you leave and come back to keeps its answers */
+  const GOAL_ASKS = ['name', 'date', 'parts', 'rhythm', 'plan'];
+  function freshGoalDraft(name) {
+    return { edit: null, step: 'name', name: name || '', seed: name || '', date: '', start: today, parts: [], partsFor: null, kind: 'other', cat: 'yours', exam: null, note: '', source: '', rhythm: { days: [1, 2, 3, 4, 5, 6, 0], wd: 60, we: 60, when: 'any', chunk: 60 } };
+  }
+  function goalDraftOf(g, step) {
+    return { edit: g.id, step, name: g.name, date: g.date || '', start: g.start || today, parts: (g.parts || []).map((p) => Object.assign({}, p)), partsFor: g.name, kind: g.kind, cat: g.cat, exam: null, note: '', source: 'goal', rhythm: Object.assign({}, g.rhythm) };
+  }
+  function openGoalFlow(name, step, editId) {
+    if (inToday()) setMode('planner');
+    const g = editId ? goalById(editId) : null;
+    if (g) view.goalDraft = goalDraftOf(g, step || 'rhythm');
+    else if (!view.goalDraft || view.goalDraft.edit || (name && view.goalDraft.seed !== name)) view.goalDraft = freshGoalDraft(name);
+    openSel({ type: 'newGoal', id: editId || null, kind: view.goalDraft.step });
+  }
+  /* parts suggested for the name the draft has, unless they were made for it already or changed by hand */
+  function draftParts(d) {
+    if (d.partsFor === d.name && d.parts.length) return;
+    const ex = M.goalForExam(d.name, D);
+    d.parts = ex.parts.map((p) => ({ id: M.newId('gp'), name: p.name, min: p.min }));
+    d.partsFor = d.name; d.kind = ex.kind; d.cat = ex.cat; d.exam = ex.exam; d.source = ex.source;
+    d.note = ex.note ? ex.note + ' Change any of it.' : 'A start. Change the parts and their hours to fit.';
+  }
+  /* the goal a draft would make: the same id as the goal it changes, so its sessions count */
+  function draftGoal(d) {
+    const g0 = d.edit ? goalById(d.edit) : null;
+    return M.newGoal(Object.assign({}, g0 || {}, { id: d.edit || 'g-draft', name: d.name.trim() || 'Your goal', kind: d.kind, cat: d.cat, icon: GOAL_MARK, date: d.date || null, start: d.start || today, today, parts: d.parts.map((p) => ({ id: p.id, name: p.name.trim() || 'A part', min: p.min, done: !!p.done })), rhythm: d.rhythm }));
+  }
+  const goalStepOk = (d, step) => (step === 'name' ? !!d.name.trim()
+    : step === 'date' ? !!d.date && d.date > today && d.date > (d.start || today)
+    : step === 'parts' ? d.parts.some((p) => p.min > 0)
+    : step === 'rhythm' ? (d.rhythm.days || []).some((x) => ((x === 0 || x === 6) ? d.rhythm.we : d.rhythm.wd) > 0) : true);
+  function goStepTo(step) {
+    const d = view.goalDraft;
+    if (!d) return;
+    if (step === 'parts' || step === 'rhythm' || step === 'plan') draftParts(d);
+    d.step = step;
+    Snd.slide();
+    openSel(Object.assign({}, view.sel, { kind: step }));
+  }
+  function newGoalPanel(p, sel) {
+    let d = view.goalDraft;
+    if (!d || (sel.id || null) !== (d.edit || null)) { if (sel.id && goalById(sel.id)) d = view.goalDraft = goalDraftOf(goalById(sel.id), sel.kind || 'rhythm'); else d = view.goalDraft = freshGoalDraft(); }
+    if (sel.kind && GOAL_ASKS.includes(sel.kind)) d.step = sel.kind;
+    const step = d.step, i = GOAL_ASKS.indexOf(step);
+    if (d.edit) {
+      const g = goalById(d.edit);
+      if (!g) return false;
+      kicker(p, g.name, GOAL_MARK);
+      title(p, { date: 'Move the date', parts: 'Change the parts', rhythm: 'Change the rhythm', name: 'Rename it' }[step] || 'Change the plan');
+    } else {
+      kicker(p, 'New goal · ' + (i + 1) + ' of ' + GOAL_ASKS.length, GOAL_MARK);
+      const bar = el('div', 'c-gl-steps');
+      bar.setAttribute('aria-hidden', 'true');
+      GOAL_ASKS.forEach((s, k) => bar.appendChild(el('i', k < i ? 'did' : k === i ? 'on' : '')));
+      p.appendChild(bar);
+      title(p, { name: 'What’s the goal?', date: 'By when?', parts: 'What are the parts?', rhythm: 'How much time can you give it?', plan: 'Your plan' }[step]);
+    }
+    ({ name: askName, date: askDate, parts: askParts, rhythm: askRhythm, plan: askPlan })[step](p, d);
+    if (d.edit && step !== 'plan' && step !== 'name') planSummary(p, d, true);
+    /* Back and Next, or Save for a change: Next names nothing it can't do yet */
+    const foot = el('div', 'c-gl-foot');
+    if (d.edit) {
+      foot.appendChild(button('Cancel', 'small quiet', () => { view.goalDraft = null; openSel({ type: 'goal', id: d.edit }); }));
+      const save = button('Save the plan', 'go', () => saveGoalEdit(d));
+      save.disabled = !goalStepOk(d, step);
+      save.dataset.fk = 'gl-save';
+      foot.appendChild(save);
+    } else {
+      if (i > 0) { const bk = button('Back', 'small quiet', () => goStepTo(GOAL_ASKS[i - 1])); bk.setAttribute('aria-label', 'Back to ' + ['the name', 'the date', 'the parts', 'the rhythm'][i - 1]); bk.dataset.fk = 'gl-back'; foot.appendChild(bk); }
+      const last = step === 'plan';
+      const nx = button(last ? 'Start the plan' : 'Next', 'go', () => { if (last) startGoal(d); else goStepTo(GOAL_ASKS[i + 1]); });
+      nx.disabled = !goalStepOk(d, step);
+      nx.dataset.fk = 'gl-next';
+      foot.appendChild(nx);
+    }
+    p.appendChild(foot);
+  }
+  /* a box of words that keeps the draft as you type, and Enter goes on when the answer is there */
+  function goalInput(value, ph, fk, onType, onEnter) {
+    const i = el('input', 'input');
+    i.type = 'text'; i.value = value || ''; i.placeholder = ph || ''; i.maxLength = 80;
+    i.dataset.fk = fk; i.dataset.v0 = i.value;
+    i.addEventListener('input', () => { i.dataset.v0 = i.value; onType(i.value); });
+    i.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && onEnter) { e.preventDefault(); onEnter(); } });
+    return i;
+  }
+  /* V11 goals: the questions of New goal, one at a time */
+  function askName(p, d) {
+    if (!d.edit) line(p, 'Name it in a few words. An exam you name comes with its parts.');
+    const match = el('div', 'c-gl-match');
+    const showMatch = () => {
+      match.replaceChildren();
+      const v = d.name.trim();
+      const ex = v ? M.goalForExam(v, D) : null;
+      match.hidden = !(ex && ex.source === 'exam' || (ex && ex.match && ex.match !== 'other'));
+      if (match.hidden) return;
+      const n = ex.parts.length, h = ex.parts.reduce((a, x) => a + x.min, 0);
+      const words = el('span', 'c-gl-mw');
+      words.append(el('b', '', ex.source === 'exam' ? ex.exam : cap(v)), el('span', '', ex.source === 'exam' ? plural(n, 'part', 'parts') + ', about ' + goalHrs(h) + '. You can change them next.' : 'Starts with ' + plural(n, 'part', 'parts') + ' you can change next.'));
+      match.append(icon(ex.source === 'exam' ? 'book' : GOAL_MARK, 10, '#CDCDCD'), words);
+    };
+    const nx = () => p.querySelector('[data-fk="gl-next"], [data-fk="gl-save"]');
+    const inp = goalInput(d.name, 'Pass the bar exam', 'gl-name', (v) => { d.name = v; showMatch(); const s = p.querySelector('.c-gl-suggest'); if (s) s.hidden = !!v.trim(); const b = nx(); if (b) b.disabled = !goalStepOk(d, 'name'); }, () => { if (goalStepOk(d, 'name')) { if (d.edit) saveGoalEdit(d); else goStepTo('date'); } });
+    inp.dataset.autofocus = '1';
+    field(p, 'The goal', inp);
+    showMatch();
+    p.appendChild(match);
+    if (!d.edit && !d.name.trim()) {
+      const sug = el('div', 'c-gl-suggest');
+      sug.setAttribute('role', 'group'); sug.setAttribute('aria-label', 'Ideas');
+      ['Pass the bar exam', 'CFA Level I', 'Run a half marathon', 'Learn Spanish'].forEach((s) => {
+        const b = button(s, 'c-gl-pill', () => { d.name = s; Snd.pick(); renderSide(); const x = $('side').querySelector('[data-fk="gl-next"]'); if (x) x.focus(); });
+        sug.appendChild(b);
+      });
+      p.appendChild(sug);
+    }
+    setTimeout(() => { if (inp.isConnected && document.activeElement !== inp && !$('side').contains(document.activeElement)) inp.focus({ preventScroll: true }); }, 40);
+  }
+  function askDate(p, d) {
+    line(p, d.edit ? 'Sessions spread over the days before it.' : 'The day it’s due, like the exam’s date. Sessions go on the days before it.');
+    const date = dateInput(d.date, (v) => { d.date = v; renderSide(); });
+    date.min = M.addDays(d.start > today ? d.start : today, 1);
+    date.dataset.fk = 'gl-date';
+    date.setAttribute('aria-describedby', 'gl-date-say');
+    field(p, 'The date', date);
+    const say = el('p', 'c-gl-say', d.date ? (d.date > today ? goalWhen(d.date) + '.' : 'Pick a day after today.') : 'No date yet.');
+    say.id = 'gl-date-say';
+    p.appendChild(say);
+    if (!d.edit) {
+      const sug = el('div', 'c-gl-suggest');
+      sug.setAttribute('role', 'group'); sug.setAttribute('aria-label', 'Quick dates');
+      [['In 4 weeks', M.addDays(today, 28)], ['In 3 months', M.addMonths(today, 3)], ['In 6 months', M.addMonths(today, 6)]].forEach(([n, v], k) => {
+        const b = button(n, 'c-gl-pill', () => { d.date = v; Snd.pick(); renderSide(); });
+        b.setAttribute('aria-pressed', String(d.date === v));
+        b.dataset.fk = 'gl-qd-' + k;
+        sug.appendChild(b);
+      });
+      p.appendChild(sug);
+    }
+    /* (a goal already under way keeps its start; moving its date is all this asks) */
+    if (d.edit && !(d.start > today)) return;
+    const start = dateInput(d.start || today, (v) => { d.start = v < today ? today : v; renderSide(); });
+    start.min = today;
+    start.dataset.fk = 'gl-start';
+    field(p, 'Start', start);
+    p.appendChild(el('p', 'field-hint', d.start && d.start > today ? 'Sessions start ' + M.dateText(d.start) + '.' : 'Today, unless you start later.'));
+  }
+  function askParts(p, d) {
+    line(p, d.note || 'The subjects, chapters, or steps, with the hours each one takes.');
+    const list = el('div', 'c-gl-parts');
+    list.setAttribute('role', 'group'); list.setAttribute('aria-label', 'Parts');
+    const total = el('p', 'c-gl-total');
+    total.setAttribute('aria-live', 'polite');
+    const sum = () => { const m = d.parts.reduce((a, x) => a + (x.min || 0), 0); total.textContent = plural(d.parts.length, 'part', 'parts') + ', ' + goalHrs(m) + ' in all.'; const b = $('side').querySelector('[data-fk="gl-next"], [data-fk="gl-save"]'); if (b) b.disabled = !goalStepOk(d, 'parts'); };
+    d.parts.forEach((x, k) => {
+      const row = el('div', 'c-gl-part' + (x.done ? ' done' : ''));
+      const nm = goalInput(x.name, 'Part ' + (k + 1), 'gl-pn-' + x.id, (v) => { x.name = v; d.partsFor = d.name; }, () => { const h = row.querySelector('.c-gl-hours'); if (h) h.focus(); });
+      nm.setAttribute('aria-label', 'Part ' + (k + 1));
+      const hrs = el('input', 'input c-gl-hours');
+      hrs.type = 'text'; hrs.inputMode = 'decimal'; hrs.value = partHours(x.min || 0);
+      hrs.dataset.fk = 'gl-ph-' + x.id; hrs.dataset.v0 = hrs.value;
+      hrs.setAttribute('aria-label', 'Hours for ' + (x.name || 'part ' + (k + 1)));
+      hrs.addEventListener('input', () => { hrs.dataset.v0 = hrs.value; const m = partMinutes(hrs.value); if (m != null) { x.min = m; d.partsFor = d.name; sum(); } });
+      hrs.addEventListener('change', () => { const m = partMinutes(hrs.value); hrs.value = partHours(m != null ? m : x.min || 0); hrs.dataset.v0 = hrs.value; });
+      hrs.addEventListener('keydown', (e) => e.stopPropagation());
+      const unit = el('span', 'c-gl-unit', 'h');
+      unit.setAttribute('aria-hidden', 'true');
+      const x0 = button('', 'c-gl-px', () => { d.parts.splice(k, 1); d.partsFor = d.name; Snd.slide(); renderSide(); const next = $('side').querySelector('.c-gl-part input'); if (next) next.focus(); });
+      x0.appendChild(icon('x', 7, '#FFFFFF'));
+      x0.setAttribute('aria-label', 'Take ' + (x.name || 'part ' + (k + 1)) + ' off');
+      x0.dataset.fk = 'gl-px-' + x.id;
+      row.append(nm, hrs, unit, x0);
+      list.appendChild(row);
+    });
+    p.appendChild(list);
+    const add = button('Add a part', 'c-gl-add', () => { const id = M.newId('gp'); d.parts.push({ id, name: '', min: 60 }); d.partsFor = d.name; Snd.pick(); renderSide(); const f = $('side').querySelector('[data-fk="gl-pn-' + id + '"]'); if (f) f.focus(); });
+    add.prepend(icon('plus', 8, '#CDCDCD'));
+    add.dataset.fk = 'gl-addpart';
+    p.appendChild(add);
+    sum();
+    p.appendChild(total);
+    /* Claude for a goal the app doesn't know, when the server has it (window.SR_ai); this device turns it on first */
+    const ai = window.SR_ai;
+    let ready = false;
+    try { ready = !!(ai && ai.ready && ai.ready()); } catch (e) { ready = false; }
+    if (ready && d.source !== 'exam' && !d.edit) {
+      const busy = d.ai === 'busy';
+      const b = button(busy ? 'Asking Claude…' : 'Suggest parts with Claude', 'c-gl-ai', () => suggestParts(d));
+      b.disabled = busy;
+      b.dataset.fk = 'gl-ai';
+      p.appendChild(b);
+      if (d.ai === 'none') p.appendChild(el('p', 'field-hint', { too_many: 'Claude has had a lot of asks. Try again in a minute; these parts stay.', upstream: 'Claude didn’t answer this time, so these parts stay. Change any of them.', bad_request: 'Claude couldn’t read that name, so these parts stay.' }[d.aiWhy] || 'Claude didn’t have parts for this one, so these stay. Change any of them.'));
+    }
+  }
+  function suggestParts(d) {
+    const ai = window.SR_ai;
+    const run = () => {
+      d.ai = 'busy'; renderSide();
+      let pr;
+      try { pr = ai.goalParts(d.name.trim(), { date: d.date || null }); } catch (e) { pr = Promise.resolve(null); }
+      /* nothing back (Claude busy, no answer, a name it couldn't read): the parts stay, and the line says why */
+      const why = () => { let e = null; try { e = ai.lastError && ai.lastError(); } catch (x) { e = null; } return (e && e.code) || ''; };
+      Promise.resolve(pr).then((r) => {
+        const ok = r && Array.isArray(r.parts) && r.parts.filter((x) => x && x.name && x.min > 0).length;
+        if (ok) {
+          d.parts = r.parts.filter((x) => x && x.name && x.min > 0).map((x) => ({ id: M.newId('gp'), name: String(x.name).slice(0, 80), min: Math.max(15, Math.round(x.min / 15) * 15) }));
+          d.partsFor = d.name; d.source = 'claude'; d.note = (r.note ? r.note + ' ' : '') + 'Change any of it.'; d.ai = 'done';
+          toast('Claude suggested ' + plural(d.parts.length, 'part', 'parts') + '. Change any of them.', 'good');
+        } else { d.ai = 'none'; d.aiWhy = why(); }
+      }, () => { d.ai = 'none'; d.aiWhy = why(); }).then(() => { if (view.sel && view.sel.type === 'newGoal') renderSide(); });
+    };
+    try {
+      if (!ai || !ai.ready || !ai.ready()) return;
+      /* (the sheet that turns it on says what a goal sends: its words and its date) */
+      if (ai.available && ai.available()) run(); else if (ai.enable) ai.enable(run, { kind: 'parts' });
+    } catch (e) { d.ai = 'none'; renderSide(); }
+  }
+  function askRhythm(p, d) {
+    const r = d.rhythm;
+    line(p, 'The most a day takes. The plan never puts more than this on a day.');
+    const dc = dayChips(r.days, (wd) => { r.days = r.days.includes(wd) ? r.days.filter((x) => x !== wd) : r.days.concat(wd); renderSide(); });
+    dc.querySelectorAll('.chip-btn').forEach((b, k) => { b.dataset.fk = 'gl-day-' + k; });
+    field(p, 'Days', dc);
+    const row = el('div', 'row2');
+    const wdOn = r.days.some((x) => x >= 1 && x <= 5), weOn = r.days.some((x) => x === 0 || x === 6);
+    const clamp = (v) => Math.max(0, Math.min(600, v));
+    if (wdOn) field(row, 'On a weekday', stepper(r.wd, M.dur, (v) => { r.wd = clamp(v); renderSide(); }, 15));
+    if (weOn) field(row, 'On a weekend day', stepper(r.we, M.dur, (v) => { r.we = clamp(v); renderSide(); }, 15));
+    if (row.children.length) p.appendChild(row);
+    /* (c-gl-chips: 44 px to tap, goals.css) */
+    const wc = chips([{ id: 'morning', name: 'Morning' }, { id: 'afternoon', name: 'Afternoon' }, { id: 'evening', name: 'Evening' }, { id: 'any', name: 'Any time' }], r.when || 'any', (v) => { r.when = v; renderSide(); }, 'gl-when');
+    const cc = chips([30, 45, 60, 90, 120].map((m) => ({ id: m, name: M.dur(m) })), r.chunk || 60, (v) => { r.chunk = v; renderSide(); }, 'gl-chunk');
+    wc.classList.add('c-gl-chips'); cc.classList.add('c-gl-chips');
+    field(p, 'When', wc);
+    field(p, 'Longest session', cc);
+    /* what the date asks for, said once, so the hours above can be set against it */
+    if (!d.edit && d.date && d.date > today) {
+      const g = draftGoal(d), all = goalProgressOf(Object.assign({}, g, { rhythm: Object.assign({}, g.rhythm, { days: [0, 1, 2, 3, 4, 5, 6], wd: 1440, we: 1440 }) }));
+      if (all.perDay && all.leftMin) p.appendChild(el('p', 'c-gl-say', 'To fit ' + goalHrs(all.leftMin) + ' by ' + M.dateText(d.date) + ': about ' + M.dur(Math.max(15, Math.ceil(all.perDay / 15) * 15)) + ' a day, every day.'));
+    }
+  }
+  /* what the rhythm holds against what the parts add up to, said plainly, with what would make it fit */
+  function planSummary(p, d, small) {
+    if (!d.date || !(d.date > today)) return;
+    const g = draftGoal(d), st = goalStand(g);
+    /* (compact, never .small: that's the board's button) */
+    const box = el('section', 'c-gl-plan' + (small ? ' compact' : '') + (st.behindMin >= 15 ? ' short' : ''));
+    box.setAttribute('aria-live', 'polite');
+    const big = el('p', 'c-gl-holds');
+    const part = { morning: 'mornings', afternoon: 'afternoons', evening: 'evenings' }[(d.rhythm || {}).when];
+    if (st.capacityMin < 15) big.append(document.createTextNode('Your rhythm finds no open time' + (part ? ' in the ' + part : '') + ' before ' + M.dateText(d.date) + '. The parts' + (st.doneMin ? ' still to do' : '') + ' need '), el('b', '', goalHrs(st.leftMin)), document.createTextNode('.'));
+    else big.append(document.createTextNode('Your rhythm holds about '), el('b', '', goalHrs(st.capacityMin)), document.createTextNode(' by ' + M.dateText(d.date) + '. The parts' + (st.doneMin ? ' still to do' : '') + ' need '), el('b', '', goalHrs(st.leftMin)), document.createTextNode('.'));
+    box.appendChild(big);
+    box.appendChild(el('p', 'c-gl-verdict', st.behindMin >= 15 ? 'That’s ' + goalHrs(st.behindMin) + ' short. What would help:' : st.capacityMin - st.leftMin >= 60 ? 'That fits, with ' + goalHrs(st.capacityMin - st.leftMin) + ' to spare.' : 'That fits.'));
+    p.appendChild(box);
+    if (st.behindMin >= 15) {
+      const fixes = goalFixes(g, st);
+      const list = el('div', 'c-gl-fixes');
+      fixes.forEach((f) => {
+        const b = button('', 'c-gl-fix', () => {
+          if (f.patch.rhythm) d.rhythm = Object.assign({}, f.patch.rhythm);
+          if (f.patch.date) d.date = f.patch.date;
+          if (f.patch.parts) { d.parts = f.patch.parts.map((x) => Object.assign({}, x)); d.partsFor = d.name; }
+          Snd.pick(); renderSide(); say(f.name + '. ' + f.line + '.');
+        });
+        b.dataset.fk = 'gl-fix-' + f.id;
+        b.append(el('b', '', f.name), el('span', '', f.line + '.'));
+        list.appendChild(b);
+      });
+      if (fixes.length) box.appendChild(list);
+      else box.appendChild(el('p', 'c-gl-say', 'Start it anyway and the plan fills every day it can.'));
+    }
+  }
+  function askPlan(p, d) {
+    const g = draftGoal(d);
+    p.appendChild(el('p', 'c-gl-rhythm', g.name + ' by ' + goalWhen(d.date) + '. ' + rhythmWords(d.rhythm)));
+    planSummary(p, d);
+    /* the first week, as the plan would place it: tried on a copy of the board, kept until it changes */
+    const from = d.start && d.start > today ? d.start : today, key = 'gpw|' + today + '|' + Math.floor(nowMin / 15) + '|' + JSON.stringify([d.date, d.start, d.rhythm, d.parts.map((x) => x.min)]);
+    let wk = cache.get(key);
+    if (!wk) {
+      const st = Object.assign({}, state, { dates: M.clone(state.dates), goals: ((state.goals || []).filter((x) => x.id !== g.id)).concat([g]) });
+      let r = null;
+      try { r = M.planGoal(st, g.id, today, nowMin, { horizon: M.diffDays(today, from) + 7 }); } catch (e) { r = null; }
+      const days = M.range(from, 7).map((x) => ({ date: x, min: 0 }));
+      if (r) M.goalSessions(st, g.id).forEach((x) => { const c = days.find((y) => y.date === x.date); if (c && !x.add.skipped) c.min += x.add.dur; });
+      wk = { days };
+      cache.set(key, wk);
+    }
+    const tot = wk.days.reduce((a, x) => a + x.min, 0), n = wk.days.filter((x) => x.min).length;
+    const sec = el('section', 'c-gl-first');
+    sec.appendChild(el('h3', 'c-gl-h', from > today ? 'The first week, from ' + M.dateText(from) : 'The first week'));
+    const strip = el('ol', 'c-gl-strip');
+    wk.days.forEach((x) => {
+      const li = el('li', x.min ? '' : 'none');
+      /* a day the rhythm leaves out is Off; one it uses with no quiet time left that week takes 0 h */
+      li.append(el('span', 'c-gl-sd', M.DAY_SHORT[M.weekday(x.date)]), el('b', '', x.min ? goalHrs(x.min) : (d.rhythm.days || []).includes(M.weekday(x.date)) ? '0 h' : 'Off'));
+      li.setAttribute('aria-label', M.DAY_LONG[M.weekday(x.date)] + ', ' + (x.min ? goalHrs(x.min) : 'nothing'));
+      strip.appendChild(li);
+    });
+    sec.appendChild(strip);
+    sec.appendChild(el('p', 'c-gl-say', tot ? goalHrs(tot) + ' over ' + plural(n, 'day', 'days') + ', in sessions of ' + M.dur(d.rhythm.chunk || 60) + ' or less. Drag any of them; it stays where you put it.' : 'Nothing fits that week yet. The plan fills days as they open up.'));
+    p.appendChild(sec);
+  }
+  /* V11 goals: starting a plan, and the changes a goal's panel makes */
+  /* Start the plan: the goal goes on the board, its first weeks of sessions land, and the toast says what it planned */
+  function startGoal(d) {
+    if (!goalStepOk(d, 'date') || !goalStepOk(d, 'parts') || !goalStepOk(d, 'rhythm') || !d.name.trim()) return;
+    const g = draftGoal(d);
+    g.id = M.newId('g');
+    const from = g.start > today ? g.start : today;
+    let r = null;
+    const res = commit(() => { state.goals = (state.goals || []).concat([g]); r = M.planGoal(state, g.id, today, nowMin, { horizon: M.diffDays(today, from) + 14 }); return { ok: true }; });
+    if (!res) return;
+    view.goalDraft = null;
+    Snd.good();
+    const ids = M.goalSessions(state, g.id).filter((x) => !x.add.skipped).map((x) => x.add.id);
+    toast(g.name + ' is planned. ' + (r.message || ''), 'good', undoAct(g.name + ' is off your goals.'));
+    showSessions(ids);
+    if (view.phone) closeSel(); else openSel({ type: 'goal', id: g.id });
+  }
+  /* the sessions a change placed: the board goes to the week of the first, and the ones in view drop into place */
+  function showSessions(ids) {
+    if (noDesk || view.phone || !ids.length) return;
+    const first = M.findAdd(state, ids[0]);
+    if (!first) return;
+    const at = boardTime(first.date, first.add.start).date;
+    if (view.mode !== 'planner') setMode('planner');
+    const inView = (view.zoom === 'week' && weekOf().includes(at)) || (view.zoom === 'day' && view.focus === at);
+    if (!inView) { setZoom(view.zoom === 'day' ? 'day' : 'week', at); return; }
+    if (!FEEL) return;
+    const shown = new Set(rangeDates());
+    const list = ids.map((id) => M.findAdd(state, id)).filter(Boolean).map((f) => ({ date: boardTime(f.date, f.add.start).date, key: 'add:' + f.add.id })).filter((x) => shown.has(x.date));
+    list.forEach((x) => W.holdBack(x.date, x.key));
+    /* one after another, the whole of it in about half a second however many there are, and one clack */
+    const step = Math.min(60, 360 / Math.max(1, list.length));
+    list.forEach((x, i) => setTimeout(() => W.land(x.date, x.key, i === 0 ? 0.7 : null), 140 + i * step));
+  }
+  function saveGoalEdit(d) {
+    const g0 = goalById(d.edit);
+    if (!g0 || !goalStepOk(d, d.step)) return;
+    const was = { date: g0.date, rhythm: JSON.stringify(g0.rhythm), parts: JSON.stringify(g0.parts), name: g0.name };
+    let r = null;
+    const res = commit(() => {
+      const g = goalById(d.edit);
+      if (d.step === 'name') { g.name = d.name.trim(); return { ok: true }; }
+      /* the draft holds the whole goal: the fixes under the plan can change its rhythm, date, or parts on any step */
+      g.date = d.date || g.date; g.start = d.start || g.start; g.rhythm = Object.assign({}, d.rhythm);
+      g.parts = d.parts.map((p) => ({ id: p.id, name: p.name.trim() || 'A part', min: p.min, done: !!p.done }));
+      r = M.planGoal(state, g.id, today, nowMin, { horizon: horizonOf(g) });
+      return { ok: true };
+    });
+    if (!res) return;
+    view.goalDraft = null;
+    Snd.good();
+    const g = goalById(d.edit);
+    const what = d.step === 'name' ? was.name + ' is ' + g.name + ' now.' : g.date !== was.date ? g.name + ' is due ' + M.dateText(g.date) + ' now.' : JSON.stringify(g.rhythm) !== was.rhythm ? g.name + ' has a new rhythm.' : JSON.stringify(g.parts) !== was.parts ? g.name + '’s parts changed.' : g.name + ' is as it was.';
+    toast(what + (r && r.message ? ' ' + r.message : ''), 'good', undoAct(g.name + ' is back to its plan before.'));
+    openSel({ type: 'goal', id: g.id });
+  }
+  /* how far ahead a goal's plan reaches: two weeks from today, or from its start when that's later */
+  const horizonOf = (g) => M.diffDays(today, g.start && g.start > today ? g.start : today) + 14;
+  /* A goal's own panel: where it stands, what's next, this week's sessions, its parts, and ways to change it.
+     Remove the goal is last, under a rule */
+  function goalPanel(p, id) {
+    const g = goalById(id);
+    if (!g || g.archived) return false;
+    const st = goalStand(g), live = liveGoal(g);
+    kicker(p, g.paused ? 'Goal · Paused' : 'Goal', GOAL_MARK);
+    const hero = el('div', 'c-gl-hero');
+    const words = el('div', 'c-gl-hw');
+    words.append(el('h2', 'side-title c-gl-title', g.name), el('p', 'c-gl-when', goalWhen(g.date)));
+    hero.append(goalMark(g, 12), words);
+    p.appendChild(hero);
+    const stand = el('section', 'c-gl-sec c-gl-standing');
+    stand.appendChild(goalBar(g, st));
+    /* (a goal that starts after this week says so once, under This week) */
+    if (!(g.start && g.start > M.addDays(M.weekStart(today), 6))) stand.appendChild(el('p', 'c-gl-week', weekShare(g, st)));
+    const nx = st.nextSession;
+    if (nx && live && !g.paused) {
+      const b = button('', 'c-gl-next', () => openSession(nx.date, nx.add));
+      b.dataset.fk = 'gl-next-session';
+      b.append(el('span', 'c-gl-nk', 'Next'), el('b', '', cap(atWords(nx.date, nx.start).replace(/^on /, ''))), el('span', '', nx.name + ', ' + M.dur(nx.dur)));
+      b.setAttribute('aria-label', 'Next session: ' + nx.name + ', ' + atWords(nx.date, nx.start).replace(/^on /, '') + ', ' + M.dur(nx.dur) + '. Opens the block');
+      stand.appendChild(b);
+    }
+    /* behind: the plan says so plainly, and each fix is one tap, with Undo */
+    if (live && !g.paused && st.behindMin >= 15) {
+      stand.appendChild(el('p', 'c-gl-behind', 'Behind by ' + goalHrs(st.behindMin) + '. Add a day, make days a little longer, or move the date.'));
+      const list = el('div', 'c-gl-fixes');
+      goalFixes(g, st).filter((f) => f.id !== 'fewer').forEach((f) => {
+        const b = button('', 'c-gl-fix', () => fixGoal(g, f));
+        b.dataset.fk = 'gl-fix-' + f.id;
+        b.append(el('b', '', f.name), el('span', '', f.line + '.'));
+        list.appendChild(b);
+      });
+      if (list.children.length) stand.appendChild(list);
+    }
+    p.appendChild(stand);
+    /* this week's sessions, by day; each opens its block */
+    const ws = M.weekStart(today), we = M.addDays(ws, 6);
+    const wk = M.goalSessions(state, g.id).filter((x) => x.date >= ws && x.date <= we);
+    const sec = el('section', 'c-gl-sec');
+    sec.appendChild(el('h3', 'c-gl-h', 'This week'));
+    if (wk.length) {
+      const ul = el('ul', 'c-gl-rows');
+      wk.forEach((x) => {
+        const li = el('li'), over = overBy(x.date, x.add.start, x.add.dur);
+        const r = el(x.add.skipped ? 'div' : 'button', 'c-gl-row' + (x.add.skipped ? ' skipped' : over ? ' over' : ''));
+        if (!x.add.skipped) { r.type = 'button'; r.addEventListener('click', () => { Snd.init(); openSession(x.date, x.add.id); }); r.dataset.fk = 'gl-s-' + x.add.id; }
+        const mk = el('span', 'c-gl-rmark');
+        mk.appendChild(icon(x.add.skipped ? 'later' : over ? 'check' : GOAL_MARK, 8, x.add.skipped ? '#AFAFAF' : over ? '#8FD3B1' : '#FFFFFF'));
+        r.append(mk, el('span', 'c-gl-rday', M.DAY_SHORT[M.weekday(x.date)] + ' ' + M.clock(x.add.start)), el('span', 'c-gl-rname', x.add.name), el('span', 'c-gl-rdur', x.add.skipped ? 'Moved on' : M.dur(x.add.dur)));
+        r.setAttribute('aria-label', M.DAY_LONG[M.weekday(x.date)] + ' at ' + M.clock(x.add.start) + ', ' + x.add.name + ', ' + M.dur(x.add.dur) + (x.add.skipped ? '. Didn’t happen; its time moved on' : over ? ', done' : ''));
+        li.appendChild(r);
+        ul.appendChild(li);
+      });
+      sec.appendChild(ul);
+    } else sec.appendChild(el('p', 'c-gl-say', live && !g.paused ? (g.start > we ? 'It starts ' + M.dateText(g.start) + '.' : 'Nothing on this week yet.') : 'Nothing on this week.'));
+    if (live && !g.paused && !wk.some((x) => !x.add.skipped && x.date >= today) && g.start <= we) {
+      const b = button('Place this week’s share', 'go', () => placeShare(g, ws));
+      b.dataset.fk = 'gl-place';
+      sec.appendChild(b);
+    }
+    p.appendChild(sec);
+    /* the parts, each checked off when it's done; the plan takes its hours off */
+    const ps = el('section', 'c-gl-sec');
+    const ph = el('div', 'c-gl-hrow');
+    ph.append(el('h3', 'c-gl-h', 'Parts'), el('span', 'c-gl-hn', st.partsLeft ? plural(st.partsLeft, 'part', 'parts') + ' to go' : 'All done'));
+    ps.appendChild(ph);
+    const pl = el('div', 'c-gl-plist');
+    st.parts.forEach((x) => {
+      const lab = el('label', 'c-gl-prow' + (x.done ? ' done' : ''));
+      const tk = el('input', 'tick'); tk.type = 'checkbox'; tk.checked = !!x.done;
+      tk.dataset.fk = 'gl-pd-' + x.id;
+      tk.addEventListener('change', () => { Snd.init(); partDone(g, x.id, tk.checked); });
+      lab.append(tk, el('span', 'c-gl-pn', x.name), el('span', 'c-gl-ph', x.done ? goalHrs(x.min) : ofHrs(x.doneMin, x.min)));
+      pl.appendChild(lab);
+    });
+    ps.appendChild(pl);
+    p.appendChild(ps);
+    /* how it's set, and the ways to change it */
+    const how = el('section', 'c-gl-sec c-gl-how');
+    how.appendChild(el('h3', 'c-gl-h', 'The plan'));
+    how.appendChild(el('p', 'c-gl-say', rhythmWords(g.rhythm)));
+    const acts = el('div', 'c-gl-acts');
+    [['Change the rhythm', 'rhythm'], ['Move the date', 'date'], ['Change the parts', 'parts'], ['Rename it', 'name']].forEach(([n, s]) => { const b = button(n, 'small', () => openGoalFlow(null, s, g.id)); b.dataset.fk = 'gl-edit-' + s; acts.appendChild(b); });
+    if (live) { const b = button(g.paused ? 'Resume' : 'Pause', 'small', () => pauseGoal(g, !g.paused)); b.dataset.fk = 'gl-pause'; acts.appendChild(b); }
+    how.appendChild(acts);
+    const colors = catChips(g.cat, (c) => colorGoal(g, c));
+    colors.classList.add('c-gl-chips');
+    colors.querySelectorAll('.chip-btn').forEach((b, k) => { b.dataset.fk = 'gl-color-' + k; });
+    field(how, 'Color', colors);
+    p.appendChild(how);
+    divider(p);
+    actions(p, [confirmButton('Remove the goal', 'rm-goal-' + g.id, () => removeGoal(g))]);
+    p.appendChild(el('p', 'field-hint', 'Sessions still to come leave the board. Past ones stay.'));
+  }
+  function openSession(date, addId) {
+    const f = M.findAdd(state, addId);
+    if (!f) return;
+    openSel({ type: 'block', date: f.date, key: 'add:' + addId });
+  }
+  /* the changes a goal's panel makes, each one change with Undo, and the plan worked out again */
+  function goalChange(g0, fn, said, undoWordsFor) {
+    let r = null;
+    const res = commit(() => { const g = goalById(g0.id); if (!g) return false; fn(g); r = M.planGoal(state, g.id, today, nowMin, { horizon: horizonOf(g) }); return { ok: true }; });
+    if (!res) return null;
+    toast(said + (r && r.message ? ' ' + r.message : ''), 'good', undoAct(undoWordsFor));
+    return r;
+  }
+  function fixGoal(g, f) {
+    Snd.good();
+    goalChange(g, (x) => { if (f.patch.rhythm) x.rhythm = Object.assign({}, f.patch.rhythm); if (f.patch.date) x.date = f.patch.date; }, f.id === 'date' ? g.name + ' is due ' + M.dateText(f.patch.date) + ' now.' : f.name + ' for ' + g.name + '.', g.name + ' is back to its plan before.');
+  }
+  function partDone(g, partId, done) {
+    const part = (g.parts || []).find((x) => x.id === partId);
+    if (!part) return;
+    if (done) Snd.good(); else Snd.slide();
+    goalChange(g, (x) => { const q = x.parts.find((y) => y.id === partId); if (q) q.done = done; }, part.name + (done ? ' is done.' : ' is open again.'), part.name + (done ? ' is open again.' : ' is done again.'));
+  }
+  function pauseGoal(g, on) {
+    Snd.slide();
+    let gone = 0;
+    const res = commit(() => {
+      const x = goalById(g.id);
+      x.paused = on;
+      if (on) M.goalSessions(state, x.id).forEach((s) => { if (!s.add.skipped && !startedBy(s.date, s.add.start)) { M.removeAdd(state, s.add.id); gone++; } });
+      else M.planGoal(state, x.id, today, nowMin, { horizon: horizonOf(x) });
+      return { ok: true };
+    });
+    if (!res) return;
+    const placed = on ? 0 : M.goalSessions(state, g.id).filter((s) => !s.add.skipped && !startedBy(s.date, s.add.start)).length;
+    toast(on ? g.name + ' is paused.' + (gone ? ' ' + plural(gone, 'session', 'sessions') + ' to come came off the board.' : '') : g.name + ' is back on.' + (placed ? ' ' + plural(placed, 'session', 'sessions') + ' on the board.' : ''), 'good', undoAct(g.name + (on ? ' isn’t paused.' : ' is paused again.')));
+  }
+  function colorGoal(g, c) {
+    if (g.cat === c) return;
+    commit(() => { const x = goalById(g.id); x.cat = c; M.goalSessions(state, x.id).forEach((s) => { s.add.cat = c; }); return { ok: true }; });
+    Snd.pick();
+    toast(g.name + ' wears ' + cat(c).name + '’s color now.', 'good', undoAct(g.name + ' is back in its color before.'));
+  }
+  function removeGoal(g0) {
+    const g = goalById(g0.id);
+    if (!g) return;
+    let gone = 0;
+    const res = commit(() => {
+      M.goalSessions(state, g.id).forEach((s) => { if (!startedBy(s.date, s.add.start)) { M.removeAdd(state, s.add.id); if (!s.add.skipped) gone++; } });
+      g.archived = true;
+      return { ok: true };
+    });
+    if (!res) return;
+    Snd.slide();
+    closeSel();
+    toast(g.name + ' is removed' + (gone ? ', with its ' + plural(gone, 'session', 'sessions') + ' to come' : '') + '. Past sessions stay.', '', undoAct(g.name + ' is back on your goals.'));
+  }
+  /* this week's share, for a goal with nothing on the week: the plan from today through the week's last day */
+  function placeShare(g, ws) {
+    const end = M.addDays(ws || M.weekStart(today), 6);
+    let r = null;
+    const before = new Set(M.goalSessions(state, g.id).map((x) => x.add.id));
+    const res = commit(() => { r = M.planGoal(state, g.id, today, nowMin, { horizon: Math.max(horizonOf(g), M.diffDays(today, end) + 1) }); return { ok: true }; });
+    if (!res) return;
+    const fresh = M.goalSessions(state, g.id).filter((x) => !x.add.skipped && !before.has(x.add.id)).map((x) => x.add.id);
+    if (r.placed) { Snd.good(); toast(g.name + ': ' + r.message, 'good', undoAct(g.name + '’s sessions are off the week again.')); }
+    else toast(r.message || 'There’s no open time for it this week.', '');
+    showSessions(fresh);
+  }
+  /* A session that didn't happen, or didn't all happen: it's skipped (a record that takes no time) and its
+     time spreads over the days ahead (Model.skipGoalSession). Never a deletion, never red. */
+  function skipSession(addId, how, minutes) {
+    const f = M.findAdd(state, addId);
+    if (!f || !isSession(f.add)) return;
+    const name = f.add.name, date = f.date, future = !startedBy(date, f.add.start);
+    let r = null;
+    const res = commit(() => { r = M.skipGoalSession(state, date, addId, today, nowMin, how === 'some' ? 'some' : 'all', minutes); return r; });
+    if (!res || !r || !r.ok) { Snd.bad(); toast('That session isn’t on the board any more, so nothing changed.', 'bad'); return; }
+    Snd.slide();
+    if (view.sel && view.sel.key === 'add:' + addId) closeSel();
+    const said = how === 'some' ? name + ': ' + goalHrs(minutes) + ' done.' : 'Skipped ' + name + (future ? ' ' + whenWord(date) : '') + '.';
+    toast(said + (r.message ? ' ' + r.message : ''), '', undoAct(name + ' is back ' + (future ? whenWord(date) : 'on the board') + '.', said));
+  }
+  /* it happened: the block wears its check, and a day whose sessions all happened isn't asked about */
+  function sessionDone(addId, done) {
+    const f = M.findAdd(state, addId);
+    if (!f || !isSession(f.add)) return;
+    const name = f.add.name;
+    const res = commit(() => {
+      const x = M.findAdd(state, addId), g = goalById(x.add.src.id);
+      x.add.done = !!done;
+      if (g) {
+        const all = M.goalSessions(state, g.id).filter((s) => s.date === x.date && !s.add.skipped);
+        const ans = Object.assign({}, g.answers);
+        if (done && all.every((s) => s.add.done)) ans[x.date] = 'yes';
+        else if (!done && ans[x.date] === 'yes') delete ans[x.date];
+        g.answers = ans;
+      }
+      return { ok: true };
+    });
+    if (!res) return;
+    if (done) Snd.good(); else Snd.slide();
+    toast(name + (done ? ' is done.' : ' isn’t marked done.'), 'good', undoAct(name + (done ? ' isn’t marked done.' : ' is marked done again.')));
+  }
+  /* V11 goals: a session's panel, the plan going on, the one question, and the goals' weeks */
+  /* the band and the phone's now strip: Didn't get to it, for a goal's session, or a to-do's step when the
+     to-dos take it (window.SR_didntStep) */
+  if (FEEL) window.SR_didnt = (b) => {
+    if (isSession(b)) { skipSession(b.add, 'all'); return; }
+    if (window.SR_didntStep) window.SR_didntStep(b);
+  };
+  /* A session's own panel: what it's part of, whether it happened, and its time; Skip this one last */
+  function sessionPanel(p, date, b, a) {
+    const g = goalById(a.src.id);
+    const part = g && (g.parts || []).find((x) => x.id === a.src.part);
+    const st = g ? goalStand(g) : null, ps = st && part ? st.parts.find((x) => x.id === part.id) : null;
+    kicker(p, M.dateText(date, 'day') + ' · ' + (g ? g.name : 'A goal'), GOAL_MARK);
+    preview(p, Object.assign({}, b, { start: a.start, dur: a.dur }), { time: timeSpan(date, a.start, a.start + a.dur) + ' · ' + M.dur(a.dur) });
+    line(p, (g ? 'Part of ' + g.name + (g.archived ? ', no longer a goal' : '') + '.' : 'Part of a goal that’s gone.') + (ps ? ' ' + ps.name + ': ' + ofHrs(ps.doneMin, ps.min) + ' done.' : '') + (a.pinned ? ' It stays where you put it.' : ''));
+    const over = overBy(date, a.start, a.dur), started = startedBy(date, a.start);
+    const acts = el('div', 'c-gl-sacts');
+    if (view.got.someOf === a.id && (over || started)) {
+      const top = Math.max(15, a.dur - 15);
+      const v = Math.min(top, Math.max(15, view.got.someMin || Math.floor(a.dur / 30) * 15));
+      field(p, 'How much did you do?', stepper(v, M.dur, (x) => { view.got.someMin = Math.max(15, Math.min(top, x)); renderSide(); }, 15));
+      const save = button('Save', 'go', () => { const m = view.got.someMin || v; view.got.someOf = null; skipSession(a.id, 'some', m); });
+      save.dataset.fk = 'gl-some-save';
+      acts.append(button('Back', 'small quiet', () => { view.got.someOf = null; renderSide(); }), save);
+    } else if (over) {
+      if (a.done) acts.appendChild(button('Not done', 'small', () => sessionDone(a.id, false)));
+      else {
+        const dn = button('Done', 'go', () => sessionDone(a.id, true));
+        dn.dataset.fk = 'gl-done';
+        acts.appendChild(dn);
+        if (a.dur >= 30) acts.appendChild(button('Some of it', 'small', () => { view.got.someOf = a.id; view.got.someMin = Math.floor(a.dur / 30) * 15; renderSide(); }));
+        acts.appendChild(button('Didn’t get to it', 'small', () => skipSession(a.id, 'all')));
+      }
+    } else if (started) {
+      const bx = day(today).blocks.find((x) => x.add === a.id);
+      if (bx && M.previewEndEarly(state, sourceDate(bx, today), sourceKey(bx), sourceMinute(bx, today, nowMin)).ok) acts.appendChild(button('Done early', 'small', () => { doneEarly(bx); renderSide(); }));
+      acts.appendChild(button('Didn’t get to it', 'small', () => skipSession(a.id, 'all')));
+    }
+    if (acts.children.length) p.appendChild(acts);
+    if (g && !g.archived) { const og = button('Open the goal', 'small quiet', () => openSel({ type: 'goal', id: g.id })); og.dataset.fk = 'gl-open-goal'; actions(p, [og]); }
+    if (!over) {
+      const setTime = (start, len) => {
+        const r = commit(() => (len !== a.dur ? M.resizeBlock(state, date, 'add:' + a.id, len) : M.moveAdd(state, a.id, date, start)));
+        if (r && r.ok) Snd.clack(0.6); else { Snd.bad(); toast(blockedText(r || {}, 'tap'), 'bad'); }
+      };
+      const row = el('div', 'row2');
+      field(row, 'Starts', stepper(a.start, M.clock, (v) => setTime(v, a.dur)));
+      field(row, 'Length', stepper(a.dur, M.dur, (v) => setTime(a.start, Math.max(15, v))));
+      p.appendChild(row);
+      p.appendChild(el('p', 'field-hint', 'Moved by hand, a session stays where you put it.'));
+    }
+    if (!started) {
+      divider(p);
+      const sk = button('Skip this one', 'small quiet', () => skipSession(a.id, 'all'));
+      sk.dataset.fk = 'gl-skip';
+      actions(p, [sk]);
+      p.appendChild(el('p', 'field-hint', 'Its time spreads over the days ahead.'));
+    }
+  }
+  /* The plan keeps its next week on the board. Once a day, a goal in play whose sessions run out within the
+     week gets its next two weeks (planGoal), quietly: that's the plan going on, not a change someone made,
+     so it isn't a step of Undo. A session someone moved stays where they put it. */
+  let goalsRolled = '';
+  function rollGoals() {
+    if (!FEEL || readOnly || !state || !(state.goals || []).length) return 0;
+    const key = today + (view.preview ? '|p' + (view.preview.id || '') : '');
+    if (goalsRolled === key) return 0;
+    goalsRolled = key;
+    let placed = 0;
+    activeGoals().forEach((g) => {
+      const from = g.start && g.start > today ? g.start : today;
+      if (M.diffDays(today, from) > 6) return;
+      const ahead = M.goalSessions(state, g.id).filter((x) => !x.add.skipped && x.date >= today);
+      if (ahead.length && ahead[ahead.length - 1].date >= M.addDays(today, 6)) return;
+      try { placed += M.planGoal(state, g.id, today, nowMin, { horizon: horizonOf(g) }).placed || 0; } catch (e) { logError('goals', e); }
+    });
+    if (placed) { cache.clear(); persist(); }
+    return placed;
+  }
+  /* The one question, the morning after: did yesterday's sessions happen? Asked once a goal a day, never on a
+     preview (a made up board has no yesterday of yours) */
+  function goalAsk() {
+    if (!FEEL || view.preview || !((state.goals || []).length)) return null;
+    const seen = seenToday().goals || {};
+    const list = M.goalCheckIn(state, today).filter((x) => !seen[x.goal]);
+    return list.length ? { kind: 'goal', ask: list[0] } : null;
+  }
+  function answerAsk(x, how, minutes) {
+    view.got.askSome = null;
+    let r = null;
+    const res = commit(() => { r = M.answerCheckIn(state, x.goal, x.date, how, { today, nowMin, minutes }); return r; });
+    if (!res || !r || !r.ok) { Snd.bad(); toast('That didn’t work, and nothing changed.', 'bad'); return null; }
+    if (how === 'yes') Snd.good(); else Snd.slide();
+    return how === 'yes' ? 'Counted: ' + goalHrs(x.min) + ' on ' + x.name + '.' : (how === 'some' ? goalHrs(minutes) + ' done. ' : '') + (r.message || 'The plan has it.');
+  }
+  /* the buttons that answer it: Yes, Some of it (then how much), and No */
+  function askButtons(x, cls, quiet, after) {
+    const out = [];
+    if (view.got.askSome === x.goal) {
+      someChoices(x.min).forEach((m) => out.push(button(goalHrs(m), cls, () => after(answerAsk(x, 'some', m), x))));
+      out.push(button('Back', quiet, () => { view.got.askSome = null; after(null, x); }));
+    } else {
+      out.push(button('Yes', cls, () => after(answerAsk(x, 'yes'), x)));
+      if (someChoices(x.min).length) out.push(button('Some of it', cls, () => { view.got.askSome = x.goal; after(null, x); }));
+      out.push(button('No', cls, () => after(answerAsk(x, 'no'), x)));
+    }
+    return out;
+  }
+  /* the phone's Today asks it as a card of its own (the desk asks in the band's strip) */
+  function goalAskCard(main, keyControl) {
+    const m = goalAsk();
+    if (!m) return;
+    const x = m.ask, card = el('section', 'td-card c-gl-ask');
+    card.appendChild(el('h2', '', view.got.askSome === x.goal ? 'How much of the ' + goalHrs(x.min) + '?' : askWords(x)));
+    card.appendChild(el('p', '', x.sessions.map((s) => s.name).filter((n, i, all) => all.indexOf(n) === i).join(', ') + ', for ' + x.name + '.'));
+    const row = el('div', 'td-acts');
+    askButtons(x, 'small', 'small quiet', (said) => { if (said) toast(said, 'good', undoAct('Yesterday’s answer for ' + x.name + ' is taken back.')); renderToday(); }).forEach((b, i) => row.appendChild(keyControl(b, 'goal-ask-' + x.goal + '-' + i)));
+    row.appendChild(keyControl(button('Not now', 'small quiet', () => { markSeen({ goals: Object.assign({}, seenToday().goals, { [x.goal]: true }) }); Snd.slide(); renderToday(); }), 'goal-ask-no-' + x.goal));
+    card.appendChild(row);
+    main.appendChild(card);
+  }
+  /* each goal's week, for This week's plan and the finish (variant.js): its hours, the days, and how it stands */
+  function goalWeek(ws) {
+    const dates = M.range(ws, 7), last = dates[6];
+    return shownGoals().map((g) => {
+      const list = M.goalSessions(state, g.id).filter((x) => x.date >= ws && x.date <= last && !x.add.skipped);
+      if (!list.length && !liveGoal(g)) return null;
+      const ended = (x) => overBy(x.date, x.add.start, x.add.dur);
+      const min = list.reduce((a, x) => a + x.add.dur, 0), done = list.filter(ended).reduce((a, x) => a + x.add.dur, 0);
+      const days = list.map((x) => dates.indexOf(x.date)).filter((i, k, all) => i >= 0 && all.indexOf(i) === k).sort((a, b) => a - b);
+      return { id: g.id, name: g.name, cat: g.cat, date: g.date, when: goalWhen(g.date), min, done, days, paused: !!g.paused, line: min ? goalHrs(min) + (done ? ', ' + goalHrs(done) + ' done' : '') : g.paused ? 'Paused' : g.start && g.start > last ? 'Starts ' + M.dateText(g.start) : 'Nothing this week yet' };
+    }).filter(Boolean);
+  }
+  /* the hours that went to goals over some days, for Look back */
+  function goalHoursIn(from, n) {
+    const to = M.addDays(from, n - 1), names = new Set();
+    let min = 0;
+    (state.goals || []).forEach((g) => M.goalSessions(state, g.id).forEach((x) => {
+      if (x.add.skipped || x.date < from || x.date > to || !overBy(x.date, x.add.start, x.add.dur)) return;
+      min += x.add.dur; names.add(g.name);
+    }));
+    return { min, n: names.size, name: [...names][0] || '' };
+  }
+  /* The Sunday Reset's Goals step: each goal's card with this week's sessions by day and what the plan says,
+     Place this week's share when it isn't placed, and the behind message with its fixes */
+  function goalsStepBody(body, ws) {
+    const dates = M.range(ws, 7), last = dates[6];
+    const wrap = el('div', 'c-gl-step');
+    activeGoals().forEach((g) => {
+      const st = goalStand(g), list = M.goalSessions(state, g.id).filter((x) => x.date >= ws && x.date <= last && !x.add.skipped);
+      const card = el('section', 'c-gl-scard');
+      const head = el('button', 'c-gl-shead');
+      head.type = 'button';
+      const words = el('span', 'c-gl-words');
+      words.append(el('b', 'c-gl-name', g.name), el('span', 'c-gl-when', goalWhen(g.date) + ' · ' + standWords(g, st)));
+      head.append(goalMark(g), words);
+      head.setAttribute('aria-label', g.name + ', ' + goalWhen(g.date) + ', ' + standWords(g, st) + '. Opens the goal');
+      head.addEventListener('click', () => { Snd.init(); Snd.pick(); openSel({ type: 'goal', id: g.id }); });
+      head.dataset.fk = 'gls-' + g.id;
+      card.appendChild(head);
+      /* (a goal that starts after this week has no week to show yet; the line under says when it starts) */
+      const strip = el('ol', 'c-gl-strip');
+      dates.forEach((d) => {
+        const mine = list.filter((x) => x.date === d), min = mine.reduce((a, x) => a + x.add.dur, 0);
+        const li = el('li', (min ? '' : 'none') + (d < today ? ' past' : '') + (d === today ? ' today' : ''));
+        const inner = min ? el('button', 'c-gl-sbtn') : el('span', 'c-gl-sbtn');
+        /* a day the rhythm leaves out is Off; one it uses with nothing on it is 0 h */
+        inner.append(el('span', 'c-gl-sd', M.DAY_SHORT[M.weekday(d)]), el('b', '', min ? goalHrs(min) : ((g.rhythm || {}).days || []).includes(M.weekday(d)) ? '0 h' : 'Off'));
+        if (min) {
+          inner.type = 'button';
+          inner.title = mine.map((x) => x.add.name + ', ' + M.clock(x.add.start)).join('. ');
+          inner.setAttribute('aria-label', M.DAY_LONG[M.weekday(d)] + ': ' + mine.map((x) => x.add.name + ' at ' + M.clock(x.add.start) + ', ' + M.dur(x.add.dur)).join('; ') + '. Opens the first');
+          inner.addEventListener('click', () => { Snd.init(); openSession(d, mine[0].add.id); });
+          inner.dataset.fk = 'gls-' + g.id + '-' + d;
+        } else inner.setAttribute('aria-label', M.DAY_LONG[M.weekday(d)] + ': nothing');
+        li.appendChild(inner);
+        strip.appendChild(li);
+      });
+      if (!(g.start > last)) card.appendChild(strip);
+      const tot = list.reduce((a, x) => a + x.add.dur, 0), n = new Set(list.map((x) => x.date)).size;
+      if (tot) card.appendChild(el('p', 'c-gl-say', goalHrs(tot) + ' ' + weekWords(ws) + ', about ' + goalHrs(tot / n) + ' a day.'));
+      else if (g.start > last) card.appendChild(el('p', 'c-gl-say', 'It starts ' + M.dateText(g.start) + '.'));
+      else {
+        card.appendChild(el('p', 'c-gl-say', 'Nothing on ' + weekWords(ws) + ' yet.'));
+        const b = button('Place this week’s share', 'small', () => placeShare(g, ws));
+        b.dataset.fk = 'gls-place-' + g.id;
+        card.appendChild(b);
+      }
+      if (st.behindMin >= 15) {
+        card.appendChild(el('p', 'c-gl-behind', 'Behind by ' + goalHrs(st.behindMin) + '. Add a day, make days a little longer, or move the date.'));
+        const fx = el('div', 'c-gl-fixes');
+        goalFixes(g, st).filter((f) => f.id !== 'fewer').forEach((f) => {
+          const b = button('', 'c-gl-fix', () => fixGoal(g, f));
+          b.dataset.fk = 'gls-fix-' + g.id + '-' + f.id;
+          b.append(el('b', '', f.name), el('span', '', f.line + '.'));
+          fx.appendChild(b);
+        });
+        if (fx.children.length) card.appendChild(fx);
+      }
+      wrap.appendChild(card);
+    });
+    body.appendChild(wrap);
+  }
+  /* Look ahead: a goal's date, as a card among the weeks' dates, with where it stands */
+  function goalAheadCard(g, far) {
+    const st = goalStand(g);
+    const card = el('article', 'c-ah-card c-ah-goal' + (far ? ' far' : ''));
+    card.dataset.date = g.date;
+    const main = el('div', 'c-ah-main');
+    const nm = button('', 'c-ah-name', () => openSel({ type: 'goal', id: g.id }));
+    nm.dataset.fk = 'ahg-' + g.id;
+    const nl = el('span', 'c-ah-nl');
+    nl.append(icon(GOAL_MARK, 9, '#CDCDCD'), el('span', 'c-ah-nm', g.name));
+    const meta = 'Goal · ' + aheadAway(g.date);
+    nm.append(nl, el('span', 'c-ah-meta', meta));
+    nm.setAttribute('aria-label', g.name + ', ' + M.dateText(g.date, 'long') + ', ' + meta + '. Opens the goal');
+    main.appendChild(nm);
+    const row = el('div', 'c-ah-prep c-gl-ahline');
+    row.appendChild(icon(GOAL_MARK, 9, '#CDCDCD'));
+    row.appendChild(el('p', 'c-ah-pw', standWords(g, st) + '. ' + ofHrs(st.doneMin, st.totalMin) + ' done.'));
+    main.appendChild(row);
+    card.append(aheadDateCol(g.date, far), main);
+    return card;
+  }
   /* == V11: Look ahead ==
      The coming weeks with room: each week under its own heading, each date as a card that says what it
      is and when, and where it matters, when to start getting ready, with a tap to put that on your
@@ -3309,13 +4371,15 @@
     const e = state.events.find((v) => v.id === x.id);
     if (!e) return;
     const id = M.newId('t');
+    /* V11: it comes broken into its steps when the library knows it, ready to spread over the days before the date */
+    const bd = FEEL ? bdFor(r.todo) : null, steps = bd && bd.match ? bd.steps : [];
     commit(() => {
-      state.tasks.push({ id, name: r.todo, group: inboxId(), icon: r.icon, cat: r.cat, dur: r.dur, due: r.due, repeat: null, done: false, steps: [] });
+      state.tasks.push({ id, name: r.todo, group: inboxId(), icon: r.icon, cat: r.cat, dur: steps.length ? null : r.dur, due: r.due, repeat: null, done: false, steps: steps.map((s) => ({ id: M.newId('s'), name: s.name, dur: s.dur, done: false })) });
       e.prep = Object.assign({}, e.prep, { [r.key]: id });
     });
     Snd.good();
     noteMove('todo');
-    toast('“' + r.todo + '” is on your to-dos, due ' + aheadWhen(r.due), 'good', { label: 'Undo', fn: undo });
+    toast('“' + r.todo + '” is on your to-dos, due ' + aheadWhen(r.due) + (steps.length ? ', in ' + plural(steps.length, 'step', 'steps') : ''), 'good', { label: 'Undo', fn: undo });
   }
   function skipPrep(x, r) {
     const e = state.events.find((v) => v.id === x.id);
@@ -3524,32 +4588,35 @@
     const kept = view.got.aheadKept && view.got.aheadKept.ws === ws ? view.got.aheadKept.ids : [];
     const list = M.lookAhead(state, from, days, today, 400, kept);
     const near = list.filter((x) => !x.far), far = list.filter((x) => x.far);
+    /* V11 goals: a goal's date shows among the weeks' dates, or further out, wherever it falls */
+    const gLive = FEEL ? shownGoals().filter(liveGoal) : [], gNear = gLive.filter((g) => g.date >= from && g.date <= last), gFar = gLive.filter((g) => g.date > last);
+    const byDate = (xs, gs, isFar) => xs.map((x) => ({ d: x.shown || x.date, card: () => aheadCard(x) })).concat(gs.map((g) => ({ d: g.date, card: () => goalAheadCard(g, isFar) }))).sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
     /* the line under the title says what this step is for */
     const ln = $('rack-top') && $('rack-top').querySelector('.reset-words > .reset-line:not(.reset-how)');
     if (ln) ln.textContent = r.resumed === 'ahead' ? 'Picking up where you left off: what’s coming, and when to start getting ready.' : r.step === 0 && nothingBehind(ws) ? 'Your first reset starts here: what’s coming, and when to start getting ready.' : 'What’s coming, and when to start getting ready.';
     const wrap = el('div', 'c-ah');
-    if (!near.length) {
+    if (!near.length && !gNear.length) {
       /* nothing in the five weeks: one calm line, and the ways to add a date right under it */
       const box = el('section', 'c-ah-empty');
       box.append(el('b', '', 'A clear five weeks'), el('p', '', 'Add what’s coming below. Each date shows here, with when to start getting ready.'));
       wrap.appendChild(box);
     } else for (let w = M.weekStart(from); w <= M.weekStart(last); w = M.addDays(w, 7)) {
-      const items = near.filter((x) => M.weekStart(x.shown || x.date) === w);
+      const items = byDate(near.filter((x) => M.weekStart(x.shown || x.date) === w), gNear.filter((g) => M.weekStart(g.date) === w), false);
       const n = Math.round(M.diffDays(M.weekStart(today), w) / 7);
       /* a week with nothing in it is one quiet line */
       const sec = el('section', 'c-ah-wk' + (items.length ? '' : ' empty'));
       const head = el('h3', 'c-ah-wkh');
       head.append(el('b', '', n <= 0 ? 'This week' : n === 1 ? 'Next week' : 'In ' + n + ' weeks'), el('span', '', M.spanText(w, M.addDays(w, 6)) + (items.length ? '' : ' · No dates')));
       sec.appendChild(head);
-      items.forEach((x) => sec.appendChild(aheadCard(x)));
+      items.forEach((x) => sec.appendChild(x.card()));
       wrap.appendChild(sec);
     }
-    if (far.length) {
+    if (far.length || gFar.length) {
       const sec = el('section', 'c-ah-wk c-ah-far');
       const head = el('h3', 'c-ah-wkh');
       head.append(el('b', '', 'Further out'), el('span', '', 'After ' + M.dateText(last)));
       sec.appendChild(head);
-      far.forEach((x) => sec.appendChild(aheadCard(x)));
+      byDate(far, gFar, true).forEach((x) => sec.appendChild(x.card()));
       wrap.appendChild(sec);
     }
     const cl = aheadClashes(M.clashesIn(state, from, days));
@@ -3721,10 +4788,14 @@
       /* room against what needs a time, as numbers, never as a verdict */
       const from = r.catchup ? today : ws, cap7 = M.capacity(state, from, M.diffDays(from, M.addDays(ws, 6)) + 1, today, nowMin);
       if (cap7.need) body.appendChild(stat(M.hours(cap7.room), 'open this week', M.hours(cap7.need) + ' of to dos still need a time' + (cap7.need > cap7.room ? '. More than there’s room for, so some can wait.' : '')));
-      soon.forEach((x) => body.appendChild(taskTile(x.task, pl, true)));
+      /* V11: a to-do with steps says what it can do besides a drag: Give it a time, Spread it out, Find new times */
+      const missedNow = FEEL ? M.missedSteps(state, today, nowMin) : [];
+      soon.forEach((x) => body.appendChild(FEEL ? todoStepTile(x.task, pl, missedNow) : taskTile(x.task, pl, true)));
       body.appendChild(addTile('New to do', () => openSel({ type: 'newTask', group: null })));
       return;
     }
+    /* V11 goals: this week's share of each goal, after To-dos */
+    if (st.key === 'goals') { goalsStepBody(body, ws); return; }
     if (st.key === 'dinners') {
       /* V11 builds the whole step itself: the week's meals, the meal board, and the groceries (window.SR_mealStep) */
       if (FEEL && window.SR_mealStep) { window.SR_mealStep(body, M.range(ws, 7), ws); return; }
@@ -3849,6 +4920,9 @@
     if (meals) facts.push([String(meals), meals === 1 ? 'meal planned' : 'meals planned']);
     if (c.yours > 0) facts.push([M.hours(c.yours), 'to yourself']);
     else if (!kindYours() && c.own) facts.push([String(c.own), c.own === 1 ? 'block of your own' : 'blocks of your own']);
+    /* V11 goals: the hours last week's sessions gave the goals (skipped ones gave none) */
+    const gl = FEEL ? goalHoursIn(lw, 7) : { min: 0 };
+    if (gl.min) facts.push([goalHrs(gl.min), 'on ' + (gl.n === 1 ? gl.name : gl.n + ' goals')]);
     const wrap = el('div', 'c-lb');
     const card = el('section', 'c-lb-card');
     const hd = el('div', 'c-lb-h');
@@ -4017,16 +5091,132 @@
     return null;
   }
 
-  /* == dragging tiles out of the tray == */
+  /* == dragging tiles out of the tray ==
+     V11, touch: a tile in a list that scrolls lifts after a short press (LIFT_MS), or at once when the
+     finger first moves across the way its list scrolls (sideways out of a panel, up out of the tray); a
+     move along the list is a scroll, so a list full of tiles still scrolls under a thumb, the way Apple's
+     own lists lift. A handle (a step's grip, anything the browser can't scroll from), a mouse, a trackpad,
+     and a pen lift after a few pixels, as before. A tap is the tile's own click: a touch that only stopped
+     a glide opens nothing, and a panel a tap opens never takes the tap's own click. One pointer carries
+     at a time. */
+  const LIFT_MS = 300, LIFT_SLOP = 8;
+  let lastCarryEnd = 0;
+  /* the way the list around a tile scrolls ('y', 'x'), or null when nothing around it scrolls */
+  function scrollAxis(elm) {
+    for (let p = elm.parentElement; p && p !== document.body; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1) return 'y';
+      if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1) return 'x';
+    }
+    return null;
+  }
   function dragSource(elm, spec, onClick) {
     elm.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || (FEEL && !e.isPrimary)) return;
+      /* (V11: the phone's list has no board to drop on, so a press there is a tap: it opens the place panel) */
+      if (FEEL && view.phone && !phoneDay()) return;
+      /* (V11: a first finger, or a mouse press, means nothing else is down: a carry still marked lost its end) */
+      if (FEEL && (tdrag || bdrag)) staleCarry();
       Snd.init();
-      tdrag = { spec, el: elm, x: e.clientX, y: e.clientY, started: false, onClick, target: null };
+      /* (V11: a finger on a tile in a list that scrolls presses to lift; a handle the list can't scroll from,
+         a pen, and a mouse lift as they move) */
+      const touch = e.pointerType === 'touch', axis = touch && FEEL && getComputedStyle(elm).touchAction !== 'none' ? scrollAxis(elm) : null;
+      tdrag = { spec, el: elm, x: e.clientX, y: e.clientY, started: false, onClick, target: null, id: e.pointerId, touch, armed: !axis, axis, t0: e.timeStamp };
       dayChipMemo = null;
       if (FEEL) { const r = elm.getBoundingClientRect(); tdrag.gx = e.clientX - r.left; tdrag.gy = e.clientY - r.top; }
-      e.preventDefault();
+      if (axis) { const d = tdrag; d.wait = setTimeout(() => armCarry(d), LIFT_MS); elm.classList.add('pressing'); }
+      else if (FEEL && e.pointerType !== 'mouse') carryHold(true);
+      /* (a mouse or a pen: no text selection or focus jump. V11, a finger: the browser keeps the touch, so a
+         list can still scroll under it until the press lifts the tile) */
+      if (!FEEL || !touch) e.preventDefault();
     });
+    if (!FEEL) return;
+    elm.addEventListener('click', () => {
+      if (performance.now() - lastCarryEnd < 400 || !onClick) return;
+      Snd.init(); Snd.pick(); onClick();
+    });
+    /* (on the tile itself too: a touch keeps going to the element it started on, even after a redraw takes
+       that element off the page, where the page's own listeners never hear it; iOS does the same with the
+       pointer before the carry starts. So a tile off the page still moves, lets go, and holds the list) */
+    elm.addEventListener('touchmove', holdStill, { passive: false });
+    const orphan = (e) => {
+      if (elm.isConnected || !tdrag || tdrag.el !== elm || e.pointerId !== tdrag.id) return;
+      if (e.type === 'pointermove') { moveTile(e); return; }
+      if (e.type === 'pointercancel') { tdrag.target = null; tdrag.onClick = null; }
+      letGoTile(e);
+    };
+    ['pointermove', 'pointerup', 'pointercancel'].forEach((t) => elm.addEventListener(t, orphan));
+  }
+  /* V11: held long enough, or moved across: the tile is in hand, and the list under it holds still */
+  function armCarry(d) {
+    if (tdrag !== d || d.armed) return;
+    d.armed = true; d.picked = true;
+    if (d.el) { d.el.classList.remove('pressing'); d.el.classList.add('held'); }
+    carryHold(true);
+    Snd.pick();
+    if (navigator.vibrate) { try { navigator.vibrate(8); } catch (err) { /* fine */ } }
+  }
+  /* V11: let go of, or scrolled, before it lifted: nothing is in hand */
+  function pressOff(d) {
+    clearTimeout(d.wait);
+    if (d.el) d.el.classList.remove('pressing', 'held');
+    if (tdrag === d) tdrag = null;
+    carryHold(false);
+  }
+  /* V11: the pointer that carried let go, or was taken back: the press is over. A click right after a carry,
+     or after a press that lifted, belongs to the carry; a desk piece's tap, answered here, eats its own click */
+  function pressEnd(d) {
+    clearTimeout(d.wait); carryHold(false);
+    if (d.el) d.el.classList.remove('pressing', 'held');
+    if (d.started || (d.touch && d.armed && d.axis)) lastCarryEnd = performance.now();
+    if (!d.started && !d.el && d.touch) eatTapClick = true;
+  }
+  /* letting go of a tile or a piece: the press ends, then the drop. Whatever goes wrong in the drop, nothing
+     stays in hand and the person is told the drop hit a problem (dropSafe) */
+  function letGoTile(e) { const d = tdrag; if (FEEL && d) pressEnd(d); if (FEEL) dropSafe(() => dropTile(e), d); else dropTile(e); }
+  /* V11: a carry whose pointer's end never came (iOS can lose it when what was pressed is drawn again): it
+     goes back where it came from, and places nothing */
+  function staleCarry() {
+    if (tdrag) { const d = tdrag; if (d.started) { d.target = null; d.onClick = null; letGoTile(); } else pressOff(d); }
+    if (bdrag) { const was = bdrag; bdrag = null; cancelBoardDrag(was); }
+  }
+  /* V11: while a finger carries something, the list under it never scrolls. Each tile listens for itself,
+     from the start: iOS decides at touchstart whether to wait for the page (a listener added mid touch comes
+     too late), and a touch keeps going to the element it started on, even after a redraw takes it off the
+     page, where a listener on the page would never hear it */
+  let holding = false;
+  /* (and while it holds, the whole page holds a second finger still too: two fingers, one on a tile that
+     lets its list scroll, read as a two finger pan, and the browser took the carry back. Only while
+     something is held, so scrolling anywhere else never waits on the page) */
+  function carryHold(on) {
+    on = !!on;
+    if (on !== holding) { if (on) document.addEventListener('touchmove', holdStill, { passive: false }); else document.removeEventListener('touchmove', holdStill, { passive: false }); }
+    holding = on;
+  }
+  function holdStill(e) { if (holding && e.cancelable) e.preventDefault(); }
+  /* V11: something is in hand (a tile, a piece, a block being moved or stretched): toasts let it pass through
+     to the board and step back (variant.css body.carrying), and nothing redraws the desk under it */
+  function carrying(on) { if (FEEL) document.body.classList.toggle('carrying', !!on); }
+  const carryingNow = () => !!((tdrag && tdrag.started) || (bdrag && bdrag.started && bdrag.mode !== 'pan'));
+  /* V11: a drop that throws never leaves a block in hand or a tile in the air: what's in hand goes home, the
+     desk forgets the aim and draws the board as it is, and a toast says the drop hit a problem (the error is
+     kept for the report) */
+  function dropSafe(fn, d) {
+    /* (the toasts come back first, so the one this drop says is read out as it arrives) */
+    carrying(false);
+    try { fn(); } catch (err) {
+      console.error(err); logError('drop', err);
+      try { W.endDrag(); } catch (e2) { /* fine */ }
+      try { unaim(); hideChip(); settleDrag(); W.setHover(null); } catch (e2) { /* fine */ }
+      const g = $('dragtile'); if (g) { g.hidden = true; g.style.translate = ''; g.style.opacity = ''; }
+      cancelAnimationFrame(carry.raf); carry.g = null;
+      if (d && d.el) { d.el.style.opacity = ''; d.el.classList.remove('pressing', 'held'); }
+      if (d && d.obj3) d.obj3.visible = true;
+      tdrag = null; carryHold(false);
+      try { render(); } catch (e2) { /* fine */ }
+      /* (said through oops, with its way to tell us; the board shows what's there now, landed or not) */
+      oops('That drop hit a problem. The board shows where everything is now.');
+    } finally { carrying(false); }
   }
   let tdrag = null;
   function specAdd(spec) {
@@ -4060,16 +5250,18 @@
   /* Which board is under the pointer: the week, the day board, or the mini week beside it. */
   function targetAt(x, y, lift) {
     if (W.layout !== 'week') return null;
-    const loose = (p) => (p ? { kind: 'none', wx: p.wx, wy: p.wy, wz: p.wz } : null);
+    /* (a point that isn't a number, from a camera mid trouble, is off the board: nothing aims at it) */
+    const ok = (p) => p && Number.isFinite(p.min) && Number.isFinite(p.wx) && Number.isFinite(p.wz);
+    const loose = (p) => (p && Number.isFinite(p.wx) && Number.isFinite(p.wz) ? { kind: 'none', wx: p.wx, wy: p.wy, wz: p.wz } : null);
     if (view.zoom === 'day') {
       const d = W.dayAt(x, y, lift);
-      if (d && d.lane != null) return { kind: 'day', date: view.focus, min: d.min, wx: d.wx, wy: d.wy, wz: d.wz };
+      if (d && d.lane != null && ok(d)) return { kind: 'day', date: view.focus, min: d.min, wx: d.wx, wy: d.wy, wz: d.wz };
       const m = W.boardAt(x, y, lift);
-      if (m && m.row != null) return { kind: 'mini', date: weekOf()[m.row], row: m.row, min: m.min, wx: m.wx, wy: m.wy, wz: m.wz };
+      if (m && m.row != null && ok(m)) return { kind: 'mini', date: weekOf()[m.row], row: m.row, min: m.min, wx: m.wx, wy: m.wy, wz: m.wz };
       return loose(d) || loose(m);
     }
     const m = W.boardAt(x, y, lift);
-    if (m && m.row != null) return { kind: 'week', date: weekOf()[m.row], row: m.row, min: m.min, wx: m.wx, wy: m.wy, wz: m.wz };
+    if (m && m.row != null && ok(m)) return { kind: 'week', date: weekOf()[m.row], row: m.row, min: m.min, wx: m.wx, wy: m.wy, wz: m.wz };
     return loose(m);
   }
   /* Show where a block would land, and float the picked up block over that spot. */
@@ -4106,12 +5298,33 @@
     const d = tdrag;
     if (!d.spec) return;
     if (!d.started) {
-      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+      const dx = e.clientX - d.x, dy = e.clientY - d.y, far = Math.hypot(dx, dy);
+      /* V11, a finger in a list that scrolls, before the press has lifted the tile: across the list's own
+         scroll lifts it now; along it, the list scrolls and the press lets go */
+      if (FEEL && !d.armed) {
+        /* (held long enough by the clock of the events themselves, whatever order a busy page runs the timer
+           and the move in) */
+        if (e.timeStamp - d.t0 >= LIFT_MS) armCarry(d);
+      }
+      if (FEEL && !d.armed) {
+        if (far < LIFT_SLOP) return;
+        const across = d.axis === 'x' ? -dy > Math.abs(dx) : Math.abs(dx) > Math.abs(dy);
+        if (!across) { pressOff(d); return; }
+        armCarry(d);
+      }
+      if (far < 6) return;
       d.started = true;
-      if (FEEL) W.press(null);
+      if (FEEL) {
+        W.press(null);
+        carrying(true);
+        if (d.el) d.el.classList.remove('pressing', 'held');
+        /* (from here the carry belongs to the page, so it goes on if the tile it came from is drawn again: a
+           sync arriving, midnight; iOS keeps sending a touch to the element it started on) */
+        if (d.el && d.id != null) { try { $('app').setPointerCapture(d.id); } catch (err) { /* fine */ } }
+      }
       /* V11: a piece off a bench framed close: the camera eases back out to the week beside it */
       if (FEEL && d.obj3 && W.benchCarry) W.benchCarry(d.obj3);
-      Snd.pick();
+      if (!d.picked) Snd.pick();
       if (d.el) {
         const g = $('dragtile'), copy = d.el.cloneNode(true);
         /* V11: a copied canvas comes out blank; the tile in hand keeps its mark */
@@ -4147,10 +5360,10 @@
           W.setHover(null);
           aim(t, r.start, add.dur, r.ok, e.movementX || 0);
           d.target = { type: 'rail', date: t.date, start: r.start, ok: r.ok, reason: r.reason, blocker: r.blocker, add, food: d.spec };
-          showChipAt(e.clientX, e.clientY - 30, 'Dinner, ' + specLook(d.spec).name, r.ok ? placedText(t.date, r.start) : blockedText(r));
+          showChipAt(e.clientX, e.clientY - 30, 'Dinner, ' + ((specLook(d.spec) || {}).name || 'dinner'), r.ok ? placedText(t.date, r.start) : blockedText(r));
           return;
         } else if (t && t.date && t.kind !== 'none') { d.target = { type: 'dinner', date: t.date }; W.setHover(null); showChipAt(e.clientX, e.clientY - 30, 'Dinner on ' + M.DAY_LONG[M.weekday(t.date)], 'Drop to set it'); }
-        else { W.setHover(null); showChipAt(e.clientX, e.clientY - 30, specLook(d.spec).name, 'Drop it on a day'); }
+        else { W.setHover(null); showChipAt(e.clientX, e.clientY - 30, (specLook(d.spec) || {}).name || 'Dinner', 'Drop it on a day'); }
         unaim(); floatFree(d, e, t);
         return;
       }
@@ -4395,7 +5608,9 @@
     W.setHover(null);
     hideChip();
     unaim();
-    if (!d.started) { back(); if (d.onClick) { Snd.pick(); d.onClick(); } return; }
+    /* a press that never carried: a desk piece opens here; V11, a tile opens on its own click, which the
+       browser sends after the tap (dragSource), so the tap's click never lands on what it opened */
+    if (!d.started) { back(); if ((!FEEL || !d.el) && d.onClick) { Snd.pick(); d.onClick(); } return; }
     const t = d.target;
     if (t && t.type === 'dinner') { if (FEEL) W.endDrag({ absorb: true }); else W.endDrag(); back(); setDinnerFrom(t.date, d.spec); return; }
     if (t && t.type === 'rail') {
@@ -4473,23 +5688,29 @@
     if (mealIdea(spec)) { dinnerFromIdea(date, spec); return; }
     const cur = state.dinners[date] || { name: '', cook: '', items: [] };
     const homeCook = cooking(cur.cook) ? cur.cook : 'home';
+    /* V11 goals: leftovers that knew this dinner, so the toast can say which ones it let go of (variant.js) */
+    const links = FEEL && window.SR_leftLinks ? window.SR_leftLinks() : null;
     commit(() => {
       if (spec.kind === 'recipe') {
         const r = state.recipes.find((x) => x.id === spec.id);
         state.dinners[date] = { name: r.name, recipe: r.id, cook: homeCook, items: r.items.slice() };
       } else if (spec.kind === 'dish') {
+        /* V11 goals: the same way again (Leftovers on leftovers) keeps the dinner as it is, and the meal it comes from */
         state.dinners[date] = spec.how === 'home' ? Object.assign({ name: '', items: [] }, cooking(cur.cook) ? cur : {}, { cook: homeCook })
-          : { name: '', recipe: null, cook: spec.how, items: [] };
+          : FEEL && spec.how === cur.cook ? Object.assign({}, cur) : { name: '', recipe: null, cook: spec.how, items: [] };
       } else {
         const base = cooking(cur.cook) ? cur : { name: '', items: [] };
         const items = (base.items || []).includes(spec.id) ? base.items.slice() : (base.items || []).concat(spec.id);
         const auto = !base.name || base.name === M.dinnerFromItems(state, base.items || []);
         state.dinners[date] = Object.assign({}, base, { cook: homeCook, items, name: auto ? M.dinnerFromItems(state, items) : base.name, recipe: null });
       }
+      /* V11 goals: leftovers follow their dinner's new name, or let go of one that isn't cooked now, in this change */
+      if (FEEL) M.syncLeftovers(state);
     });
     Snd.clack(0.6);
     const dn = state.dinners[date];
-    toast((dn.name || cookName(dn.cook)) + ' ' + whenWord(date, true), 'good');
+    const stay = links && window.SR_leftStay ? window.SR_leftStay(links) : '';
+    toast((dn.name || cookName(dn.cook)) + ' ' + whenWord(date, true) + (stay ? '. ' + stay : ''), 'good');
     noteMove('dinner');
     if (dn.cook === 'home') openSel({ type: 'dinner', date });
   }
@@ -4502,6 +5723,7 @@
     /* V11: with nobody to name (two people you're seeing, none picked), it's said as the idea: Dinner out */
     const g = ideaGroup(i), w = ideaWho(g, spec.who || i.who), withWords = ideaWith(Object.assign({ for: g }, w ? { who: w } : {})), how = i.meal || '';
     const cur = state.dinners[date] || {};
+    const links = FEEL && window.SR_leftLinks ? window.SR_leftLinks() : null;
     commit(() => {
       state.dinners[date] = {
         name: how === 'home' ? (cooking(cur.cook) ? cur.name || '' : '') : withWords ? 'Dinner with ' + withWords : i.name,
@@ -4510,11 +5732,14 @@
         items: how === 'home' && cooking(cur.cook) ? (cur.items || []).slice() : [],
         with: Object.assign({ idea: i.id, for: g, how }, w ? { who: w } : {})
       };
+      /* V11 goals: leftovers of a dinner that's now out let go of it, in this change */
+      if (FEEL) M.syncLeftovers(state);
     });
     Snd.clack(0.6);
     const n = M.diffDays(today, date), whose = n === 0 ? 'Tonight’s' : n === 1 ? 'Tomorrow’s' : n > 1 && n < 7 ? M.DAY_LONG[M.weekday(date)] + '’s' : M.dateText(date) + '’s';
     const what = withWords ? (how === 'out' ? 'out with ' : how === 'home' ? 'cooking with ' : 'with ') + withWords : how === 'out' ? 'out' : how === 'home' ? 'cooking at home' : i.name;
-    toast(whose + ' dinner is ' + what + '.', 'good', undoAct('Dinner is as it was.'));
+    const stay = links && window.SR_leftStay ? window.SR_leftStay(links) : '';
+    toast(whose + ' dinner is ' + what + '.' + (stay ? ' ' + stay : ''), 'good', undoAct('Dinner is as it was.'));
     noteMove('dinner');
     if (how === 'home') openSel({ type: 'dinner', date });
   }
@@ -4527,7 +5752,26 @@
   const fingers = new Map();
   let pinch = null, pinchHold = false;
   const spread = () => { const [a, b] = Array.from(fingers.values()); return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+  /* what pressing a block does: its stretch edge stretches (a sleep edge moves waking or bed), a placed
+     block moves, a routine slides along its day, anything else is a tap */
+  function boardMode(d, hit) {
+    const b = hit.block;
+    const full = sourceSpan(b, hit.date), atEnd = b.start + b.dur === full.start + full.dur;
+    if (b.sleep === 'am' && hit.nearR && atEnd) d.mode = 'wake';
+    else if (b.sleep === 'pm' && hit.nearL && b.start === full.start) d.mode = 'bed';
+    else if (!b.sleep && !b.soft && !b.fixed && (b.add || b.tpl) && hit.nearR && atEnd) d.mode = 'resize';
+    else if (b.add) d.mode = 'move';
+    else if (b.tpl && !b.soft && !b.fixed && !b.sleep) d.mode = 'slide';
+    d.grabMin = hit.min - full.start;
+    d.board = hit.board;
+  }
+  /* V11: a finger finds a block's stretch edge by a target about its own size (TOUCH_EDGE px each side of
+     the block's end: part inside, never more than a third of the block, and part right past it), never by
+     a sliver; a mouse finds it as before */
+  const TOUCH_EDGE = 22;
   stage.addEventListener('pointerdown', (e) => {
+    /* (V11: a first finger means no other finger is down, whatever the map still holds) */
+    if (FEEL && e.pointerType === 'touch' && e.isPrimary) { fingers.clear(); pinch = null; pinchHold = false; }
     if (e.pointerType === 'touch') fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (fingers.size === 2 && !(bdrag && bdrag.started && bdrag.mode !== 'pan') && !tdrag) {
       bdrag = null; pinchHold = true; clearTimeout(tapWait);
@@ -4540,27 +5784,27 @@
     }
     if (fingers.size > 2 || pinchHold) return;
     if (!ready || e.button !== 0) return;
+    /* V11: one carry at a time: a finger that lands while another carries something (a thumb on the glass,
+       a second hand) neither starts a drag nor takes the one in hand. A first finger or a mouse press means
+       the last carry lost its end, so it goes home first */
+    if (FEEL && (tdrag || bdrag)) { if (e.isPrimary) staleCarry(); else return; }
+    if (FEEL) eatTapClick = false;
     Snd.init();
-    const hit = W.pick(e.clientX, e.clientY);
+    const touchEdge = FEEL && e.pointerType === 'touch' ? { edgePx: TOUCH_EDGE } : undefined;
+    const hit = W.pick(e.clientX, e.clientY, touchEdge);
     if (hit && hit.kind === 'bench') {
       const pc = hit.piece;
-      tdrag = { spec: pc.drag || null, el: null, obj3: hit.obj, x: e.clientX, y: e.clientY, started: false, target: null, onClick: () => { if (pc.open) openSel(pc.open); else if (pc.drag) openSel({ type: 'place', spec: pc.drag }); } };
+      tdrag = { spec: pc.drag || null, el: null, obj3: hit.obj, x: e.clientX, y: e.clientY, started: false, target: null, id: e.pointerId, touch: e.pointerType === 'touch', armed: true, onClick: () => { if (pc.open) openSel(pc.open); else if (pc.drag) openSel({ type: 'place', spec: pc.drag }); } };
       if (FEEL) W.press(hit.obj);
       try { stage.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
       return;
     }
-    bdrag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, hit, started: false, mode: !hit && W.userZoom > 1.01 ? 'pan' : 'click' };
-    if (hit && hit.kind === 'block' && benchable()) {
-      const b = hit.block;
-      const full = sourceSpan(b, hit.date), atEnd = b.start + b.dur === full.start + full.dur;
-      if (b.sleep === 'am' && hit.nearR && atEnd) bdrag.mode = 'wake';
-      else if (b.sleep === 'pm' && hit.nearL && b.start === full.start) bdrag.mode = 'bed';
-      else if (!b.sleep && !b.soft && !b.fixed && (b.add || b.tpl) && hit.nearR && atEnd) bdrag.mode = 'resize';
-      else if (b.add) bdrag.mode = 'move';
-      else if (b.tpl && !b.soft && !b.fixed && !b.sleep) bdrag.mode = 'slide';
-      bdrag.grabMin = hit.min - full.start;
-      bdrag.board = hit.board;
-    }
+    bdrag = { id: e.pointerId, kind: e.pointerType, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, hit, started: false, mode: !hit && W.userZoom > 1.01 ? 'pan' : 'click' };
+    if (hit && hit.kind === 'block' && benchable()) boardMode(bdrag, hit);
+    /* V11: a finger right past a block's end, on open board, holds that block's stretch edge too: a drag
+       sideways from there stretches it, a tap there still opens that time. (Not on a phone's one day, where a
+       sideways swipe on open board goes to the next day, and the blocks are wide enough to hold their own) */
+    if (touchEdge && !phoneDay() && (!hit || hit.kind !== 'block') && W.edgeAt && benchable()) { const edge = W.edgeAt(e.clientX, e.clientY, TOUCH_EDGE); if (edge) bdrag.edge = edge; }
     /* feel: what you press dips into the board before it moves */
     if (FEEL && hit && hit.kind === 'block' && hit.obj && hit.board !== 'mini') W.press(hit.obj);
     try { stage.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
@@ -4593,15 +5837,26 @@
       return;
     }
     if (pinchHold) return;
-    if (tdrag) { moveTile(e); if (tdrag && tdrag.started) edgeLean(e); return; }
+    /* (V11: only the pointer that picked it up moves what's in hand) */
+    if (tdrag) { if (!FEEL || tdrag.id == null || e.pointerId === tdrag.id) { moveTile(e); if (tdrag && tdrag.started) edgeLean(e); } return; }
     if (!bdrag) { hoverSoon(e); return; }
+    if (FEEL && bdrag.id != null && e.pointerId !== bdrag.id) return;
     const d = bdrag;
     if (!d.started) {
-      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5 || d.mode === 'click') return;
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) return;
+      /* V11: a finger that pressed right past a block's end and moves sideways stretches that block (a tap
+         there stays a tap on open time) */
+      if (d.edge && (d.mode === 'click' || d.mode === 'pan')) {
+        const was = d.mode, edge = d.edge;
+        d.edge = null;
+        if (Math.abs(e.clientX - d.x) > Math.abs(e.clientY - d.y)) { boardMode(d, edge); if (d.mode === 'resize' || d.mode === 'wake') d.hit = edge; else d.mode = was; }
+      }
+      if (d.mode === 'click') return;
       d.started = true;
       if (FEEL) W.press(null);
       if (d.mode === 'pan') { stage.className = 'grabbing'; hideChip(); if (FEEL) W.direct(true); }
       else {
+        if (FEEL) carrying(true);
         Snd.pick();
         hideChip();
         if (d.mode === 'move' || d.mode === 'slide') W.startDrag(decorate(d.hit.block, d.hit.date), d.hit.obj);
@@ -4625,16 +5880,26 @@
   /* On a phone's desk a tap waits a moment for a second one: two quick taps zoom in on that spot, or
      back out to the whole day. */
   let tapWait = 0, lastTap = null;
+  /* V11: a tap the desk answered when the finger lifted (a panel opening under it): the click the browser
+     sends after the touch is no second tap on that panel. Cancelling the touch's end stops that click */
+  let eatTapClick = false;
+  if (FEEL) stage.addEventListener('touchend', (e) => { if (eatTapClick) { eatTapClick = false; if (e.cancelable) e.preventDefault(); } }, { passive: false });
+  /* V11: iOS starts sound from a touch that ends or a click, never one that starts: try again then */
+  if (FEEL) ['pointerup', 'click'].forEach((t) => window.addEventListener(t, () => Snd.init(), { capture: true, passive: true }));
+  /* V11: another pointer that isn't the one carrying (a thumb lifting, a second hand) ends nothing */
+  const otherPointer = (e) => FEEL && ((tdrag && tdrag.id != null && e.pointerId !== tdrag.id) || (!tdrag && bdrag && bdrag.id != null && e.pointerId !== bdrag.id && bdrag.kind !== 'mouse'));
   window.addEventListener('pointerup', (e) => {
     if (liftFinger(e)) { if (FEEL && !fingers.size) W.direct(false); return; }
+    if (otherPointer(e)) return;
     if (FEEL) { W.press(null); W.direct(false); }
-    if (tdrag) { dropTile(e); return; }
+    if (tdrag) { letGoTile(e); return; }
     if (!bdrag) return;
     const d = bdrag;
     bdrag = null;
     stage.className = '';
     W.lean(null);
     if (!d.started) {
+      if (FEEL && e.pointerType === 'touch') eatTapClick = true;
       /* on a phone's one day desk, a sideways swipe goes to the day before or after (not while zoomed in) */
       const dx = e.clientX - d.x, dy = e.clientY - d.y;
       if (phoneDay() && d.mode === 'click' && W.userZoom <= 1.01 && Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) { shift(dx < 0 ? 1 : -1); return; }
@@ -4655,21 +5920,32 @@
       tapped(d.hit, e); return;
     }
     if (d.mode === 'pan') return;
-    finishBoardDrag(d);
+    if (FEEL) { carrying(false); dropSafe(() => finishBoardDrag(d)); } else finishBoardDrag(d);
   });
   window.addEventListener('pointercancel', (e) => {
     if (liftFinger(e)) return;
+    if (otherPointer(e)) return;
     W.lean(null);
     if (FEEL) {
-      /* feel: a touch the browser took back puts the block back where it was, and opens nothing */
+      /* feel: a touch the browser took back puts what was in hand back where it came from (a tile flies home
+         to its list, a block or a piece to its slot), and opens and places nothing */
       W.press(null); W.direct(false);
-      if (tdrag) { const d = tdrag; if (d.obj) { W.endDrag({ home: true }); d.obj = null; d.obj3 = null; } d.started = false; d.onClick = null; dropTile(); }
-      if (bdrag) { bdrag = null; render(); W.endDrag({ home: true }); }
+      if (tdrag) { const d = tdrag; if (!d.started) { pressOff(d); if (d.obj3) d.obj3.visible = true; } else { d.target = null; d.onClick = null; letGoTile(); } }
+      if (bdrag) { const was = bdrag; bdrag = null; cancelBoardDrag(was); }
       return;
     }
     if (tdrag) { tdrag.started = false; dropTile(); }
     if (bdrag) { bdrag = null; W.endDrag(); render(); }
   });
+  /* V11: a move or a stretch put back (a touch taken back, Escape, a carry whose end never came): the
+     block goes home, the desk forgets the aim, and nothing changes */
+  function cancelBoardDrag(was) {
+    stage.className = ''; settleHand(); unaim(); hideChip(); carrying(false);
+    document.querySelectorAll('.daypill.over').forEach((x) => x.classList.remove('over'));
+    W.press(null);
+    if (was.mode === 'pan') { W.direct(false); return; }
+    if (was.started) { render(); W.endDrag({ home: true }); }
+  }
 
   function boardDrag(e) {
     const d = bdrag, b = d.hit.block;
@@ -4692,6 +5968,8 @@
       const date = t.date;
       if (t.kind === 'none' || (d.mode === 'slide' && date !== d.hit.date)) {
         d.preview = null; d.ck = null;
+        /* (V11: kept, so letting go here says why nothing moved) */
+        d.why = t.kind === 'none' ? 'off' : 'slide';
         unaim();
         W.dragTo(t.wx, (t.wy || 0.3) + 1.2, t.wz, e.movementX);
         renderBoard();
@@ -4717,7 +5995,7 @@
       aim(t, aimStart, full.dur, tr.r.ok, e.movementX, mid);
       renderBoard(tr.r.ok ? daysWith(tr.dates, Array.from(new Set([date, d.hit.date]))) : null);
       const sub = tr.r.ok ? timeSpan(date, shownStart, shownStart + full.dur) : blockedText(tr.r);
-      if (FEEL) { d.ck = ck; d.cAim = { start: aimStart, ok: tr.r.ok, title: b.label || b.name, sub }; }
+      if (FEEL) { d.ck = ck; d.cAim = { start: aimStart, ok: tr.r.ok, title: b.label || b.name, sub }; d.why = tr.r.ok ? null : blockedText(tr.r, true); }
       showChipAt(e.clientX, e.clientY - 30, b.label || b.name, sub);
       return;
     }
@@ -4729,6 +6007,7 @@
       if (FEEL) { d.ck = 'r' + want; d.cAim = null; }
       const tr = tryOn(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want));
       d.preview = tr.r.ok ? { dur: tr.r.dur } : null;
+      if (FEEL) d.why = tr.r.ok ? null : blockedText(tr.r, true);
       if (tr.r.ok && d.lastV !== tr.r.dur) { if (d.lastV != null) Snd.detent(true); d.lastV = tr.r.dur; }
       renderBoard(tr.r.ok ? daysWith(tr.dates, [date]) : null);
       if (tr.r.ok) showChipAt(e.clientX, e.clientY - 30, (b.label || b.name) + ', ' + M.dur(tr.r.dur), timeSpan(date, full.start, full.start + tr.r.dur));
@@ -4749,7 +6028,20 @@
     hideChip();
     unaim();
     document.querySelectorAll('.daypill.over').forEach((x) => x.classList.remove('over'));
-    if (!d.preview) { if (FEEL) { render(); W.endDrag({ home: true }); } else { W.endDrag(); render(); } Snd.slide(); return; }
+    if (!d.preview) {
+      if (FEEL) { render(); W.endDrag({ home: true }); } else { W.endDrag(); render(); }
+      Snd.slide();
+      /* V11: a block that can't go where it was let go flies home and says why: what's in the way there, or
+         where to drop it instead (a tile from a panel says the same) */
+      if (FEEL) {
+        const nm = b.label || b.name;
+        if (d.why && d.why !== 'off' && d.why !== 'slide') toast(d.why, 'bad');
+        else if (d.why === 'slide') toast(nm + ' stays on ' + M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + '. A routine moves within its own day.', '');
+        else if (d.mode === 'move' || d.mode === 'slide') toast('Drop ' + nm + ' on a day’s row to move it.', '');
+        else toast(nm + ' stays as it was.', '');
+      }
+      return;
+    }
     if (d.preview.pill) {
       const to = d.preview.pill;
       W.endDrag();
@@ -4788,8 +6080,8 @@
         }
         else if (d.preview.date !== d.hit.date) toast((b.label || b.name) + ' moved to ' + placedText(d.preview.date, d.preview.start), 'good');
         if (view.pick && view.pick.key === b.base) view.pick.date = d.preview.date;
-      }
-    } else if (r && r.ok) {
+      } else if (FEEL) { Snd.bad(); toast(blockedText(r || {}, true), 'bad'); }
+    } else if (FEEL && !(r && r.ok)) { Snd.bad(); toast(blockedText(r || {}, true), 'bad'); render(); } else if (r && r.ok) {
       Snd.clack(0.8);
       /* V11: a stretch, a wake, and a bed time say what they are now, with Undo */
       if (FEEL) {
@@ -4847,7 +6139,8 @@
       const d = M.addDays(today, k), wd = M.weekday(d);
       if (wd !== 0 && wd !== 6) continue;
       if (ev.some((e) => e.date === d || (e.end && e.date <= d && d <= e.end))) continue;
-      if (((state.dates[d] || {}).adds || []).length) continue;
+      /* (V11 goals: a skipped session is a record that takes no time, so it doesn't fill a day) */
+      if (((state.dates[d] || {}).adds || []).some((a) => !a.skipped)) continue;
       const dd = day(d), open = (M.totals(dd).free || 0) + dd.blocks.filter((b) => b.free).reduce((a, b) => a + b.dur, 0);
       if (open >= 240) return { date: d, open };
     }
@@ -4917,13 +6210,18 @@
     else if (what === 'lock') { r = tplEdit({ fixed: true }); if (r) toast(b.name + ' is locked for ' + M.DAY_LONG[M.weekday(date)]); }
     else if (what === 'kim') { r = tplEdit({ gone: true, by: partner() || 'someone' }); if (r) toast((partner() || 'Someone else') + ' has ' + b.name + ' on ' + M.DAY_LONG[M.weekday(date)] + '. That time is open.', 'good'); selectBlock(null); }
     else if (what === 'remove') {
+      /* V11 goals: a goal's session taken off is skipped, never deleted, and its time spreads over the days ahead */
+      if (FEEL && isSession(b)) { selectBlock(null); skipSession(b.add, 'all'); return; }
       if (b.add) r = commit(() => { M.removeAdd(state, b.add); return { ok: true }; });
       else if (b.tpl) r = tplEdit({ gone: true });
-      if (r) { offToast((b.label || b.name) + ' is off ' + M.DAY_LONG[M.weekday(date)]); Snd.slide(); }
+      /* (a Meal prep block comes off alone; the meals it makes stay) */
+      if (r) { offToast((b.label || b.name) + ' is off ' + M.DAY_LONG[M.weekday(date)] + (FEEL && b.src && b.src.type === 'prep' ? '. Its meals stay' : '')); Snd.slide(); }
       selectBlock(null);
       return;
     } else if (what === 'done' || what === 'undone') {
       const src = b.src || {};
+      /* V11 goals: a session that happened wears its check, and its day isn't asked about */
+      if (FEEL && isSession(b)) { sessionDone(b.add, what === 'done'); renderTools(); return; }
       const t = taskById(src.type === 'task' ? src.id : src.task);
       if (t) setDone(t, src.type === 'step' ? src.id : null, what === 'done');
       /* V11: a plain block keeps its own done mark */
@@ -5586,6 +6884,10 @@
     if (sel.type === 'groceries') return groceriesPanel(p);
     /* V11: Moving outside the reset: the same goal, week, and moves as its step */
     if (FEEL && sel.type === 'moving') return movingPanel(p, sel.date);
+    /* V11 goals: Goals, a goal's own panel, and New goal (or a change to one) */
+    if (FEEL && sel.type === 'goals') return goalsPanel(p);
+    if (FEEL && sel.type === 'goal') return goalPanel(p, sel.id);
+    if (FEEL && sel.type === 'newGoal') return newGoalPanel(p, sel);
     if (sel.type === 'newTask') return newTaskPanel(p, sel.group);
     if (sel.type === 'newGroup') return newGroupPanel(p);
     if (sel.type === 'newBlock') return newBlockPanel(p);
@@ -5683,6 +6985,8 @@
     const found = M.findAdd(state, b.add);
     if (!found) return false;
     const a = found.add;
+    /* V11 goals: a goal's session has a panel of its own: what it's part of, and whether it happened */
+    if (FEEL && src.type === 'goal') return sessionPanel(p, date, b, a);
     const c = cat(b.cat);
     const t = src.type === 'task' || src.type === 'step' ? taskById(src.type === 'task' ? src.id : src.task) : null;
     kicker(p, M.dateText(date, 'day') + ' · ' + (src.type === 'idea' ? (FEEL ? (ideaWith(src) ? 'With ' + ideaWith(src) : c.name) : usName()) : t ? groupName(t.group) : c.name), b.icon);
@@ -5717,11 +7021,17 @@
       if (r && r.ok) { Snd.clack(a.dur / 60); if (FEEL) toast((b.label || b.name) + ' moved to ' + toWords(r.date || to, r.start) + (movesWords(r, true) ? '. ' + movesWords(r, true) : ''), 'good', undoAct((b.label || b.name) + ' is back where it was.')); else toast((b.label || b.name) + ', ' + placedText(to, r.start), 'good'); openSel({ type: 'block', date: to, key: 'add:' + a.id }); }
       else { Snd.bad(); toast('No open time that day', 'bad'); renderSide(); }
     }));
-    if (t) actions(p, [button(FEEL ? 'Open the to-do' : 'Open the to do', 'small', () => openSel({ type: 'task', id: t.id }))]);
+    /* V11: a step whose time has come and isn't checked off can go ahead: Didn't get to it */
+    const didnt = FEEL && t && didntOk(b, date) ? button('Didn’t get to it', 'small', () => didntGetTo(b)) : null;
+    if (didnt) { didnt.dataset.fk = 'blk-didnt'; didnt.title = didntGetTo(b, true); }
+    if (t) actions(p, [didnt, button(FEEL ? 'Open the to-do' : 'Open the to do', 'small', () => openSel({ type: 'task', id: t.id }))]);
+    /* V11 goals: a Meal prep block says what it cooks, as the meals stand now, each a tap from the meal board (variant.js) */
+    if (FEEL && src.type === 'prep' && window.SR_prepPanel) window.SR_prepPanel(p, a);
     /* something an assistant put here says so, so it's never a mystery block */
     if (a.via === 'assistant') p.appendChild(el('p', 'field-hint', 'Your assistant put this here.'));
     divider(p);
-    actions(p, [button('Take it off the day', 'small quiet', () => { commit(() => { M.removeAdd(state, a.id); }); Snd.slide(); closeSel(); offToast((b.label || b.name) + ' is off ' + M.DAY_LONG[M.weekday(date)]); })]);
+    /* (V11 goals: a Meal prep block comes off alone; the meals it makes stay, and the toast says so) */
+    actions(p, [button('Take it off the day', 'small quiet', () => { commit(() => { M.removeAdd(state, a.id); }); Snd.slide(); closeSel(); offToast((b.label || b.name) + ' is off ' + M.DAY_LONG[M.weekday(date)] + (FEEL && src.type === 'prep' ? '. Its meals stay' : '')); })]);
   }
   /* marks a to do or one of its steps done; returns the next one when it repeats. Changes state
      without a commit, so a caller can make it part of a bigger change */
@@ -5970,33 +7280,51 @@
     });
 
     /* what to do about it: one gold action, when it needs a time */
+    /* V11: what Break it down, Spread it out, and Find new times need to know: steps whose times all went by,
+       a draft of steps being made, and open steps still without a time. A panel opened afresh starts its
+       spread from how the to-do was last spread */
+    if (sideShown !== selKey(view.sel) && view.got.spread && view.got.spread.id === t.id) view.got.spread = null;
+    if (view.suggest && view.suggest.id === t.id && !view.suggest.bd) view.suggest = bdDraft(t, 'medium');
+    const missedHere = t.done ? [] : M.missedSteps(state, today, nowMin).filter((m) => m.task === t.id);
+    const drafting = !t.done && !!(view.suggest && view.suggest.id === t.id);
+    const toSpread = !missedHere.length && !drafting ? spreadable(t, pl, today, nowMin) : [];
     /* each button keeps a focus key of its own, so after Mark done the focus is on Mark not done, and back */
     const acts = el('div', 'c-tdp-acts');
     const act = (words, cls, fk, fn) => { const b = button(words, cls, fn); b.dataset.fk = fk; acts.appendChild(b); return b; };
     const refocus = (fk) => { const b = $('side-in').querySelector('[data-fk="' + fk + '"]'); if (b && !$('side').contains(document.activeElement)) b.focus({ preventScroll: true }); };
     if (t.done) act(t.skipped ? 'Bring it back' : 'Mark not done', 'small', 'td-done', () => { const sk = t.skipped; setDone(t, null, false); toast(t.name + ' is back on your list.', '', undoSay(t.name + (sk ? ' is skipped again.' : ' is done again.'))); refocus('td-done'); });
     else {
+      /* V11: one gold action at a time. A step whose time went by finds a new one first (Find new times); a
+         draft of steps, or steps to spread out, has its own gold button below, so Give it a time steps back */
+      if (missedHere.length) act('Find new times', drafting ? 'small c-tdp-wide' : 'small primary', 'td-reflow', () => findNewTimes(t));
+      const give = drafting || toSpread.length ? 'small' : 'small primary';
       /* with some steps timed, the next untimed step is what needs a time, not the whole thing again */
       const untimed = status === 'partial' ? steps.find((s) => !s.done && !ahead.some((x) => x.step === s.id)) : null;
-      if (untimed) act('Give the next step a time', 'small primary', 'td-give', () => openSel({ type: 'place', spec: { kind: 'step', task: t.id, id: untimed.id } }));
-      else if (status !== 'planned') act('Give it a time', 'small primary', 'td-give', () => openSel({ type: 'place', spec: { kind: 'task', id: t.id } }));
+      /* (V11: steps whose times went by find new ones first, so the whole thing isn't given a time on top) */
+      const giving = !missedHere.length;
+      if (giving && untimed) act('Give the next step a time', give + ' c-tdp-wide', 'td-give', () => openSel({ type: 'place', spec: { kind: 'step', task: t.id, id: untimed.id } }));
+      else if (giving && status !== 'planned') act('Give it a time', give, 'td-give', () => openSel({ type: 'place', spec: { kind: 'task', id: t.id } }));
       act('Mark done', 'small', 'td-done', () => { setDone(t, null, true); refocus('td-done'); });
       /* a repeating one that didn't happen this time: the next one still comes, nothing piles up */
       if (t.repeat) act('Skip this time', 'small', 'td-skip', () => { let next = null; commit(() => { next = M.completeTask(state, t.id, today, true); }); Snd.slide(); toast(t.name + ' skipped.' + (next ? ' The next one is due ' + tdDay(next.due) + '.' : ''), '', { label: 'Undo', fn: undo }); refocus('td-done'); });
     }
     p.appendChild(acts);
+    /* V11: open steps without a time spread over the days before it's due, first, since that's what to do next */
+    if (toSpread.length) spreadSection(p, t, toSpread);
 
     /* its steps, as one list: check it, drag its mark onto the board, rename it, how long, take it off */
     const sec = el('section', 'c-tdp-steps');
     const sh = el('div', 'c-tdp-sh');
     const lbl = el('div', 'lbl', 'Steps'); lbl.id = 'td-steps-l';
     sh.appendChild(lbl);
-    const suggesting = view.suggest && view.suggest.id === t.id;
-    if (!t.done && !suggesting) {
-      const sb = button('Suggest steps', 'small quiet', () => { view.suggest = { id: t.id, steps: suggested(t.name).filter((s) => !steps.some((x) => x.name.toLowerCase() === s.name.toLowerCase())) }; renderSide(); });
+    const suggesting = drafting;
+    /* V11: Suggest steps opens Break it down; a to-do without steps has it in its list instead (below) */
+    if (!t.done && !suggesting && steps.length) {
+      const sb = button('Suggest steps', 'small quiet', () => breakDown(t.id));
       sb.dataset.fk = 'td-suggest'; sh.appendChild(sb);
     }
     sec.appendChild(sh);
+    if (!t.done && !suggesting && !steps.length) goalLine(sec, t);
     const list = el('div', 'steps c-tdp-list');
     list.setAttribute('role', 'group'); list.setAttribute('aria-labelledby', lbl.id);
     const LENS = [5, 10, 15, 20, 30, 45, 60, 90, 120];
@@ -6066,25 +7394,20 @@
     addStep.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); addIt(); } });
     leaveSave(addStep, addIt);
     addRow.appendChild(addStep);
-    list.appendChild(addRow);
-    sec.appendChild(list);
-    if (suggesting) {
-      const box = el('div', 'suggest c-tdp-ideas');
-      const top = el('div', 'c-tdp-sh');
-      top.appendChild(el('div', 'lbl', 'Steps to try'));
-      top.appendChild(button('Hide', 'small quiet', () => { view.suggest = null; renderSide(); }));
-      box.appendChild(top);
-      if (!view.suggest.steps.length) box.appendChild(el('p', 'c-tdp-sub', 'Nothing to suggest for this one. Add your own above.'));
-      view.suggest.steps.forEach((s, i) => {
-        const r = el('div', 'list-row');
-        r.append(el('span', 'grow', s.name), el('small', '', M.dur(s.dur)));
-        const ab = button('Add', 'small', () => { commit(() => { t.steps = t.steps || []; t.steps.push({ id: M.newId('s'), name: s.name, dur: s.dur, done: false }); }); view.suggest.steps.splice(i, 1); renderSide(); told(s.name + ' added.'); });
-        ab.setAttribute('aria-label', 'Add ' + s.name); ab.dataset.fk = 'td-sug-' + i; r.appendChild(ab);
-        box.appendChild(r);
-      });
-      if (view.suggest.steps.length > 1) box.appendChild(button('Add all ' + view.suggest.steps.length, 'small', () => { const all = view.suggest.steps; commit(() => { t.steps = t.steps || []; all.forEach((s) => t.steps.push({ id: M.newId('s'), name: s.name, dur: s.dur, done: false })); }); view.suggest = null; told(plural(all.length, 'step', 'steps') + ' added.'); renderSide(); }));
-      sec.appendChild(box);
+    /* V11: a to-do without steps offers Break it down first, saying what it would give */
+    if (!t.done && !suggesting && !steps.length) {
+      const pre = bdFor(t.name);
+      const bdr = button('', 'c-tdp-bdrow', () => breakDown(t.id));
+      bdr.dataset.fk = 'td-bdrow';
+      const bw = el('span', 'c-tdp-bdw');
+      bw.append(el('b', '', 'Break it down'), el('span', '', plural(pre.steps.length, 'step', 'steps') + ', about ' + M.dur(pre.total)));
+      bdr.append(icon('list', 9, '#FFFFFF'), bw, icon('right', 7, UI.soft));
+      list.appendChild(bdr);
     }
+    list.appendChild(addRow);
+    /* V11: while Break it down is open on a to-do with no steps, its own list is the one to fill */
+    if (!(suggesting && !steps.length)) sec.appendChild(list);
+    if (suggesting) bdSection(sec, t);
     p.appendChild(sec);
 
     /* the settings used less, folded, with what they're set to on the fold */
@@ -6119,6 +7442,600 @@
     })]);
   }
 
+  /* == V11: big things, small blocks ==
+     A to-do broken into small steps with a time on each, spread over the days before it's due under a cap a
+     day, and moved ahead on its own when a day goes by (docs/PRODUCT-STRATEGY.md). The engine is Model's "V11
+     goals" section; these are its screens: Break it down and Spread it out in a to-do's panel, Find new times,
+     and Didn't get to it on a step's block and in the band. */
+
+  /* V11 todos: the rules the screens share (tests/ui-todos.test.mjs cuts from here to the screens) */
+  /* how long a step takes, a tap at a time. A length between two of these steps to the next one */
+  const BD_LENS = [5, 10, 15, 20, 30, 45, 60];
+  function bdLen(dur, dir) {
+    const d = Math.max(5, Math.round(dur || 15));
+    const to = dir > 0 ? BD_LENS.find((x) => x > d) : BD_LENS.slice().reverse().find((x) => x < d);
+    return to == null ? d : to;
+  }
+  /* how much a day can take when steps are spread, a tap at a time */
+  const SPREAD_CAPS = [15, 30, 45, 60, 90, 120, 180];
+  function capStep(cap, dir) {
+    const c = Math.max(15, Math.round(cap || 15));
+    const to = dir > 0 ? SPREAD_CAPS.find((x) => x > c) : SPREAD_CAPS.slice().reverse().find((x) => x < c);
+    return to == null ? c : to;
+  }
+  /* a spread starts the way the to-do was spread last time, or the engine's default: a little each day,
+     15 minutes for housework and 30 for the rest, any time, done by the day it's due */
+  function spreadDefaults(t, today) {
+    const s = t.spread || {};
+    return {
+      days: Array.isArray(s.days) ? 'pick' : s.days || 'daily',
+      pick: Array.isArray(s.days) && s.days.length ? s.days.slice() : [1, 3, 5],
+      cap: s.cap || M.spreadCap(t.name), when: s.when || 'any',
+      by: s.by || (t.due && t.due >= today ? t.due : null)
+    };
+  }
+  /* what the engine is asked for, from what's picked on the panel */
+  const spreadOptsOf = (f) => Object.assign({ days: f.days === 'pick' ? f.pick.slice().sort() : f.days, cap: f.cap, when: f.when }, f.by ? { by: f.by } : {});
+  /* When the steps don't all fit before the day: do more each day (the least that holds them all), be done
+     later (the first day that holds them all, up to eight weeks on), or take a step off (the last one that
+     doesn't fit, while more than one is left). Worked out with the engine; nothing changes. */
+  function spreadChoices(state, t, opts, today, nowMin) {
+    const plan = (o) => M.spreadPlan(state, t.id, Object.assign({}, opts, o), today, nowMin);
+    const base = plan({});
+    if (base.ok || !base.unplaced.length) return [];
+    const out = [], cap = (base.opts && base.opts.cap) || opts.cap || M.spreadCap(t.name);
+    const more = SPREAD_CAPS.find((c) => c > cap && plan({ cap: c }).ok);
+    if (more) out.push({ kind: 'cap', cap: more });
+    const from = base.by && base.by > today ? base.by : today;
+    if (plan({ by: M.addDays(from, 56) }).ok) {
+      let lo = 1, hi = 56;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (plan({ by: M.addDays(from, mid) }).ok) hi = mid; else lo = mid + 1; }
+      out.push({ kind: 'by', by: M.addDays(from, lo) });
+    }
+    const last = base.unplaced[base.unplaced.length - 1], s = (t.steps || []).find((x) => x.id === last);
+    if (s && (t.steps || []).filter((x) => !x.done).length > 1) out.push({ kind: 'drop', step: s.id, name: s.name });
+    return out;
+  }
+  /* names said the way a sentence says them: A, A and B, A, B, and C */
+  const joinNames = (list) => (list.length <= 1 ? list.join('') : list.length === 2 ? list[0] + ' and ' + list[1] : list.slice(0, -1).join(', ') + ', and ' + list[list.length - 1]);
+  /* One line for what finding new times did: the engine's own words for one to-do ("Vacuum moved to
+     Wednesday. Still done by Saturday."), its name first when the words don't name a step ("Laundry: 2 steps
+     moved to tomorrow and Friday."), and for several, which ones */
+  function reflowWords(list) {
+    if (!list.length) return '';
+    if (list.length === 1) {
+      const x = list[0], said = x.res.message || '';
+      if (x.res.moved.some((m) => m.missed)) return /^\d/.test(said) ? x.name + ': ' + said : said;
+      return x.name + ': ' + (said ? said.charAt(0).toLowerCase() + said.slice(1) : 'nothing moved.');
+    }
+    const moved = list.filter((x) => x.res.moved.some((m) => m.missed)).map((x) => x.name);
+    const short = list.filter((x) => x.res.unplaced.length).map((x) => x.name);
+    const a = moved.length ? 'Missed steps in ' + joinNames(moved) + ' have new times.' : '';
+    const b = short.length ? joinNames(short) + (short.length === 1 ? ' has steps' : ' have steps') + ' that didn’t fit before ' + (short.length === 1 ? 'it’s' : 'they’re') + ' due. Open ' + (short.length === 1 ? 'it' : 'them') + ' to choose.' : '';
+    return [a, b].filter(Boolean).join(' ');
+  }
+  /* The next quiet time for a step, from a day on: open time where nothing moves (Model.quietSlot), today
+     only after now, for three weeks. { date, start } or null */
+  function nextQuiet(state, from, dur, today, nowMin, days) {
+    for (let i = 0, d = from < today ? today : from; i < (days || 21); i++, d = M.addDays(d, 1)) {
+      const at = M.quietSlot(state, d, dur, { when: 'any', after: d === today ? Math.ceil((nowMin || 0) / 15) * 15 : 0 });
+      if (at != null) return { date: d, start: at };
+    }
+    return null;
+  }
+  /* The open steps of a to-do still without a time ahead, the ones Spread it out places: none when it's done,
+     has no steps, or the whole thing has a time */
+  function spreadable(t, where, today, nowMin) {
+    if (!t || t.done || !(t.steps || []).length) return [];
+    const ahead = (x) => M.windowTime(today, x.date, x.add.start) + x.add.dur > (nowMin || 0);
+    if ((where || []).some((x) => !x.step && ahead(x))) return [];
+    return t.steps.filter((s) => !s.done && !(where || []).some((x) => x.step === s.id && ahead(x)));
+  }
+  /* V11 todos: the screens */
+  /* steps for a name at a size, from the library and its rules, in this board's own names: a step about a
+     partner or a kid only where there is one */
+  function bdFor(name, size) {
+    const r = M.breakdown(name, { size: size || 'medium', kids: (who().kids || []).length, partner: partner() }, D);
+    return Object.assign({}, r, { steps: r.steps.map((s) => ({ name: named(s.name), dur: s.dur })) });
+  }
+  /* Break it down's draft: the suggested steps, less any the to-do already has, then the ones you typed in.
+     It lives in view.suggest until it's added or hidden, so nothing is saved until Add */
+  let bdSeq = 0;
+  function bdDraft(t, size, was) {
+    const have = new Set((t.steps || []).map((s) => s.name.toLowerCase()));
+    const r = bdFor(t.name, size);
+    const rows = r.steps.filter((s) => !have.has(s.name.toLowerCase())).map((s) => ({ k: 'r' + (++bdSeq), name: s.name, dur: s.dur }));
+    /* (each draft and each ask gets a number of its own, so an answer from Claude to an older one is let go) */
+    return { id: t.id, bd: true, size: size || 'medium', rows: rows.concat(((was && was.rows) || []).filter((x) => x.mine)), src: r.source, ai: null, seq: ++bdSeq };
+  }
+  /* open a to-do's panel, or the one open, at Break it down */
+  function breakDown(id) {
+    const t = taskById(id);
+    if (!t || t.done) return;
+    if (inToday()) setMode('planner');
+    if (!(view.sel && view.sel.type === 'task' && view.sel.id === id)) openSel({ type: 'task', id });
+    view.suggest = bdDraft(t, 'medium');
+    renderSide();
+    toSection('bd-h');
+  }
+  /* open a to-do's panel at Spread it out */
+  function spreadOut(id) {
+    const t = taskById(id);
+    if (!t) return;
+    if (inToday()) setMode('planner');
+    if (!(view.sel && view.sel.type === 'task' && view.sel.id === id)) openSel({ type: 'task', id });
+    toSection('sp-h');
+  }
+  /* bring a part of the panel into view under its band, with focus on its heading */
+  function toSection(id) {
+    requestAnimationFrame(() => {
+      const h = $('side-in').querySelector('#' + id);
+      if (!h) return;
+      h.tabIndex = -1;
+      /* (its section keeps a margin for the panel's band, so the heading lands under it, not behind it) */
+      (h.closest('section') || h).scrollIntoView({ block: 'start' });
+      h.focus({ preventScroll: true });
+    });
+  }
+  /* the to-do's panel is still the one showing */
+  const tdShown = (id) => !!(view.sel && view.sel.type === 'task' && view.sel.id === id);
+  /* "This sounds like a goal with a date": a name like an exam or a race goes to Goals, when this version has
+     them (window.SR.openGoal, checked again at the tap) */
+  function goalLine(parent, t) {
+    if (t.done || !M.looksLikeGoal(t.name, D) || !(window.SR && typeof window.SR.openGoal === 'function')) return;
+    const row = el('div', 'c-bd-goal');
+    row.appendChild(el('p', '', 'This sounds like a goal with a date.'));
+    const b = button('Make it a goal', 'small', () => {
+      const go = window.SR && window.SR.openGoal;
+      if (typeof go !== 'function') { toast('Goals aren’t on this board yet.'); renderSide(); return; }
+      go({ name: t.name });
+    });
+    b.dataset.fk = 'bd-goal';
+    row.appendChild(b);
+    parent.appendChild(row);
+  }
+  /* what Break it down says when Claude's steps didn't come: why, when it's too many asks, and that the
+     built-in steps stay */
+  const bdAiFail = (d) => (d && d.aiWhy ? d.aiWhy + ' ' : 'Claude didn’t answer. ') + 'These are the built-in steps.';
+  /* Smarter steps from Claude (window.SR_ai, another part of V11): asked only with the person's OK, its steps
+     take the draft's place when they come, and the built-in ones stay until then, or for good when it can't
+     answer */
+  function askClaude(t) {
+    const ai = window.SR_ai;
+    if (!ai || typeof ai.breakdown !== 'function') return;
+    const go = () => {
+      const d = view.suggest;
+      if (!d || !d.bd || d.id !== t.id || !tdShown(t.id)) return;
+      const seq = ++bdSeq;
+      d.seq = seq; d.ai = 'wait';
+      renderSide();
+      say('Asking Claude for steps.');
+      let ask = null;
+      /* (asked again, it asks anew: the same ask is otherwise answered once a page load) */
+      try { ask = ai.breakdown(t.name, { size: d.size, fresh: d.src === 'claude' }); } catch (e) { ask = null; }
+      Promise.resolve(ask).then((x) => x, () => null).then((res) => {
+        const now = view.suggest;
+        if (!now || !now.bd || now.id !== t.id || now.seq !== seq) return;
+        const have = new Set(((taskById(t.id) || {}).steps || []).map((s) => s.name.toLowerCase()));
+        const steps = (res && Array.isArray(res.steps) ? res.steps : []).filter((s) => s && String(s.name || '').trim())
+          .map((s) => ({ k: 'r' + (++bdSeq), name: String(s.name).trim().slice(0, 60), dur: M.clamp(Math.round((+s.dur || 15) / 5) * 5, 5, 240) }))
+          .filter((s) => !have.has(s.name.toLowerCase()));
+        /* too many asks in a minute says so in its own words; anything else is that Claude didn't answer */
+        let why = null;
+        try { why = !steps.length && typeof ai.lastError === 'function' ? ai.lastError() : null; } catch (e) { why = null; }
+        now.aiWhy = why && why.code === 'too_many' && why.message ? String(why.message) : '';
+        if (!steps.length) now.ai = 'fail';
+        else { now.rows = steps.concat(now.rows.filter((x) => x.mine)); now.src = 'claude'; now.ai = 'done'; }
+        if (tdShown(t.id)) renderSide();
+        say(steps.length ? 'Steps from Claude.' : bdAiFail(now));
+      });
+    };
+    let on = false;
+    try { on = typeof ai.available === 'function' && ai.available(); } catch (e) { on = false; }
+    if (on) go();
+    else if (typeof ai.enable === 'function') ai.enable(go);
+  }
+  /* add the draft's steps to the to-do, in one change with one Undo */
+  function addDraft(t0) {
+    const d = view.suggest, t = taskById(t0.id);
+    if (!t || !d || !d.bd || d.id !== t.id) return;
+    const rows = d.rows.map((r) => ({ name: String(r.name || '').trim().slice(0, 60), dur: r.dur || 15 })).filter((r) => r.name);
+    if (!rows.length) return;
+    view.suggest = null;
+    commit(() => { t.steps = t.steps || []; rows.forEach((r) => t.steps.push({ id: M.newId('s'), name: r.name, dur: r.dur, done: false })); });
+    Snd.good();
+    toast(t.name + ': ' + plural(rows.length, 'step', 'steps') + ' added.', 'good', undoSay(rows.length === 1 ? 'That step is off ' + t.name + '.' : 'Those ' + rows.length + ' steps are off ' + t.name + '.'));
+    /* the next thing to do with them is spread them out, so that's where focus goes */
+    toSection($('side-in').querySelector('#sp-h') ? 'sp-h' : 'td-steps-l');
+  }
+  /* Break it down: the draft's steps, the first one where to start, each with its time and its name to type
+     over and an x beside it; finer or coarser; one of your own; Claude when it's here; and one gold Add */
+  function bdSection(parent, t) {
+    const d = view.suggest;
+    const box = el('section', 'c-bd');
+    box.setAttribute('aria-labelledby', 'bd-h');
+    const head = el('div', 'c-bd-head');
+    /* (focus can rest on the heading, and comes back to it when the panel redraws) */
+    const h = el('h3', 'c-bd-h', 'Break it down'); h.id = 'bd-h'; h.tabIndex = -1; h.dataset.fk = 'bd-h';
+    const hide = button('Hide', 'small quiet', () => { view.suggest = null; renderSide(); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="td-suggest"], [data-fk="td-bdrow"]'); if (b) b.focus({ preventScroll: true }); }); });
+    hide.dataset.fk = 'bd-hide'; hide.setAttribute('aria-label', 'Hide Break it down');
+    head.append(h, hide);
+    box.appendChild(head);
+    goalLine(box, t);
+    /* finer or coarser: two choices, the one picked in white; picked again, it goes back to the usual size */
+    const size = el('div', 'c-bd-size');
+    size.setAttribute('role', 'group'); size.setAttribute('aria-label', 'Step size');
+    [['small', 'Smaller steps'], ['big', 'Bigger steps']].forEach(([id, words]) => {
+      const b = button(words, 'c-bd-seg', () => {
+        const to = d.size === id ? 'medium' : id;
+        view.suggest = bdDraft(t, to, d);
+        renderSide();
+        const n = view.suggest.rows.length;
+        say((to === 'small' ? 'Smaller steps' : to === 'big' ? 'Bigger steps' : 'The usual size') + ': ' + plural(n, 'step', 'steps') + '.');
+      });
+      b.setAttribute('aria-pressed', String(d.size === id)); b.dataset.fk = 'bd-size-' + id;
+      size.appendChild(b);
+    });
+    box.appendChild(size);
+    const list = el('ol', 'c-bd-list');
+    list.setAttribute('aria-labelledby', 'bd-h');
+    d.rows.forEach((r, i) => {
+      const li = el('li', 'c-bd-row' + (i === 0 ? ' first' : ''));
+      /* the first step is the place to start, small enough to start now */
+      if (i === 0) li.appendChild(el('span', 'c-bd-start', 'Start here'));
+      const nm = el('textarea', 'c-bd-name');
+      nm.rows = 1; nm.maxLength = 60; nm.value = r.name;
+      nm.setAttribute('aria-label', 'Step ' + (i + 1) + ' of ' + d.rows.length + (i === 0 ? ', start here' : ''));
+      nm.dataset.fk = 'bd-n-' + r.k;
+      const fit = () => { nm.style.height = 'auto'; if (nm.scrollHeight) nm.style.height = nm.scrollHeight + 'px'; };
+      nm.addEventListener('input', () => { if (/\n/.test(nm.value)) nm.value = nm.value.replace(/\s*\n\s*/g, ' '); r.name = nm.value; fit(); });
+      nm.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); nm.blur(); } });
+      /* a name typed away to nothing leaves the count, so the button says how many it adds */
+      nm.addEventListener('change', () => { if (!nm.value.trim()) setTimeout(() => { if (tdShown(t.id)) renderSide(); }, 0); });
+      requestAnimationFrame(fit);
+      const x = stepBtn('x', 'Remove ' + (r.name || 'this step'), () => {
+        const at = d.rows.indexOf(r);
+        d.rows = d.rows.filter((y) => y !== r);
+        renderSide();
+        say((r.name || 'That step') + ' is off the list.');
+        const next = d.rows[Math.min(at, d.rows.length - 1)];
+        const f = $('side-in').querySelector(next ? '[data-fk="bd-n-' + next.k + '"]' : '[data-fk="bd-add"]');
+        if (f) f.focus({ preventScroll: true });
+      });
+      x.className = 'mini-btn del c-bd-x'; x.dataset.fk = 'bd-x-' + r.k;
+      const len = el('div', 'c-bd-len');
+      len.setAttribute('role', 'group'); len.setAttribute('aria-label', 'How long ' + (r.name || 'this step') + ' takes');
+      const step = (dir) => {
+        const to = bdLen(r.dur, dir);
+        const b = stepBtn(dir > 0 ? 'plus' : 'minus', (dir > 0 ? 'Longer, ' : 'Shorter, ') + (r.name || 'this step') + '. Now ' + M.dur(r.dur), () => { r.dur = to; renderSide(); say((r.name || 'This step') + ', ' + M.dur(to) + '.'); });
+        b.className = 'mini-btn'; b.disabled = to === r.dur; b.dataset.fk = 'bd-' + (dir > 0 ? 'hi' : 'lo') + '-' + r.k;
+        return b;
+      };
+      len.append(step(-1), el('output', 'c-bd-dur', M.dur(r.dur)), step(1));
+      li.append(nm, x, len);
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    if (!d.rows.length) box.appendChild(el('p', 'c-bd-line', d.ai === 'wait' ? '' : 'Nothing to suggest for this one. Add your own below.'));
+    /* one of your own, at the end of the list; Enter adds it and keeps the box for the next */
+    const own = el('div', 'c-bd-addrow');
+    own.appendChild(icon('plus', 8, UI.soft));
+    const add = el('input', 'input c-bd-add');
+    add.type = 'text'; add.maxLength = 60; add.placeholder = 'Add one of your own';
+    /* (words typed here and not added yet come through a redraw) */
+    add.setAttribute('aria-label', 'Add a step of your own'); add.dataset.fk = 'bd-add'; add.dataset.v0 = '';
+    add.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const v = add.value.trim();
+      if (!v) return;
+      d.rows.push({ k: 'r' + (++bdSeq), name: v.slice(0, 60), dur: 15, mine: true });
+      add.value = '';
+      renderSide();
+      say(v + ' is on the list, 15 min.');
+    });
+    own.appendChild(add);
+    box.appendChild(own);
+    const total = d.rows.filter((r) => String(r.name || '').trim()).reduce((a, r) => a + (r.dur || 0), 0);
+    if (total) box.appendChild(el('p', 'c-bd-total', 'About ' + M.dur(total) + ' in all'));
+    /* Claude, when this board's server has it: a quiet way to ask, a calm line while it thinks, and the built-in
+       steps whatever it says */
+    const ai = window.SR_ai;
+    let aiOn = false;
+    try { aiOn = !!(ai && typeof ai.ready === 'function' && ai.ready()); } catch (e) { aiOn = false; }
+    if (aiOn) {
+      const row = el('div', 'c-bd-ai');
+      if (d.ai === 'wait') row.appendChild(el('p', 'c-bd-line wait', 'Asking Claude for steps. These stay until it answers.'));
+      else {
+        const b = button(d.src === 'claude' ? 'Ask Claude again' : 'Smarter steps from Claude', 'small quiet', () => askClaude(t));
+        b.dataset.fk = 'bd-ai';
+        row.appendChild(b);
+        if (d.ai === 'fail') row.appendChild(el('p', 'c-bd-line', bdAiFail(d)));
+        else if (d.src === 'claude') row.appendChild(el('p', 'c-bd-line', 'Steps from Claude.'));
+      }
+      box.appendChild(row);
+    }
+    const n = d.rows.filter((r) => String(r.name || '').trim()).length;
+    const go = button(n ? 'Add ' + plural(n, 'step', 'steps') : 'Add steps', 'small primary c-bd-go', () => addDraft(t));
+    go.disabled = !n; go.dataset.fk = 'bd-go';
+    box.appendChild(go);
+    parent.appendChild(box);
+  }
+
+  /* Spread it out: which days, how much a day, when in the day, and done by when, with the days drawn as the
+     engine would fill them, its one line, and one gold button. Picks live in view.got.spread for this to-do */
+  function spreadPlanFor(t, opts) {
+    const key = 'v11sp|' + JSON.stringify([t.id, opts, today, nowMin]);
+    let plan = cache.get(key);
+    if (!plan) { plan = M.spreadPlan(state, t.id, opts, today, nowMin); cache.set(key, plan); }
+    return plan;
+  }
+  /* a length short enough for a day's chip: 15m, 1h, 1.5h */
+  const shortMin = (m) => (m < 60 ? m + 'm' : (Math.round(m / 6) / 10) + 'h');
+  function spreadSection(parent, t, todo) {
+    if (!view.got.spread || view.got.spread.id !== t.id) view.got.spread = Object.assign({ id: t.id }, spreadDefaults(t, today));
+    const f = view.got.spread, opts = spreadOptsOf(f), plan = spreadPlanFor(t, opts);
+    const redo = (words) => { renderSide(); const p = spreadPlanFor(t, spreadOptsOf(f)); say((words ? words + '. ' : '') + p.message); };
+    const box = el('section', 'c-sp');
+    box.setAttribute('aria-labelledby', 'sp-h');
+    const h = el('h3', 'c-sp-h', 'Spread it out'); h.id = 'sp-h'; h.tabIndex = -1; h.dataset.fk = 'sp-h';
+    box.appendChild(h);
+    /* which days */
+    const days = chips([{ id: 'daily', name: 'A little each day' }, { id: 'weekdays', name: 'Weekdays' }, { id: 'weekends', name: 'Weekends' }, { id: 'pick', name: 'Pick days' }], f.days, (v) => { f.days = v; redo(); }, 'sp-days');
+    field(box, 'Which days', days).classList.add('c-sp-field');
+    if (f.days === 'pick') {
+      const dc = dayChips(f.pick, (wd) => { f.pick = f.pick.includes(wd) ? f.pick.filter((x) => x !== wd) : f.pick.concat(wd); if (!f.pick.length) f.pick = [wd]; redo(); });
+      dc.setAttribute('role', 'group'); dc.setAttribute('aria-label', 'Days to use');
+      dc.querySelectorAll('.chip-btn').forEach((b, i) => { b.dataset.fk = 'sp-wd-' + [1, 2, 3, 4, 5, 6, 0][i]; });
+      dc.classList.add('c-sp-days7');
+      box.appendChild(dc);
+    }
+    /* how much a day: up to 15 min, a tap at a time */
+    const cap = el('div', 'stepper c-sp-cap');
+    const capBtn = (dir) => {
+      const to = capStep(f.cap, dir);
+      const b = stepBtn(dir > 0 ? 'plus' : 'minus', (dir > 0 ? 'More each day' : 'Less each day') + '. Now up to ' + M.dur(f.cap) + ' a day', () => { f.cap = to; redo('Up to ' + M.dur(to) + ' a day'); });
+      b.disabled = to === f.cap; b.dataset.fk = 'sp-cap-' + (dir > 0 ? 'hi' : 'lo');
+      return b;
+    };
+    cap.append(capBtn(-1), el('output', 'c-sp-capv', 'Up to ' + M.dur(f.cap) + ' a day'), capBtn(1));
+    /* (the words say what it is, so it needs no label of its own on the screen) */
+    cap.setAttribute('role', 'group'); cap.setAttribute('aria-label', 'How much a day');
+    box.appendChild(cap);
+    /* when in the day */
+    const when = chips([{ id: 'any', name: 'Any time' }, { id: 'morning', name: 'Morning' }, { id: 'afternoon', name: 'Afternoon' }, { id: 'evening', name: 'Evening' }], f.when, (v) => { f.when = v; redo(); }, 'sp-when');
+    field(box, 'When', when).classList.add('c-sp-field');
+    /* done by: the day it's due, unless you pick another */
+    const by = plan.by || f.by;
+    const byBox = el('label', 'c-tdp-due c-sp-by' + (by ? '' : ' none'));
+    byBox.appendChild(icon('calendar', 8, UI.soft));
+    byBox.appendChild(el('span', '', by ? 'Done by ' + M.DAY_SHORT[M.weekday(by)] + ', ' + M.dateText(by) : 'Pick a day to be done by'));
+    const di = dateInput(by || '', (v) => { if (v === f.by) return; f.by = v; redo('Done by ' + tdDay(v)); });
+    di.min = today; di.dataset.fk = 'sp-by'; di.setAttribute('aria-label', 'Done by' + (t.due && by === t.due ? ', the day it’s due' : ''));
+    di.addEventListener('click', () => { try { if (di.showPicker) di.showPicker(); } catch (e) { /* typing still works */ } });
+    byBox.appendChild(di);
+    box.appendChild(byBox);
+    /* the days, drawn as the engine would fill them */
+    box.appendChild(spreadGrid(plan, t, f));
+    const msg = el('p', 'c-sp-msg' + (plan.ok ? '' : ' ask'), plan.message);
+    msg.id = 'sp-msg';
+    box.appendChild(msg);
+    /* short of room: real choices, worked out a moment after the panel draws */
+    if (!plan.ok && plan.unplaced.length) {
+      const ck = 'v11ch|' + JSON.stringify([t.id, opts, today, nowMin, (t.steps || []).length]);
+      const ch = cache.get(ck);
+      const wrap = el('div', 'c-sp-choices');
+      if (!ch) {
+        wrap.appendChild(el('p', 'c-sp-wait', 'Looking for room.'));
+        setTimeout(() => {
+          const tt = taskById(t.id);
+          if (cache.has(ck) || !tt || !tdShown(t.id)) return;
+          cache.set(ck, spreadChoices(state, tt, opts, today, nowMin));
+          renderSide();
+        }, 40);
+      } else {
+        ch.forEach((c) => {
+          const words = c.kind === 'cap' ? 'Do up to ' + M.dur(c.cap) + ' a day' : c.kind === 'by' ? 'Push the date to ' + tdDay(c.by) : 'Take off ' + c.name;
+          const b = button(words, 'small c-sp-choice', () => {
+            if (c.kind === 'cap') { f.cap = c.cap; redo('Up to ' + M.dur(c.cap) + ' a day'); return; }
+            if (c.kind === 'by') { f.by = c.by; redo('Done by ' + tdDay(c.by)); return; }
+            const tt = taskById(t.id), s = tt && (tt.steps || []).find((x) => x.id === c.step);
+            if (!s) return;
+            commit(() => {
+              tt.steps = tt.steps.filter((x) => x.id !== s.id);
+              Object.values(state.dates).forEach((dd) => { if (dd.adds) dd.adds = dd.adds.filter((a) => !(a.src && a.src.type === 'step' && a.src.id === s.id)); });
+            });
+            Snd.slide();
+            toast(s.name + ' is off ' + tt.name + '.', '', undoSay(s.name + ' is back on ' + tt.name + '.'));
+            requestAnimationFrame(() => { const m = $('side-in').querySelector('#sp-msg'); if (m) say(m.textContent); });
+          });
+          b.dataset.fk = 'sp-ch-' + c.kind;
+          wrap.appendChild(b);
+        });
+        if (!ch.length) wrap.appendChild(el('p', 'c-sp-wait', 'Nothing in the next eight weeks holds all of it. Take a step off, or give one a time by hand.'));
+      }
+      box.appendChild(wrap);
+    }
+    const n = plan.days.reduce((a, x) => a + x.items.length, 0);
+    if (n) {
+      const go = button(plan.ok ? 'Spread ' + plural(n, 'step', 'steps') : 'Spread ' + n + ' of ' + todo.length + ' steps', 'small primary c-sp-go', () => doSpread(t, plan, f));
+      go.dataset.fk = 'sp-go';
+      go.setAttribute('aria-describedby', 'sp-msg');
+      box.appendChild(go);
+    }
+    parent.appendChild(box);
+  }
+  /* the days from today to the last one it uses (or the day to be done by, within four weeks), a week to a
+     row, each step a chip in its block's color with its length; a list says the same to a screen reader */
+  function spreadGrid(plan, t, f) {
+    const c = cat(t.cat || 'yours'), wrap = el('div', 'c-sp-grid');
+    const last = plan.days.length ? plan.days[plan.days.length - 1].date : today;
+    const by = plan.by && plan.by >= today && M.diffDays(today, plan.by) <= 27 ? plan.by : null;
+    const end = by && by > last ? by : last;
+    const first = M.weekStart(today), weeks = Math.max(1, Math.ceil((M.diffDays(first, end) + 1) / 7));
+    const allowed = (d) => { const wd = M.weekday(d); return f.days === 'weekdays' ? wd >= 1 && wd <= 5 : f.days === 'weekends' ? wd === 0 || wd === 6 : f.days === 'pick' ? f.pick.includes(wd) : true; };
+    const byDate = new Map(plan.days.map((x) => [x.date, x.items]));
+    const grid = el('div', 'c-sp-cal');
+    grid.setAttribute('aria-hidden', 'true');
+    M.range(first, 7).forEach((d) => grid.appendChild(el('span', 'c-sp-wd', M.DAY_SHORT[M.weekday(d)].slice(0, 2))));
+    M.range(first, weeks * 7).forEach((d) => {
+      const inRange = d >= today && d <= end, items = byDate.get(d) || [];
+      const cell = el('div', 'c-sp-day' + (!inRange ? ' out' : '') + (inRange && !allowed(d) ? ' off' : '') + (d === today ? ' today' : '') + (d === plan.by ? ' by' : ''));
+      cell.appendChild(el('span', 'c-sp-dn', String(M.parts(d).d)));
+      items.forEach((it) => {
+        const chip = el('span', 'c-sp-chip', shortMin(it.dur));
+        chip.style.setProperty('--bg', c.base); chip.style.setProperty('--ink', c.ink);
+        chip.title = it.name + ', ' + M.clock(it.start) + ', ' + M.dur(it.dur);
+        cell.appendChild(chip);
+      });
+      grid.appendChild(cell);
+    });
+    wrap.appendChild(grid);
+    const sr = el('ul', 'sr-only');
+    plan.days.forEach((x) => sr.appendChild(el('li', '', M.DAY_LONG[M.weekday(x.date)] + ', ' + M.dateText(x.date) + ': ' + x.items.map((it) => it.name + ' at ' + M.clock(it.start) + ', ' + M.dur(it.dur)).join('; ') + '.')));
+    wrap.appendChild(sr);
+    return wrap;
+  }
+  /* new step blocks drop onto the board where they show, one after another, with one clack */
+  function landAdds(list) {
+    const shown = new Set(view.zoom === 'day' ? [view.focus] : weekOf());
+    list.filter((x) => shown.has(x.date)).forEach((x, i) => setTimeout(() => landed(x.date, 'add:' + x.id, i ? null : Math.min(1, x.dur / 60)), i * 70));
+  }
+  /* place the plan in one change: the steps, how it was spread, and a later due date when the day picked is
+     after it. One toast says it, with Undo */
+  function doSpread(t0, plan, f) {
+    /* (the to-do as the board has it now, in case the board was replaced since the panel drew) */
+    const t = taskById(t0.id);
+    if (!t) return;
+    const was = new Set((M.placements(state).get(t.id) || []).map((x) => x.add.id));
+    const opts = spreadOptsOf(f), push = f.by && t.due && f.by > t.due ? f.by : null;
+    let n = 0;
+    const r = commit(() => {
+      n = M.applySpread(state, t.id, plan, opts);
+      if (!n) return false;
+      /* (the day picked is the due date now, so the spread doesn't keep it twice) */
+      if (push) { t.due = push; if (t.spread && t.spread.by === push) delete t.spread.by; }
+      return { ok: true };
+    });
+    if (!r || !n) { Snd.bad(); toast('Nothing fit there now. Try more each day, or a later day.', 'bad'); return; }
+    view.got.spread = null;
+    const fresh = (M.placements(state).get(t.id) || []).filter((x) => !was.has(x.add.id));
+    const dayN = new Set(fresh.map((x) => x.date)).size;
+    Snd.good();
+    toast(t.name + ': ' + plural(n, 'step', 'steps') + (dayN > 1 ? ' over ' + dayN + ' days' : fresh.length ? ' ' + whenWord(fresh[0].date) : '') + (push ? '. Due ' + tdDay(push) + ' now' : '') + '.', 'good', undoSay(t.name + ' is as it was.'));
+    landAdds(fresh.map((x) => ({ date: x.date, id: x.add.id, dur: x.add.dur })));
+    /* focus goes to the first step's new time, which shows it on the board */
+    requestAnimationFrame(() => { const l = $('side-in').querySelector('[data-fk^="td-when-"]') || $('side-in').querySelector('#td-steps-l'); if (l) { if (!l.dataset.fk) l.tabIndex = -1; l.focus({ preventScroll: true }); } });
+  }
+  /* Find new times for one to-do: its missed steps go ahead the way it was spread (reflowTask). What
+     doesn't fit by its day comes off the board, and the panel shows the choices */
+  function findNewTimes(t) {
+    let res = null;
+    const r = commit(() => {
+      res = M.reflowTask(state, t.id, today, nowMin);
+      return res.moved.length || res.unplaced.length ? { ok: true } : false;
+    });
+    if (!r) { toast('Every step of ' + t.name + ' has a time to come.'); return; }
+    Snd.clack(0.5);
+    toast(reflowWords([{ name: t.name, res }]), res.unplaced.length ? '' : 'good', undoSay(t.name + ' is as it was.'));
+    landAdds(res.moved.map((m) => ({ date: m.to, id: m.add, dur: 15 })));
+    if (res.unplaced.length && tdShown(t.id)) toSection('sp-h');
+  }
+  /* When the board opens or the day turns over, each spread to-do with a step missed on an earlier day finds
+     it a new time, all in one change with one toast and one Undo. Once a day on this device (an Undo stays
+     undone), and not in a made up board unless asked (SR.findNewTimes) */
+  const REFLOW_KEY = 'sundayreset.v11.reflowed';
+  function autoReflow(asked) {
+    if (!FEEL || readOnly || !ready || !state) return;
+    if (!asked) {
+      if (view.preview) return;
+      let last = null;
+      try { last = localStorage.getItem(REFLOW_KEY); } catch (e) { last = null; }
+      if (last === today) return;
+    }
+    if (tdrag || bdrag) { setTimeout(() => autoReflow(asked), 1500); return; }
+    const ids = Array.from(new Set(M.missedSteps(state, today, nowMin).filter((m) => m.date < today && (taskById(m.task) || {}).spread).map((m) => m.task)));
+    if (!asked) { try { localStorage.setItem(REFLOW_KEY, today); } catch (e) { /* this device only */ } }
+    if (!ids.length) { if (asked) toast('Nothing was missed. Every step has a time to come.'); return; }
+    let list = [];
+    const r = commit(() => {
+      list = ids.map((id) => ({ id, name: (taskById(id) || {}).name || '', res: M.reflowTask(state, id, today, nowMin) })).filter((x) => x.res.moved.length || x.res.unplaced.length);
+      return list.length ? { ok: true } : false;
+    });
+    if (!r) return;
+    toast(reflowWords(list), list.some((x) => x.res.unplaced.length) ? '' : 'good', undoSay(list.length === 1 ? list[0].name + ' is as it was.' : 'Those steps are back where they were.'));
+    list.forEach((x) => landAdds(x.res.moved.map((m) => ({ date: m.to, id: m.add, dur: 15 }))));
+  }
+  /* Didn't get to it. A step that didn't happen goes ahead: the way its to-do was spread, under its cap and by
+     its day (reflowTask, as if its time were over), or for a to-do that wasn't spread, to the next quiet time
+     from the day after. Never a word of blame. b: its block ({ add, src }). Gives what it said, or false;
+     preview: only the words for the hint */
+  function didntGetTo(b, preview) {
+    const src = (b && b.src) || {};
+    const found = b && b.add ? M.findAdd(state, b.add) : null, t = src.type === 'step' ? taskById(src.task) : null;
+    if (!found || !t) { if (!preview) toast('That step isn’t on the board now, so nothing moved.'); return preview ? '' : false; }
+    const a = found.add, s = (t.steps || []).find((x) => x.id === src.id), name = s ? s.name : a.name;
+    if (t.spread) {
+      /* the block you're in counts as over, so it's the one that moves */
+      const end = M.windowTime(today, found.date, a.start) + a.dur, at = Math.max(nowMin, Math.min(end, 1440));
+      if (preview) {
+        const p = M.reflowTask(state, t.id, today, at, { preview: true }), m = p.moved.find((x) => x.step === src.id);
+        return m ? 'Tap to move it to ' + toWords(m.to, m.start) + '.' + (/ Still done /.test(p.message) ? ' ' + p.message.slice(p.message.indexOf('Still done')) : '') : p.message ? 'Tap to take it off the board for now. ' + p.message : '';
+      }
+      let res = null;
+      const r = commit(() => { res = M.reflowTask(state, t.id, today, at); return res.moved.length || res.unplaced.length ? { ok: true } : false; });
+      if (!r) { Snd.bad(); toast('There’s nowhere for ' + name + ' to go yet. Open ' + t.name + ' to choose.', 'bad', { label: 'Open', fn: () => spreadOut(t.id) }); return false; }
+      Snd.slide();
+      if (res.moved.some((m) => m.step === src.id)) { toast(res.message, '', undoSay(name + ' is back where it was.')); landAdds(res.moved.map((m) => ({ date: m.to, id: m.add, dur: 15 }))); return res.message; }
+      const words = name + ' is off the board for now. ' + res.message;
+      toast(words, '', undoSay(name + ' is back where it was.'));
+      if (!inToday() && !view.phone) spreadOut(t.id);
+      return words;
+    }
+    const spot = nextQuiet(state, M.addDays(found.date, 1), a.dur, today, nowMin);
+    if (preview) return spot ? 'Tap to move it to ' + toWords(spot.date, spot.start) + ', the next quiet time.' : '';
+    if (!spot) { Snd.bad(); toast('There’s no quiet time for ' + name + ' in the next three weeks. Drag it to a day, or make room.', 'bad'); return false; }
+    const r = commit(() => { const x = M.moveAdd(state, a.id, spot.date, spot.start); if (x && x.ok && x.add) delete x.add.pinned; return x; });
+    if (!r || !r.ok) { Snd.bad(); toast(blockedText(r || {}, 'tap'), 'bad'); return false; }
+    Snd.slide();
+    const words = name + ' moved to ' + toWords(spot.date, spot.start) + (t.due && spot.date > t.due ? ', after it’s due' : '') + '.';
+    toast(words, '', undoSay(name + ' is back where it was.'));
+    landAdds([{ date: spot.date, id: a.id, dur: a.dur }]);
+    return words;
+  }
+  /* a step's block whose time has come (it's under way, or over) and isn't checked off: Didn't get to it */
+  function didntOk(b, date) {
+    const src = (b && b.src) || {};
+    if (src.type !== 'step' || b.done || !b.add) return false;
+    const found = M.findAdd(state, b.add);
+    if (!found) return false;
+    const t = taskById(src.task), s = t && (t.steps || []).find((x) => x.id === src.id);
+    if (!t || t.done || !s || s.done) return false;
+    return M.windowTime(today, found.date, found.add.start) <= nowMin;
+  }
+  /* V11: a to-do in the reset's To-dos step: its tile, and under it what it can do besides being dragged.
+     Give it a time and Spread it out for one with steps that need times, Find new times for one whose times
+     went by */
+  function todoStepTile(t, pl, missed) {
+    const tl = taskTile(t, pl, true), where = pl.get(t.id) || [];
+    const late = missed.filter((m) => m.task === t.id), open = late.length ? [] : spreadable(t, where, today, nowMin);
+    if (!late.length && !open.length) return tl;
+    const wrap = el('div', 'tile-wrap c-tdw');
+    wrap.style.setProperty('--bg', tl.style.getPropertyValue('--bg'));
+    wrap.appendChild(tl);
+    const acts = el('div', 'c-tdw-acts');
+    const act = (words, ic, fk, fn) => { const b = button('', 'c-tdw-btn', fn); b.append(icon(ic, 8, '#FFFFFF'), el('span', '', words)); b.dataset.fk = fk; b.setAttribute('aria-label', words + ': ' + t.name); acts.appendChild(b); };
+    if (late.length) act('Find new times', 'later', 'tdw-re-' + t.id, () => findNewTimes(t));
+    else {
+      const plan = M.taskPlan(t, where, today, nowMin);
+      act('Give it a time', 'calendar', 'tdw-give-' + t.id, () => (plan.status === 'partial' ? openSel({ type: 'task', id: t.id }) : openSel({ type: 'place', spec: { kind: 'task', id: t.id } })));
+      act('Spread it out', 'tiles', 'tdw-sp-' + t.id, () => spreadOut(t.id));
+    }
+    wrap.appendChild(acts);
+    return wrap;
+  }
+
   /* A recipe's web address: the link, and a name read from the last part of its path
      (/recipes/lemon-garlic-chicken/ is Lemon garlic chicken). Anything else isn't a link. */
   function recipeFromLink(text) {
@@ -6141,7 +8058,11 @@
     kicker(p, 'Dinner · ' + M.dateText(date, 'day'), 'pot');
     if (blk) preview(p, decorateDay(blk, date));
     else { title(p, dn.name || 'Dinner'); line(p, 'No dinner at home that day.'); }
-    const set = (patch) => { const r = commit(() => { state.dinners[date] = Object.assign({ name: '', cook: '', items: [] }, state.dinners[date], patch); }); if (patch.name || patch.cook) noteMove('dinner'); return r; };
+    /* (V11 goals: leftovers keep the meal they come from, and follow it or let go of it, in the same change) */
+    const set = (patch) => { const r = commit(() => { state.dinners[date] = Object.assign({ name: '', cook: '', items: [] }, state.dinners[date], patch); if (FEEL) M.syncLeftovers(state); }); if (patch.name || patch.cook) noteMove('dinner'); return r; };
+    /* V11 goals: the leftovers a change here let go of, said after it ("Monday lunch stays as leftovers.") */
+    const leftNow = () => (FEEL && window.SR_leftLinks ? window.SR_leftLinks() : null);
+    const stayed = (links) => (links && window.SR_leftStay ? window.SR_leftStay(links) : '');
     /* V11: every change here says so, with Undo that names the night: "Tuesday: Order in.", "Sam is
        cooking Thursday." A night this week goes by its weekday, any other by its date */
     const away = M.diffDays(today, date);
@@ -6163,10 +8084,14 @@
       /* a name and groceries only belong to the way they came with, so changing the way takes them off, and says so */
       /* V11: without a pronoun that trips on a plural dish, and no groceries for a night already over */
       const lost = v !== 'home' && dn.name ? ' ' + dn.name + (FEEL ? ((dn.items || []).length && !past ? ' and the groceries for that dinner' : '') : ((dn.items || []).length ? ' and its groceries' : '')) + ' came off.' : '';
+      const links = leftNow();
       const r = v === 'home' ? set({ cook: cooking(dn.cook) ? dn.cook : solo ? 'me' : 'home' }) : set({ cook: v, name: '', recipe: null, items: [] });
-      said(v === 'home' && solo ? (past ? 'You cooked ' : 'You’re cooking ') + when + '.' : head + ': ' + HOW_SAID[v] + '.' + lost, r);
+      const stay = stayed(links);
+      said((v === 'home' && solo ? (past ? 'You cooked ' : 'You’re cooking ') + when + '.' : head + ': ' + HOW_SAID[v] + '.' + lost) + (stay ? ' ' + stay : ''), r);
       Snd.clack(0.5);
     }, 'dn-how'));
+    /* V11 goals: leftovers say the meal they come from; a dinner cooked to last, the meals it covers (variant.js) */
+    if (FEEL && window.SR_leftLine) line(p, window.SR_leftLine(date, 'dinner'));
     if (how === 'home') {
       /* V11: anyone grown up at home, or Anyone; Anyone is an answer, so it never wears the question's ring */
       const cooks = cookChoices(dn.cook).concat(FEEL ? [{ id: 'home', name: 'Anyone' }] : []);
@@ -6229,6 +8154,8 @@
             const items = (cur.items || []).concat(id);
             const auto = !cur.name || cur.name === M.dinnerFromItems(state, cur.items || []);
             state.dinners[date] = Object.assign({ name: '', cook: 'home' }, cur, { items, name: auto ? M.dinnerFromItems(state, items) : cur.name, recipe: null });
+            /* V11 goals: its leftovers take the dinner's new name, in this change */
+            if (FEEL) M.syncLeftovers(state);
           });
           if (FEEL) toast(v + ' is in the pantry and in ' + whoseMid + ' dinner.', 'good', undoAct(v + ' is out of the pantry.'));
           else toast(v + ' is in the pantry', 'good');
@@ -6253,7 +8180,8 @@
       where.classList.add('big');
       field(p, 'Where?', where);
     }
-    if (dn.name || dn.cook) actions(p, [button('Clear ' + wd + '’s dinner', 'small quiet', () => { said('Cleared ' + whoseMid + ' dinner.', commit(() => { delete state.dinners[date]; })); })]);
+    /* (V11 goals: its leftovers stay leftovers, from no meal now, in the same change, and the toast says so) */
+    if (dn.name || dn.cook) actions(p, [button('Clear ' + wd + '’s dinner', 'small quiet', () => { const links = leftNow(); const r = commit(() => { delete state.dinners[date]; if (FEEL) M.syncLeftovers(state); }); const stay = stayed(links); said('Cleared ' + whoseMid + ' dinner.' + (stay ? ' ' + stay : ''), r); })]);
     divider(p);
     const wkDates = M.weekDates(date);
     /* V11: on a phone the meal board leads, and opens on this dinner (on the desk, the block's own mat has it) */
@@ -7016,6 +8944,9 @@
        done, nothing that already happened moves, and the toast says where, with an Undo for it */
     let past = false, room = '', cut = '';
     const todo = add.src && (add.src.type === 'task' || add.src.type === 'step');
+    /* V11: where the card is, read before the change: the change draws the panel again, and a card taken
+       off the page measures nothing (the copy used to start in the screen's corner, at no size) */
+    const from0 = FEEL ? hero.getBoundingClientRect() : null;
     const r = commit(() => {
       /* (the day it lands on as it was, for what it takes from Work or a routine, as the panel said) */
       const at0 = M.dateTime(date, start), was = FEEL ? day(at0.date) : null;
@@ -7029,46 +8960,62 @@
       return x;
     });
     if (!(r && r.ok)) { Snd.bad(); toast(blockedText(r || {}, FEEL && 'tap'), 'bad'); return; }
-    const from = hero.getBoundingClientRect();
+    const from = FEEL ? from0 : hero.getBoundingClientRect();
     const wk = weekOf(), row = wk.indexOf(date);
     const where = view.zoom === 'day' ? (date === view.focus ? 'day' : null) : view.zoom === 'week' && row >= 0 ? 'week' : null;
     const land = () => landed(date, 'add:' + r.add.id, add.dur / 60);
     if (FEEL) toast(landWords(add.name, r.date, r.start, { past, todoOver: todo && overBy(r.date, r.start, r.add.dur), room, cut, late: afterDue(add.src, r.date, r.start, r.add.dur) }), 'good', undoAct(offWords(add.name, r.date, !!room)));
     else toast(add.name + ', ' + placedText(r.date || M.dateTime(date, start).date, r.start), 'good');
     closeSel();
-    if (!where || reducedMotion() || (FEEL && view.calm)) { land(); return; }
+    /* (V11: no copy flies where the desk isn't drawn, the phone's list or the week as a list, or from a card
+       that had no size; the block lands in place) */
+    if (!where || reducedMotion() || (FEEL && (view.calm || !from || !(from.width > 0) || view.phone || view.list || noDesk || !stage.clientWidth || !stage.clientHeight))) { land(); return; }
     const shownStart = M.windowTime(date, r.date || M.dateTime(date, start).date, r.start);
     /* feel: the block on the desk waits for the copy; the copy flies to a hand's height over its slot at the
        block's own size there, and hands over to the block as it drops in */
     if (FEEL) W.holdBack(date, 'add:' + r.add.id);
     const slot = W.slotWorld(where, row, shownStart + add.dur / 2);
     const to = W.toScreen(FEEL ? slot.clone().setY(slot.y + 0.9) : slot);
-    let endScale = 0.3;
-    if (FEEL) {
-      const a = W.toScreen(W.slotWorld(where, row, shownStart)), b2 = W.toScreen(W.slotWorld(where, row, shownStart + Math.min(add.dur, where === 'day' ? 60 : add.dur)));
-      endScale = Math.max(0.16, Math.min(1.1, Math.abs(b2.x - a.x) / Math.max(1, from.width)));
-    }
     const fly = hero.cloneNode(true);
     fly.classList.add('flying');
     Object.assign(fly.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px' });
     $('app').appendChild(fly);
-    const dx = to.x - (from.left + from.width / 2), dy = to.y - (from.top + from.height / 2);
-    const anim = FEEL ? fly.animate([
-      { transform: 'translate(0, 0) rotate(-0.6deg) scale(1)', opacity: 1 },
-      { transform: 'translate(' + dx * 0.5 + 'px, ' + (dy * 0.5 - 48) + 'px) rotate(-3deg) scale(' + ((1 + endScale) / 2).toFixed(3) + ')', opacity: 1, offset: 0.55 },
-      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(' + endScale.toFixed(3) + ')', opacity: 1, offset: 0.9 },
-      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(' + endScale.toFixed(3) + ')', opacity: 0 }
-    ], { duration: 440, easing: 'cubic-bezier(0.45, 0, 0.2, 1)' }) : fly.animate([
-      { transform: 'translate(0, 0) rotate(-0.6deg) scale(1)', opacity: 1 },
-      { transform: 'translate(' + dx * 0.55 + 'px, ' + (dy * 0.55 - 40) + 'px) rotate(-4deg) scale(0.62)', opacity: 1, offset: 0.6 },
-      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(0.3)', opacity: 0 }
-    ], { duration: 480, easing: 'cubic-bezier(0.45, 0, 0.25, 1)' });
     /* a hidden tab can pause the animation, so a timer makes sure the block always lands. (V11: this flag
        was called landed, which hid the landed() above from land(), so every place from the panel threw) */
     let arrived = false;
     const finish = () => { if (arrived) return; arrived = true; fly.remove(); land(); };
-    anim.onfinish = finish;
     setTimeout(finish, 900);
+    if (FEEL) {
+      /* V11: the copy aims at the block's slot as the desk shows it now, on every frame: closing the panel
+         gives the desk more room and the camera settles while the copy flies, so a target worked out once
+         was hundreds of pixels from where the block landed. Same path as before: an arc up and over, a
+         little turn, the block's own size at its slot, a fade at the end */
+      const cx = from.left + from.width / 2, cy = from.top + from.height / 2, t0 = performance.now(), dur = 440;
+      const aimAt = () => {
+        const s = W.slotWorld(where, row, shownStart + add.dur / 2), t = W.toScreen(s.clone().setY(s.y + 0.9));
+        const a = W.toScreen(W.slotWorld(where, row, shownStart)), b2 = W.toScreen(W.slotWorld(where, row, shownStart + Math.min(add.dur, where === 'day' ? 60 : add.dur)));
+        return { x: t.x, y: t.y, s: Math.max(0.16, Math.min(1.1, Math.abs(b2.x - a.x) / Math.max(1, from.width))) };
+      };
+      const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+      const tick = (now) => {
+        if (arrived) return;
+        const k = Math.min(1, (now - t0) / dur), e = ease(Math.min(1, k / 0.9)), t = aimAt();
+        if (!Number.isFinite(t.x) || !Number.isFinite(t.y) || !Number.isFinite(t.s)) { finish(); return; }
+        const rot = e < 0.5 ? -0.6 - 2.4 * (e / 0.5) : -3 * (1 - (e - 0.5) / 0.5);
+        fly.style.transform = 'translate(' + ((t.x - cx) * e).toFixed(1) + 'px, ' + ((t.y - cy) * e - 48 * Math.sin(Math.PI * e)).toFixed(1) + 'px) rotate(' + rot.toFixed(2) + 'deg) scale(' + (1 + (t.s - 1) * e).toFixed(3) + ')';
+        fly.style.opacity = k < 0.9 ? '1' : String(Math.max(0, (1 - k) / 0.1));
+        if (k >= 1) { finish(); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      return;
+    }
+    const dx = to.x - (from.left + from.width / 2), dy = to.y - (from.top + from.height / 2);
+    fly.animate([
+      { transform: 'translate(0, 0) rotate(-0.6deg) scale(1)', opacity: 1 },
+      { transform: 'translate(' + dx * 0.55 + 'px, ' + (dy * 0.55 - 40) + 'px) rotate(-4deg) scale(0.62)', opacity: 1, offset: 0.6 },
+      { transform: 'translate(' + dx + 'px, ' + dy + 'px) rotate(0deg) scale(0.3)', opacity: 0 }
+    ], { duration: 480, easing: 'cubic-bezier(0.45, 0, 0.25, 1)' }).onfinish = finish;
   }
   const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
   /* == feel: the pieces on top of the desk move too ==
@@ -7197,7 +9144,7 @@
   const SET_INDEX = [
     ['Your name', 'you', ''], ['Partner', 'you', 'spouse husband wife'], ['Kids', 'you', 'children'], ['Dinners', 'you', 'meals groceries turn off'], ['Time together', 'you', 'date ideas turn off'],
     ['Up and bed times', 'days', 'wake sleep morning night usual'], ['Weeks start on', 'days', 'monday sunday first day calendar week'], ['Visible hours', 'days', 'overnight midnight early morning board start end range fit sleep'], ['Weeks that alternate', 'days', 'shift custody rota every other'], ['Weekly meetings', 'days', 'standup work'], ['Home time zone', 'days', 'travel'],
-    ['Steps of the Sunday Reset', 'reset', 'look back ahead shorter'],
+    ['Steps of the Sunday Reset', 'reset', 'look back ahead shorter goals'],
     ['Make a block', 'library', 'new custom own create add your blocks'], ['Change a block', 'library', 'edit rename color length mark'], ['Hide a block', 'library', 'remove delete'],
     ['Subscribe with a link', 'calendars', 'google outlook apple school ics'], ['Bring in a calendar file', 'calendars', 'import ics'],
     ['Theme', 'desk', 'wood colors look night pastel'], ['What sits around the board', 'desk', 'layout things plant mug books'], ['Lamp', 'desk', 'light switch'], ['Light follows the day', 'desk', 'night dark bright steady dim'], ['Block library in the Planner', 'desk', 'rack beside below'],
@@ -7216,7 +9163,11 @@
   if (FEEL) SET_INDEX.push(['People', 'you', 'partner partners family friends dating seeing together time together turn off'], ['More people', 'you', 'add someone family friends dating second partner'], ['Moving', 'you', 'workout exercise fitness run walk gym turn off'], ['Moving goal', 'you', 'workout exercise fitness times minutes week']);
   /* V11: holidays you keep live on Calendars */
   if (FEEL) SET_INDEX.push(['Holidays you keep', 'calendars', 'holiday holidays christmas diwali eid hanukkah lunar new year easter orthodox passover thanksgiving halloween ramadan kwanzaa valentine valentines mother mothers father fathers rosh hashanah holi mid-autumn mid autumn moon festival new years eve']);
-  const setPages = () => SET_PAGES.filter((p) => (p.needs === 'server' ? !!Cloud.cfg : p.needs === 'push' ? !!(Cloud.cfg && Cloud.cfg.push) : p.needs === 'dev' ? devOn() : p.id === 'bar' ? !window.SR_noTrayBar : true));
+  /* V11: smart breakdowns (docs/SMART-BREAKDOWNS.md) have a page on This device, shown once the server says
+     it's set up (window.SR_ai, in the version's own code) */
+  const smartReady = () => FEEL && !!(window.SR_ai && window.SR_ai.ready());
+  if (FEEL) { SET_PAGES.splice(SET_PAGES.findIndex((p) => p.id === 'reading') + 1, 0, { id: 'smart', name: 'Smart breakdowns', icon: 'list', group: 'This device', scope: 'device', needs: 'ai' }); SET_INDEX.push(['Smart breakdowns', 'smart', 'ai claude anthropic model suggest steps break down breakdown goal parts privacy cloud send']); }
+  const setPages = () => SET_PAGES.filter((p) => (p.needs === 'server' ? !!Cloud.cfg : p.needs === 'push' ? !!(Cloud.cfg && Cloud.cfg.push) : p.needs === 'dev' ? devOn() : p.needs === 'ai' ? smartReady() : p.id === 'bar' ? !window.SR_noTrayBar : true));
   const wideSettings = () => window.innerWidth >= 1180 && window.innerHeight >= 560 && !view.phone;
   function openDrawer(page) {
     returnFocus = document.activeElement; closeSel(); closeQuick();
@@ -7391,6 +9342,17 @@
         const g = el('div', 'set-group');
         if (gn) g.appendChild(el('h3', 'set-gh', gn));
         pages.filter((p) => p.group === gn).forEach((p) => g.appendChild(link(p)));
+        /* V11 goals: on the phone, Settings is the one door to what the desk's corner menu holds, so Goals stands
+           in Your week, the first thing the phone sees here; it closes Settings and opens Goals over the list,
+           the way to a first goal as well as the rest */
+        if (FEEL && gn === 'Your week' && (view.phone || phoneDay())) {
+          const gb = el('button', 'set-link');
+          gb.type = 'button';
+          gb.dataset.fk = 'set-goals';
+          gb.append(icon('star', 9, UI.soft), el('span', 'grow', 'Goals'));
+          gb.addEventListener('click', () => { Snd.init(); Snd.pick(); closeDrawer(); openSel({ type: 'goals' }); });
+          g.appendChild(gb);
+        }
         nav.appendChild(g);
       });
     }
@@ -7483,6 +9445,8 @@
       if (K && !noDesk) l2.appendChild(goRow('lamp', K.THEMES[view.desk.theme].name + ' desk, ' + K.LAYOUTS[view.desk.layout].name.toLowerCase(), (view.steady ? 'Light held steady' : 'Light follows the day') + (view.lamp ? ', lamp on' : ', lamp off'), () => goPage('desk')));
       l2.appendChild(goRow('textsize', (view.bigText ? 'Larger text' : 'Standard text') + ', ' + (view.clock24 ? '24 hour clock' : '12 hour clock'), (view.list ? 'Week as a list' : 'Week on the desk') + (view.sound ? ', sound on' : ', sound off') + (view.calm ? ', calmer motion' : ''), () => goPage('reading')));
       if (!window.SR_noTrayBar) l2.appendChild(goRow('tray', 'The tray bar', barItems().map((x) => x.name).join(', '), () => goPage('bar')));
+      /* V11: smart breakdowns, once the server says it's set up */
+      if (smartReady()) { const on = window.SR_ai.available(); l2.appendChild(goRow('list', 'Smart breakdowns ' + (on ? 'on' : 'off'), on ? 'Steps from Claude when you ask for them' : 'Off until you turn it on', () => goPage('smart'))); }
       dev.appendChild(l2);
     },
     /* you and the people at home, and what the board helps with */
@@ -7548,11 +9512,14 @@
          Look back on a board newer than a week, where it can't run yet (stepsFor), so the count below moves
          with every switch */
       const noBack = FEEL && nothingBehind(resetWeek());
-      D.STEPS.filter((st) => ['back', 'ahead', 'shape', 'yours', 'todo'].includes(st.key) && !(FEEL && (window.SR_resetSkip || []).includes(st.key)) && !(noBack && st.key === 'back')).forEach((st) => {
+      /* V11 goals: Goals has its switch while a goal is in play; without one it isn't part of the reset */
+      const goalsOn = FEEL && activeGoals().length > 0;
+      D.STEPS.filter((st) => ['back', 'ahead', 'shape', 'yours', 'todo'].concat(goalsOn ? ['goals'] : []).includes(st.key) && !(FEEL && (window.SR_resetSkip || []).includes(st.key)) && !(noBack && st.key === 'back')).forEach((st) => {
         g.appendChild(toggle(stepTitle(st), !off.includes(st.key), (v) => { commit(() => { const o = (state.settings.resetOff || []).filter((k) => k !== st.key); if (!v) o.push(st.key); state.settings = Object.assign({}, state.settings, { resetOff: o }); }); renderDrawer(); }, stepLine(st)));
       });
       rs.appendChild(g);
       if (noBack) rs.appendChild(el('p', 'dsec-line', 'Look back joins once there’s a week behind you.'));
+      if (FEEL && !goalsOn) rs.appendChild(el('p', 'dsec-line', 'Goals joins while you have a goal with a date ahead.'));
       const n = stepsNow().length;
       /* V11: counted the way the intro and the step bar count them: the steps, then the week you set */
       if (FEEL && window.SR_recapApart) p.appendChild(el('p', 'dsec-line', 'Your reset has ' + plural(n - 1, 'step', 'steps') + ', then a look at the week you set.'));
@@ -7661,6 +9628,7 @@
     sync(p) { syncSection(p); },
     remind(p) { remindSection(p); },
     data(p) { dataSection(p); },
+    smart(p) { smartPage(p); },
     /* Block library: make a block, change one, hide one you never use, bring one back */
     library(p) {
       p.appendChild(el('p', 'dsec-line', 'The blocks you drag from the tray onto a day. Make your own, change any of them, or hide the ones you never use. Blocks already on a day keep the name and length they had.'));
@@ -7731,6 +9699,19 @@
       if (!view.preview) actions(about, [button('Try the setup as someone new', 'small quiet', () => { closeDrawer(); openWelcome('preview'); })]);
     }
   };
+  /* V11: smart breakdowns, on this device: the switch, what it sends, and the privacy policy. Turning it on
+     here asks nothing more, since this page says what the version's sheet would (window.SR_ai) */
+  function smartPage(p) {
+    const ai = window.SR_ai;
+    if (!ai) return;
+    const g = el('div', 'switches');
+    g.appendChild(toggle('Smart breakdowns', ai.available(), (v) => { if (v) ai.enable(null, { sheet: false }); else ai.disable(); renderDrawer(); }, 'Claude suggests steps or parts when the built-in ones don’t fit'));
+    p.appendChild(g);
+    p.appendChild(el('p', 'dsec-line', 'It sends only the words of the to-do or goal you ask about, which Anthropic processes under its API terms. Nothing else from your board leaves this device.'));
+    const a = el('a', 'link-out c-ai-link', 'Read the privacy policy');
+    a.href = 'https://sunday-reset-site.vercel.app/privacy'; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    p.appendChild(a);
+  }
   /* a save that didn't happen leads whatever page mentions saving */
   function saveWarning(p) {
     if (Store.status !== 'error') return;
@@ -7739,7 +9720,7 @@
     note.appendChild(button('Download a backup', 'small primary', downloadBackup));
     p.appendChild(note);
   }
-  const stepLine = (st) => ({ back: 'Last week: what to keep and what to change', ahead: FEEL ? 'What’s coming, and when to start getting ready' : 'The next five weeks, for anything that needs a block now', shape: 'Which kind of week this is, and your meetings', yours: 'Your own time goes on first', todo: FEEL ? 'Give this week’s to-dos a time' : 'Give the things due soon a time' })[st.key] || '';
+  const stepLine = (st) => ({ back: 'Last week: what to keep and what to change', ahead: FEEL ? 'What’s coming, and when to start getting ready' : 'The next five weeks, for anything that needs a block now', shape: 'Which kind of week this is, and your meetings', yours: 'Your own time goes on first', todo: FEEL ? 'Give this week’s to-dos a time' : 'Give the things due soon a time', goals: 'This week’s share of each goal' })[st.key] || '';
   /* a layout, drawn: the theme's desk and mat, the board, and a dot for each thing on its side */
   function layoutCard(r, L) {
     const cv = document.createElement('canvas'), W0 = 176, H0 = 96;
@@ -7816,6 +9797,15 @@
       const records = (value) => { array(value); value.forEach(record); };
       containers.forEach((key) => record(st[key]));
       ['events', 'tasks', 'palette', 'recipes', 'pantry', 'ideas', 'groups', 'meetings', 'presets', 'calendars'].forEach((key) => records(st[key]));
+      /* V11 goals: each goal a record, with a day for its date, parts that are records with minutes, a rhythm
+         with a list of days, and its answers a record */
+      records(st.goals || []);
+      (st.goals || []).forEach((goal) => {
+        if (goal.date != null && !/^\d{4}-\d{2}-\d{2}$/.test(String(goal.date))) throw new Error('goal date');
+        if (own(goal, 'parts')) { records(goal.parts); goal.parts.forEach((part) => { if (own(part, 'min') && !Number.isFinite(part.min)) throw new Error('goal part'); }); }
+        if (own(goal, 'rhythm')) { record(goal.rhythm); if (own(goal.rhythm, 'days')) array(goal.rhythm.days); }
+        if (own(goal, 'answers')) record(goal.answers);
+      });
       ['modules', 'hours'].forEach((key) => { if (own(st.settings, key)) record(st.settings[key]); });
       if (own(st.profile, 'kids')) array(st.profile.kids);
       Object.values(st.weeks).forEach(record);
@@ -9093,18 +11083,22 @@
         chip.setAttribute('aria-label', p.name + ', ' + M.dur(p.dur) + '. Drag it onto tomorrow, or press to put it in the first open time.');
         if (!k) chip.dataset.first = '1';
         chip.addEventListener('pointerdown', (e) => pieceDrag(e, chip, p));
-        chip.addEventListener('click', () => { if (chip.dataset.dragged) { delete chip.dataset.dragged; return; } const s = roomyStart(p.dur); if (s != null) drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) }); });
+        /* (V11: the click right after a drag belongs to the drag; one any later is a tap, so a drag that
+           missed the lane never swallows the next tap) */
+        chip.addEventListener('click', () => { if (FEEL) { if (performance.now() - (+chip.dataset.dragged || 0) < 400) return; } else if (chip.dataset.dragged) { delete chip.dataset.dragged; return; } const s = roomyStart(p.dur); if (s != null) drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) }); });
         return chip;
       };
       const pieceDrag = (e, chip, p) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || (FEEL && !e.isPrimary)) return;
         stopDemo(); stopHint();
+        const pid = e.pointerId;
         const d = onbDrag = { float: null, spot: null, x: e.clientX, y: e.clientY, moved: false };
         try { chip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         const move = (ev) => {
+          if (FEEL && ev.pointerId !== pid) return;
           if (!d.moved && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 5) return;
           if (!d.moved) {
-            d.moved = true; chip.dataset.dragged = '1'; Snd.pick();
+            d.moved = true; if (!FEEL) chip.dataset.dragged = '1'; Snd.pick();
             d.float = chip.cloneNode(true); d.float.className = 'onb-piece onb-float'; d.float.removeAttribute('data-first');
             document.body.appendChild(d.float);
             chip.classList.add('lifted');
@@ -9118,15 +11112,23 @@
             ghostAt(start, p.dur, fit.ok);
           } else { d.spot = null; ghostAt(null); }
         };
-        const up = () => {
+        const up = (ev) => {
+          if (FEEL && ev && ev.pointerId !== pid) return;
           chip.removeEventListener('pointermove', move); chip.removeEventListener('pointerup', up); chip.removeEventListener('pointercancel', up);
+          window.removeEventListener('keydown', esc, true);
           chip.classList.remove('lifted');
           if (d.float) d.float.remove();
           ghostAt(null);
           onbDrag = null;
-          if (d.moved && d.spot) drop(p, d.spot);
+          /* V11: a touch the browser took back, or Escape, puts the piece back and places nothing */
+          const cancelled = FEEL && ev && ev.type === 'pointercancel';
+          if (FEEL && d.moved) chip.dataset.dragged = String(performance.now());
+          if (d.moved && d.spot && !cancelled) drop(p, d.spot);
           else if (d.moved) hint();
         };
+        /* V11: Escape while carrying puts the piece back and keeps the setup open */
+        const esc = (ev) => { if (ev.key !== 'Escape' || !d.moved) return; ev.preventDefault(); ev.stopPropagation(); up({ type: 'pointercancel', pointerId: pid }); Snd.slide(); };
+        if (FEEL) window.addEventListener('keydown', esc, true);
         chip.addEventListener('pointermove', move); chip.addEventListener('pointerup', up); chip.addEventListener('pointercancel', up);
       };
       const drop = (p, spot) => {
@@ -9177,17 +11179,22 @@
         e.preventDefault(); e.stopPropagation();
         stopDemo(); stopHint();
         const d = onbDrag = { float: null, dur: a.placed.dur, w: onbWeek(a) };
+        const pid = e.pointerId;
         try { grip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         Snd.pick();
         const move = (ev) => {
+          if (FEEL && ev.pointerId !== pid) return;
           const want = Math.max(15, Math.round((toMin(ev.clientX) - a.placed.start) / 15) * 15);
           const dur = fitDur(want, d.w);
           if (dur !== d.dur) { Snd.detent(true); d.dur = dur; }
           mine.style.width = (100 * Math.min(dur, hi - a.placed.start)) / (hi - lo) + '%';
         };
-        const up = () => {
+        const up = (ev) => {
+          if (FEEL && ev && ev.pointerId !== pid) return;
           grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
           onbDrag = null;
+          /* V11: a touch the browser took back leaves the length as it was */
+          if (FEEL && ev && ev.type === 'pointercancel') { mine.style.width = (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo) + '%'; hint(); return; }
           if (d.dur !== a.placed.dur) stretchTo(d.dur); else hint();
         };
         grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
@@ -10416,10 +12423,14 @@
     const p = quick.p;
     if (!p || !p.name) { if (view.phone) toast('A name, and a day or a time, like Gym tomorrow 6pm'); return; }
     if (p.kind === 'task') {
-      const gid = inboxId(), g = state.groups.find((x) => x.id === gid);
-      commit(() => { state.tasks.push({ id: M.newId('t'), name: p.name, group: gid, icon: p.icon === 'star' ? 'check' : p.icon, cat: p.cat, dur: p.dur || null, due: p.due || null, repeat: null, done: false, steps: [] }); });
+      const gid = inboxId(), g = state.groups.find((x) => x.id === gid), tid = M.newId('t');
+      commit(() => { state.tasks.push({ id: tid, name: p.name, group: gid, icon: p.icon === 'star' ? 'check' : p.icon, cat: p.cat, dur: p.dur || null, due: p.due || null, repeat: null, done: false, steps: [] }); });
       Snd.good();
-      toast(p.name + ' is in ' + (g ? g.name : 'To do') + (p.due ? ', due ' + M.relText(p.due, today) : ''), 'good');
+      /* V11: a to-do the library knows to break into three or more steps offers Break it down; any other
+         one offers Undo */
+      const bd = FEEL ? bdFor(p.name) : null;
+      const act = !FEEL ? undefined : bd.match && bd.steps.length >= 3 ? { label: 'Break it down', fn: () => breakDown(tid) } : undoSay(p.name + ' is off your list.');
+      toast(p.name + ' is in ' + (g ? g.name : 'To do') + (p.due ? ', due ' + M.relText(p.due, today) : ''), 'good', act);
       closeQuick();
       noteMove('todo');
       return true;
@@ -10712,17 +12723,19 @@
      block ends the same way, and the to do stays open with what's left of it. One change, one Undo. */
   function doneEarly(b, stop) {
     const src = b.src || {}, t = src.type === 'task' || src.type === 'step' ? taskById(src.type === 'task' ? src.id : src.task) : null;
-    let next = null;
+    let next = null, replan = null;
     const r = commit(() => {
       const x = M.endEarly(state, sourceDate(b, today), sourceKey(b), sourceMinute(b, today, nowMin));
       if (!x.ok) return x;
       view.back = { date: today, end: M.windowTime(today, sourceDate(b, today), x.end) };
       if (t && !b.done && !stop) next = markDone(t, src.type === 'step' ? src.id : null, true);
+      /* V11 goals: a session that ends early gives the rest of its time back to the plan, spread over the days ahead */
+      if (FEEL && src.type === 'goal' && goalById(src.id)) replan = M.planGoal(state, src.id, today, nowMin);
       return x;
     });
     if (!r || !r.ok) { Snd.bad(); return; }
     if (stop) Snd.slide(); else Snd.good();
-    const said = blockName(b) + (stop ? ' stopped at ' : ' ended at ') + M.clock(r.end) + (t && !b.done ? (stop ? '. It’s still on your list.' : ', and it’s done.') : '.');
+    const said = blockName(b) + (stop ? ' stopped at ' : ' ended at ') + M.clock(r.end) + (t && !b.done ? (stop ? '. It’s still on your list.' : ', and it’s done.') : '.') + (replan && r.back >= 15 ? ' ' + goalHrs(r.back) + ' goes back into the plan.' : '');
     bandSay(said);
     /* V11: held to this change (undoAct), so a newer one is never what it takes back */
     if (FEEL) { const u = undoAct(blockName(b) + ' is back to its full time' + (t && !b.done && !stop ? ', and open again.' : '.'), said); toast(said, '', { label: 'Undo', live: u.live, fn: () => { if (u.live()) { view.back = null; view.bandSaid = null; } u.fn(); } }); }
@@ -10772,9 +12785,13 @@
     const early = own ? M.previewEndEarly(state, sourceDate(b, today), sourceKey(b), sourceMinute(b, today, nowMin)) : null;
     const more = own ? M.previewExtend(state, sourceDate(b, today), sourceKey(b), 15, sourceMinute(b, today, nowMin)) : null;
     const at = info.kind === 'open' ? openStart(info) : 0;
-    const ideas = info.kind === 'open' && info.left >= 15 ? M.fillIdeas(library(), ideaRows(), info.end - at) : [];
+    /* V11: open time right after a step of a to-do that ended unchecked offers that step's Done and Didn't get
+       to it, in place of ideas for the time */
+    const ended = FEEL && (info.kind === 'open' || info.kind === 'free') && !back ? day(today).blocks.find((x) => !x.sleep && !x.free && x.add && x.start + x.dur === info.start && didntOk(x, today)) || null : null;
+    const ideas = info.kind === 'open' && info.left >= 15 && !ended ? M.fillIdeas(library(), ideaRows(), info.end - at) : [];
     const lately = view.bandSaid && view.bandSaid.until > Date.now() ? view.bandSaid.text : '';
     const said = lately || info.kind === 'sleep' ? lately || sleepLine(info)
+      : ended ? blockName(ended) + ' ended at ' + M.clock(info.start) + '.'
       : info.kind === 'open' ? (ideas.length ? (back ? 'Keep it open, or start something of yours:' : 'Fill it?') : info.next ? NEXT_WORD + blockName(info.next) + ' at ' + M.clock(info.next.start) : '')
       : info.kind === 'free' ? 'Nothing planned, on purpose.'
       : !info.next || nowMin >= 21 * 60 ? keptLine() + tomorrowLine() : NEXT_WORD + blockName(info.next) + ' at ' + M.clock(info.next.start);
@@ -10783,7 +12800,7 @@
     const night = info.kind === 'sleep' ? nightSpan(info) : null;
     const frac = night ? night.frac : Math.max(0, Math.min(1, (nowMin - info.start) / Math.max(1, info.end - info.start)));
     const barLabel = night ? 'The night, ' + M.hours(Math.max(0, night.to - nowMin)) + ' until morning' : (info.kind === 'block' ? blockName(b) + ', ' + leftText(info.left) + ' left' : 'Open until ' + M.clock(info.end)) + (info.next ? ', then ' + blockName(info.next) : '');
-    const sig = JSON.stringify([info.kind, b && b.base, b && blockName(b), b && b.icon, back, info.start, info.end, info.soon, info.next && info.next.base, info.until, said, early && early.ok, more && more.ok, at, ideas.map((p) => p.id + p.dur), state.dinners[today] && 1, b && b.done, eveningActs(info).map((a) => a.id).join()]);
+    const sig = JSON.stringify([info.kind, b && b.base, b && blockName(b), b && b.icon, back, info.start, info.end, info.soon, info.next && info.next.base, info.until, said, early && early.ok, more && more.ok, at, ideas.map((p) => p.id + p.dur), state.dinners[today] && 1, b && b.done, eveningActs(info).map((a) => a.id).join(), ended && ended.base, own && FEEL && didntOk(b, today)]);
     if (sig === bandSig) {
       /* the minute changed and nothing else: update the numbers in place */
       bandRefs.name.textContent = name;
@@ -10847,10 +12864,32 @@
           acts.appendChild(y);
         }
       }
+      /* V11: a step that isn't happening goes ahead; the line says where before the tap */
+      if (FEEL && didntOk(b, today)) {
+        const y = bandBtn('Didn’t get to it', 'later', () => { const w = didntGetTo(b); if (w) bandSay(w); });
+        hint(y, () => didntGetTo(b, true));
+        acts.appendChild(y);
+      }
+      /* V11 goals: a goal's session that isn't happening is skipped, and its time spreads over the days ahead */
+      if (FEEL && isSession(b) && window.SR_didnt) {
+        const y = bandBtn('Didn’t get to it', 'later', () => window.SR_didnt(b));
+        hint(y, () => { const g = goalById(b.src.id); return 'Tap if it isn’t happening. Its time spreads over the days' + (g && g.date ? ' before ' + M.dateText(g.date) : ' ahead') + '.'; });
+        acts.appendChild(y);
+      }
       const x = bandBtn('15 more minutes', 'longer', () => moreMinutes(b));
       hint(x, () => { const h = moreHint(b, M.previewExtend(state, sourceDate(b, today), sourceKey(b), 15, sourceMinute(b, today, nowMin))); return M.previewExtend(state, sourceDate(b, today), sourceKey(b), 15, sourceMinute(b, today, nowMin)).ok ? 'Tap for 15 more: ' + h[0].toLowerCase() + h.slice(1) + '.' : h + '.'; });
       if (!more.ok) x.classList.add('off');
       acts.appendChild(x);
+    }
+    /* V11: the step that ended a moment ago, unchecked: checked off, or ahead to its next time */
+    if (ended) {
+      const es = ended.src || {}, et = taskById(es.task);
+      const x = bandBtn('Done', 'check', () => { if (!et) return; setDone(et, es.id, true); bandSay(blockName(ended) + ' is done.'); });
+      hint(x, () => 'Tap to check off ' + blockName(ended) + '.');
+      acts.appendChild(x);
+      const y = bandBtn('Didn’t get to it', 'later', () => { const w = didntGetTo(ended); if (w) bandSay(w); });
+      hint(y, () => didntGetTo(ended, true));
+      acts.appendChild(y);
     }
     /* late in the evening, and asleep: tomorrow a tap away, and its dinner when it isn't decided */
     eveningActs(info).forEach((a) => {
@@ -10894,7 +12933,9 @@
   }
   function renderMoment() {
     const box = $('moment'), was = box.hidden;
-    const m = inToday() && !view.reset ? M.momentFor(state, today, nowMin, Object.assign(seenToday(), useDinners() ? {} : { dinnerNo: true }), day(today)) : null;
+    const m0 = inToday() && !view.reset ? M.momentFor(state, today, nowMin, Object.assign(seenToday(), useDinners() ? {} : { dinnerNo: true }), day(today)) : null;
+    /* V11 goals: with no dinner or kind of day to ask about, the morning after a goal's sessions asks whether they happened */
+    const m = m0 || (FEEL && inToday() && !view.reset ? goalAsk() : null);
     if (lastMoment && lastMoment.kind === 'dinner' && !(m && m.kind === 'dinner')) { const dn = state.dinners[today]; if (dn && (dn.name || dn.cook)) sayMoment(dinnerSaid(dn)); }
     lastMoment = m;
     view.moment = m;
@@ -10902,7 +12943,7 @@
     const din = m && m.kind === 'dinner' ? m.block : null;
     /* put off once, it can come back later, and it always says when */
     const later = din && !m.again ? (nowMin < 17 * 60 - 30 && din.start > 17 * 60 + 30 ? 'five' : nowMin + 60 < din.start ? 'hour' : null) : null;
-    const sig = JSON.stringify([said && said.text, said && said.undoable && !(said.act && !said.act.live()), m && m.kind, din && din.start, later, today]);
+    const sig = JSON.stringify([said && said.text, said && said.undoable && !(said.act && !said.act.live()), m && m.kind, din && din.start, later, today, m && m.ask && m.ask.goal, m && m.ask && m.ask.min, view.got.askSome]);
     if (sig === momentSig) return was !== box.hidden;
     momentSig = sig;
     box.replaceChildren();
@@ -10922,6 +12963,14 @@
       if (later) acts.appendChild(button(later === 'five' ? 'Remind me at 5' : 'Remind me in an hour', 'moment-later', () => { markSeen({ dinnerAt: later === 'five' ? 17 * 60 : nowMin + 60 }); Snd.slide(); render(); }));
       acts.appendChild(dismiss('Don’t ask about dinner tonight', () => { markSeen({ dinnerNo: true }); sayMoment('No more dinner questions tonight.'); }));
       box.append(icon('pot', 9, UI.gold), text, acts);
+      box.hidden = false;
+    } else if (m.kind === 'goal') {
+      /* V11 goals: Did yesterday's 2 h on Pass the bar exam happen? Yes, Some of it (then how much), or No */
+      const x = m.ask;
+      text.appendChild(el('b', '', view.got.askSome === x.goal ? 'How much of yesterday’s ' + goalHrs(x.min) + '?' : askWords(x)));
+      askButtons(x, 'moment-kind', 'moment-later', (said) => { if (said) sayMoment(said, true, 'Yesterday’s answer for ' + x.name + ' is taken back.'); render(); }).forEach((b) => acts.appendChild(b));
+      acts.appendChild(dismiss('Don’t ask about ' + x.name + ' today', () => { view.got.askSome = null; markSeen({ goals: Object.assign({}, seenToday().goals, { [x.goal]: true }) }); }));
+      box.append(icon(GOAL_MARK, 9, UI.gold), text, acts);
       box.hidden = false;
     } else {
       const wdName = M.DAY_LONG[M.weekday(today)];
@@ -11306,10 +13355,21 @@
   /* ?desk keeps the desk at any width, so a tool (V11's type tester) can show a laptop sized board on a phone */
   const deskAlways = new URLSearchParams(location.search).has('desk');
   const phoneWidth = () => !deskAlways && Math.min(window.innerWidth, window.screen ? window.screen.width : window.innerWidth) <= 600;
+  /* V11: a phone held on its side (844 by 390) or a folded iPhone Duo stood on its edge (678 by 466) has no
+     room for the board under Now's band, so it gets the phone's list too: a window under 500 tall and under
+     1000 wide, on a screen whose short side is a phone's. A short window on a laptop, and the open Duo with
+     its keyboard up, keep the desk (docs/APPLE-READINESS.md) */
+  const phoneShort = () => {
+    if (!FEEL || deskAlways || window.innerHeight >= 500 || window.innerWidth >= 1000) return false;
+    const sc = window.screen;
+    return !sc || !sc.width || Math.min(sc.width, sc.height) < 500;
+  };
+  /* a phone's size, either way up */
+  const phoneSize = () => phoneWidth() || phoneShort();
   function setPhone() {
     /* a phone's day left on a window that grew is the desk again, as it was before */
     if (view.phoneFrom && !phoneDay() && !resetAside()) { leavePhoneDay(); view.phoneDesk = false; }
-    const want = (phoneWidth() || devPhone || new URLSearchParams(location.search).has('today')) && !view.phoneDesk && !resetAside();
+    const want = (phoneSize() || devPhone || new URLSearchParams(location.search).has('today')) && !view.phoneDesk && !resetAside();
     view.phone = want;
     document.body.classList.toggle('phone', want);
     document.body.classList.toggle('phone-desk', phoneDay());
@@ -11322,7 +13382,53 @@
   /* On a phone the desk is one day: the board alone on the mat, as big as the screen allows, with no
      rack and no top bar, and a bar of its own for the list and the days either side. It opens on the
      day the list was showing. The list stays the phone's home; the week as rows is too small to read. */
-  function phoneDay() { return !!view.phoneDesk && (phoneWidth() || devPhone) && !noDesk && !resetAside(); }
+  function phoneDay() { return !!view.phoneDesk && (phoneSize() || devPhone) && !noDesk && !resetAside(); }
+  /* V11: opening or closing an iPhone Duo, turning a phone, or a window crossing a phone's size is a resize,
+     never a reload, and what you were doing comes across (docs/APPLE-READINESS.md). Folding: the list opens on
+     the day the desk showed, or, with a block picked, the phone's own day opens with it still picked and its
+     tools along the bottom. Opening: the desk is as it was, unless the phone moved to another day, which the
+     desk then shows (Now for today, the week when the desk was on that week, else the day). A panel that's
+     open stays open, and a running reset has the desk at any size. Runs before setPhone draws the side it
+     lands on. */
+  function crossPhone() {
+    if (!FEEL || view.reset || devPhone || deskAlways || noDesk) return;
+    const small = phoneSize(), wasList = !!view.phone, wasDay = document.body.classList.contains('phone-desk');
+    if (small && !wasList && !wasDay) {
+      const shown = !inToday() && view.zoom === 'day' ? view.focus : today, off = M.diffDays(today, shown);
+      view.todayOff = off >= 0 && off <= 6 ? off : 0;
+      const pk = view.pick, at = pk ? pk.displayDate || pk.date : null;
+      if (at) {
+        view.phoneFrom = { mode: view.mode, zoom: view.zoom, focus: view.focus };
+        view.phoneDesk = true;
+        view.mode = 'planner'; view.zoom = 'day'; view.focus = at;
+        view.bench = null; view.level = null; view.dockOpen = false;
+      }
+      view.phoneWas = { day: at || M.addDays(today, view.todayOff) };
+      return;
+    }
+    if (small || !(wasList || wasDay)) return;
+    const now = wasDay ? view.focus : M.addDays(today, view.todayOff || 0), base = view.phoneWas ? view.phoneWas.day : today;
+    const was = wasDay && view.phoneFrom ? view.phoneFrom : { mode: view.mode, zoom: view.zoom, focus: view.focus };
+    view.phoneWas = null;
+    if (wasDay) {
+      view.phoneFrom = null; view.phoneDesk = false;
+      const off = M.diffDays(today, now);
+      if (off >= 0 && off <= 6) view.todayOff = off;
+    }
+    if (now === base) deskAt(was.mode, was.zoom, was.focus);
+    else if (now === today) deskAt('today');
+    else deskAt('planner', was.mode === 'planner' && was.zoom === 'week' && M.weekStart(was.focus) === M.weekStart(now) ? 'week' : 'day', now);
+  }
+  /* the desk on a mode, a zoom, and a day, keeping an open panel and a picked block (enterToday puts them down) */
+  function deskAt(mode, zoom, focus) {
+    if (mode === 'today') {
+      if (view.mode !== 'today') view.plannerAt = { zoom: view.zoom, focus: view.focus, date: today };
+      view.mode = 'today'; view.zoom = 'day'; view.focus = boardTime(today, nowMin).date;
+      view.bench = null; view.level = null; view.dockOpen = false;
+      return;
+    }
+    view.mode = 'planner'; view.zoom = zoom; view.focus = focus;
+  }
   function openPhoneDesk() {
     view.phoneDesk = true;
     noteMove('desk');
@@ -11515,6 +13621,8 @@
           if (isTodo) acts.appendChild(keyControl(button('Stop here', 'small quiet', () => { doneEarly(b0, true); renderToday(); }), key + '-stop'));
         }
         if (M.previewExtend(state, sourceDate(b0, today), sourceKey(b0), 15, sourceMinute(b0, today, nowMin)).ok) acts.appendChild(keyControl(button('15 more minutes', 'small quiet', () => { moreMinutes(b0); renderToday(); }), key + '-more'));
+        /* V11: a goal's session, or a to-do's step, that isn't happening goes ahead (window.SR_didnt) */
+        if (FEEL && window.SR_didnt && (isSession(b0) || (src.type === 'step' && !b0.done && window.SR_didntStep))) acts.appendChild(keyControl(button('Didn’t get to it', 'small quiet', () => { window.SR_didnt(b0); renderToday(); }), key + '-didnt'));
         if (acts.children.length) n.appendChild(acts);
       }
       const eve = eveningActs(info);
@@ -11535,7 +13643,7 @@
       card.appendChild(el('h2', '', off ? 'What’s for dinner tomorrow?' : 'What’s for dinner?'));
       card.appendChild(el('p', '', 'Dinner is at ' + M.clock(din.start) + '.'));
       const row = el('div', 'td-choices');
-      D.DINNER_HOW.forEach((h) => { const b = el('button', 'td-choice'); keyControl(b, 'dinner-' + date + '-' + h.id); b.type = 'button'; b.append(icon(h.icon, 10, '#FFFFFF'), el('span', '', h.name)); b.addEventListener('click', () => { Snd.init(); commit(() => { state.dinners[date] = Object.assign({ name: '', items: [] }, state.dinners[date], { cook: h.id === 'home' ? 'home' : h.id }); }); noteMove('dinner'); Snd.clack(0.5); if (h.id === 'home') openSel({ type: 'dinner', date }); else toast(h.name + ' ' + whenWord(date, true), 'good', undoSay('Dinner ' + whenWord(date, true) + ' is as it was.')); }); row.appendChild(b); });
+      D.DINNER_HOW.forEach((h) => { const b = el('button', 'td-choice'); keyControl(b, 'dinner-' + date + '-' + h.id); b.type = 'button'; b.append(icon(h.icon, 10, '#FFFFFF'), el('span', '', h.name)); b.addEventListener('click', () => { Snd.init(); commit(() => { state.dinners[date] = Object.assign({ name: '', items: [] }, state.dinners[date], { cook: h.id === 'home' ? 'home' : h.id }); if (FEEL) M.syncLeftovers(state); }); noteMove('dinner'); Snd.clack(0.5); if (h.id === 'home') openSel({ type: 'dinner', date }); else toast(h.name + ' ' + whenWord(date, true), 'good', undoSay('Dinner ' + whenWord(date, true) + ' is as it was.')); }); row.appendChild(b); });
       card.appendChild(row);
       /* the same ways out as on the desk: ask later, or not tonight */
       if (off === 0) {
@@ -11549,6 +13657,8 @@
       if (window.SR_planMeals) { card.appendChild(keyControl(button(FEEL ? 'Open the meal board' : 'Plan meals', 'small td-meals', () => { Snd.init(); window.SR_planMeals(FEEL ? { week: M.weekStart(date), cell: [date, 'dinner'] } : undefined); }), 'plan-meals-dinner')); mealsWay = true; }
       main.appendChild(card);
     }
+    /* V11 goals: the morning after a goal's sessions, whether they happened (the desk asks in the band's strip) */
+    if (FEEL && off === 0) goalAskCard(main, keyControl);
     /* two real commitments at once, on this day */
     M.clashes(state, date).forEach((c) => {
       const card = el('section', 'td-card clash');
@@ -11674,6 +13784,19 @@
       /* V11: an undecided night is open, the word the plan, the finish, and the picture use */
       card.appendChild(el('p', '', FEEL ? (open ? plural(open, 'dinner', 'dinners') + ' open this week' : 'This week’s dinners are planned') : open ? plural(open, 'dinner', 'dinners') + ' this week not picked yet' : 'This week’s dinners are picked'));
       card.appendChild(keyControl(button(FEEL ? 'Open the meal board' : 'Plan meals', 'small td-meals', () => { Snd.init(); window.SR_planMeals(); }), 'plan-meals'));
+      main.appendChild(card);
+    }
+    /* V11 goals: the phone has no corner menu, so Goals has a way in here, the meal board's way: with goals, a card
+       near the end of the day that names them and opens Goals. Settings, the phone's other door, lists Goals in
+       Your week too, which is where a first goal starts (buildDrawer) */
+    if (FEEL && off === 0 && shownGoals().length) {
+      const gl = shownGoals(), live = gl.filter(liveGoal), names = gl.map((g) => g.name || 'Your goal');
+      const card = el('section', 'td-card td-goalcard');
+      card.appendChild(el('h2', '', 'Goals'));
+      const said = gl.length === 1 ? names[0] + ', ' + goalWhen(gl[0].date) + '. ' + weekShare(gl[0], goalStand(gl[0]))
+        : (gl.length === 2 ? names.join(' and ') : names.slice(0, 2).join(', ') + ', and ' + (gl.length === 3 ? names[2] : (gl.length - 2) + ' more')) + '.' + (live.length ? ' Next: ' + goalWhen(live[0].date) + '.' : '');
+      card.appendChild(el('p', '', said));
+      card.appendChild(keyControl(button('Open Goals', 'small td-goals', () => { Snd.init(); Snd.pick(); openSel({ type: 'goals' }); }), 'goals'));
       main.appendChild(card);
     }
     /* a board only in a browser that clears storage after a week away: how to keep it */
@@ -11910,7 +14033,10 @@
   document.addEventListener('keydown', (e) => {
     if (!e.key) return;
     /* V11: Escape puts down a tile you're carrying: it goes back to its place, and letting go after places nothing */
-    if (FEEL && e.key === 'Escape' && tdrag && tdrag.started) { e.preventDefault(); e.stopPropagation(); tdrag.target = null; tdrag.cancel = true; dropTile(null); return; }
+    if (FEEL && e.key === 'Escape' && tdrag && tdrag.started) { e.preventDefault(); e.stopPropagation(); tdrag.target = null; tdrag.cancel = true; letGoTile(null); return; }
+    /* V11: and a block you're moving or stretching: it goes back where it was, the desk stays as it is (no zoom
+       out), and letting go after does nothing */
+    if (FEEL && e.key === 'Escape' && bdrag && bdrag.started && bdrag.mode !== 'pan') { e.preventDefault(); e.stopPropagation(); const was = bdrag; bdrag = null; W.lean(null); cancelBoardDrag(was); Snd.slide(); return; }
     const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT');
     if ((e.metaKey || e.ctrlKey) && !typing && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); return; }
@@ -11962,8 +14088,15 @@
   }
   /* __reset.at(minutes) holds the clock at a time of day, for trying the band's states; at(null) lets go.
      Dev holds the day too (heldDay), only on a preview, so the real board never gets a made up date. */
-  let heldMin = null, heldDay = null, dinnerWasOver = null;
+  let heldMin = null, heldDay = null, dinnerWasOver = null, tickLater = 0, tickHeldAt = 0;
   function clockTick() {
+    /* V11: nothing redraws the desk under something in hand: the minute's work waits until it's put down */
+    /* (for up to 20 seconds: a carry whose end never came never stops the clock) */
+    if (FEEL && carryingNow()) {
+      if (!tickHeldAt) tickHeldAt = Date.now();
+      if (Date.now() - tickHeldAt < 20000) { clearTimeout(tickLater); tickLater = setTimeout(clockTick, 800); return; }
+    }
+    tickHeldAt = 0;
     const d = new Date();
     nowMin = heldMin != null ? heldMin : d.getHours() * 60 + d.getMinutes();
     const t = heldDay || M.todayIso(d);
@@ -11977,7 +14110,11 @@
         if (m !== view.mode) view.mode = m;
         if (m === 'today') enterToday();
       }
+      /* V11 goals: a new day, and the plan keeps its next week on the board */
+      if (FEEL && ready) rollGoals();
       if (ready) render();
+      /* V11: a new day: steps missed yesterday find new times */
+      if (FEEL && ready) setTimeout(() => autoReflow(), 900);
       return;
     }
     if (!ready) return;
@@ -11999,6 +14136,8 @@
   const refit = () => {
     if (!ready) { W.fit(); return; }
     const was = view.phone, wasDay = document.body.classList.contains('phone-desk');
+    /* V11: what you were doing comes across the phone's size (crossPhone) */
+    if (FEEL) crossPhone();
     setPhone();
     if (was !== view.phone || wasDay !== phoneDay()) { render(); if (!view.phone) W.wake(); }
     W.fit(); layoutInsets(); requestAnimationFrame(() => layoutInsets());
@@ -12088,6 +14227,8 @@
     /* feel: the desk says when a block touches down, comes home, or a day clicks into place */
     if (FEEL) W.onFeel = (kind, a) => { if (kind === 'land') { if (a != null) Snd.clack(a); } else if (kind === 'home' || kind === 'roll') Snd.tap(); else if (kind === 'tap') landTick(); };
     applyPrefs();
+    /* V11 goals: a goal whose sessions run out within the week gets its next two weeks before the first draw */
+    if (FEEL) rollGoals();
     ready = true;
     render();
     if (view.desk.theme !== 'warm' || view.desk.layout !== 'full') applyDesk();
@@ -12096,6 +14237,8 @@
     if (document.fonts && document.fonts.status !== 'loaded') document.fonts.ready.then(() => { W.refreshFaces(); render(); });
     $('loading').classList.add('gone');
     setTimeout(() => $('loading').remove(), 600);
+    /* V11: steps missed on an earlier day find new times, once the board is drawn (a saved board only) */
+    if (FEEL && !fresh) setTimeout(() => autoReflow(), 1400);
     const tzHome = state.settings.tz, tzHere = deviceTz();
     if (unreadable) setTimeout(() => toast('This board was saved by a newer version. It’s open to look at, and nothing here will be saved.', 'bad'), 700);
     else if (Store.loadFailed) setTimeout(() => toast('Couldn’t load your saved week. Changes stay in this browser for now.', 'bad'), 700);
@@ -12155,12 +14298,20 @@
     /* V11: a reset put away with Finish later, { ws, catchup, step }, so the chip can offer it back */
     get parked() { return parked; },
     M, D, cat, icon, day, render, setMode, setZoom, startReset, resetWeek, resetDue, catchUpDue, openDrawer, closeDrawer, openDueSoon, closeBench, nowNow, dueList, taskById, markDone, commit, toast, undo, blockName, inToday,
+    /* V11: the version's own drags hold the list still under a finger that carries (carryHold, holdStill)
+       and say when something is in hand (carrying: toasts let it through, nothing redraws under it) */
+    carryHold, holdStill, carrying, get inHand() { return carryingNow() || document.body.classList.contains('carrying'); },
     trayCollapsed, setTrayCollapsed, layoutInsets, Snd, who, openPhoneDesk, closePhoneDesk, phoneDay, shift, openSel, openQuick, redo,
     barCatalog, useDinners, useTogether, withName, layOut, stepsNow, goStep, weekCounts, leaveReset, finishReset, firstReset,
     /* V11: the steps a run for a week would have (Settings, the intro, and the chip count the same ones), and the desk zoom (0 fits) */
     stepsFor, deskZoom,
     /* V11: People and Moving, for the version's plan, intro, and the board's focus during the reset */
     useMove, peopleWeek, withPeople, isMoving, weekMoves, peopleGroups, groupLabel,
+    /* V11 goals: New goal from anywhere, with a name filled in (the to-dos open it for a to-do that looks like a
+       goal), Goals itself, each goal's week for the plan and the finish, and whether a block is a goal's session */
+    openGoal(o) { if (FEEL) openGoalFlow((o && o.name) || null); },
+    openGoals() { if (!FEEL) return; if (inToday()) setMode('planner'); openSel({ type: 'goals' }); },
+    goalWeek, isSession,
     /* V11: who can cook (You, every partner, family who live with you) and a cook's name, for the meal board */
     cookChoices, cookWho, cookName,
     /* V11: one way to say what's due in the week a reset plans, how Moving stands, and an Undo that names
@@ -12197,6 +14348,12 @@
       return { label: w && w.step ? 'Continue Sunday Reset' : due && !sunday ? 'Set up this week' : 'Sunday Reset', strong: !!due, run: () => startReset(ws) };
     }
   };
+  /* V11: a to-do's panel at Break it down or Spread it out, finding new times for missed steps now, and Didn't
+     get to it for a step's block (the phone's now strip asks through window.SR_didntStep) */
+  if (FEEL) {
+    Object.assign(window.SR, { breakDown, spreadOut, findNewTimes: () => autoReflow(true), didntGetTo: (b) => didntGetTo(b) });
+    window.SR_didntStep = (b) => didntGetTo(b);
+  }
   boot().catch(bootFailed);
 
   const debugOk = isLocal || new URLSearchParams(location.search).has('debug');

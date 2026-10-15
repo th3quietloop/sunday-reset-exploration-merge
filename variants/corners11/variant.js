@@ -214,6 +214,8 @@
       if (SR.useTogether()) menu.appendChild(item('People', 'heart', () => layOut('kim')));
       /* V11: Moving has a home outside the reset: its goal, this week's moves, and moves to drag */
       if (SR.useMove && SR.useMove()) menu.appendChild(item('Moving', 'runner', () => { if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'moving' }); }));
+      /* V11 goals: big things with a date, a little each day: each goal, and New goal */
+      if (SR.openGoals) menu.appendChild(item('Goals', 'star', () => SR.openGoals()));
       menu.appendChild(h('div', 'c-mlabel', 'On the desk'));
       menu.append(item('Focus on one thing', 'star', Kit.focus), item('Pomodoro timer', 'bell', openTimer));
       app.appendChild(menu);
@@ -344,7 +346,7 @@
        no counters, no overdue: skipping a Sunday is fine. */
     const M = SR.M;
     /* minutes per step, so the chip and the intro can say how long it takes, and mean it */
-    const STEP_MIN = { back: 2, ahead: 3, shape: 2, yours: 3, todo: 4, dinners: 5, move: 2, kim: 2, done: 1 };
+    const STEP_MIN = { back: 2, ahead: 3, shape: 2, yours: 3, todo: 4, goals: 2, dinners: 5, move: 2, kim: 2, done: 1 };
     const CATCH_MIN = { todo: 4, dinners: 3, done: 1 };
     const partnerName = () => (SR.who() && SR.who().partner) || '';
     /* V11: who's cooking, by name: your own name for 'me', then the first partner ('kim') or anyone else who
@@ -406,10 +408,10 @@
       return { t, cls: 'them', name: full + ' cooks', say, full, plain: 'Cooking', quiet: solo };
     }
     /* V11: one name per step everywhere it shows: the steps across the top, the intro, Next, and the panel */
-    const stepName = (k) => ({ back: 'Look back', ahead: 'Look ahead', shape: 'Set the week', yours: 'Your time', todo: 'To-dos', dinners: 'Meals', move: 'Moving', kim: 'People', done: 'Your week' }[k] || k);
+    const stepName = (k) => ({ back: 'Look back', ahead: 'Look ahead', shape: 'Set the week', yours: 'Your time', todo: 'To-dos', goals: 'Goals', dinners: 'Meals', move: 'Moving', kim: 'People', done: 'Your week' }[k] || k);
     /* what each step is for, in a few words, under its name in the intro */
-    const stepLine = (k) => ({ back: 'What to keep, what to change', ahead: 'Dates coming up', shape: 'Which kind of week', yours: 'Blocks of your own', todo: 'Give them a time', dinners: 'Plan the week’s meals', move: 'Workouts, runs, and walks', kim: 'Time with the people in your week', done: '' }[k] || '');
-    const stepCat = (k) => ({ back: 'home', ahead: 'work', shape: 'work', yours: 'yours', todo: 'family', dinners: 'meals', move: 'yours', kim: 'us', done: 'open' }[k] || 'yours');
+    const stepLine = (k) => ({ back: 'What to keep, what to change', ahead: 'Dates coming up', shape: 'Which kind of week', yours: 'Blocks of your own', todo: 'Give them a time', goals: 'This week’s share of each goal', dinners: 'Plan the week’s meals', move: 'Workouts, runs, and walks', kim: 'Time with the people in your week', done: '' }[k] || '');
+    const stepCat = (k) => ({ back: 'home', ahead: 'work', shape: 'work', yours: 'yours', todo: 'family', goals: 'away', dinners: 'meals', move: 'yours', kim: 'us', done: 'open' }[k] || 'yours');
     /* the steps a run would have, before it starts (the board decides the same way once it does) */
     function runSteps(ws, catchup) {
       /* V11: the board's own list, the one the run and Settings use (SR.stepsFor) */
@@ -834,6 +836,20 @@
               box.appendChild(Kit.btn('c-pmeals', 'Open Moving', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'moving', date: ws }); }, 'runner'));
               col.appendChild(box);
             }
+          }
+          /* V11 goals: each goal's week, its hours and its days; a row opens the goal, and the plan comes back after */
+          const gw = SR.goalWeek ? SR.goalWeek(ws) : [];
+          if (gw.length) {
+            const box = h('section', 'c-pcard c-pgoals'); box.appendChild(h('div', 'c-kick', 'Goals'));
+            gw.forEach((x) => {
+              const row = h('button', 'c-pgoal'); row.type = 'button';
+              const words = x.min ? x.line + ' · ' + runWords(x.days, dates, 'Every day') : x.line;
+              row.append(h('b', '', x.name), h('span', '', words));
+              row.setAttribute('aria-label', x.name + ': ' + words + '. Opens the goal');
+              row.addEventListener('click', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'goal', id: x.id }); });
+              box.appendChild(row);
+            });
+            col.appendChild(box);
           }
           grid.appendChild(col);
           card.appendChild(grid);
@@ -1342,12 +1358,28 @@
     /* V11: the click that follows a drag isn't a tap */
     let dragEndAt = 0;
     const recentDrag = () => performance.now() - dragEndAt < 350;
+    /* V11, touch: one pointer carries at a time; in a list that scrolls a finger presses to lift (or moves
+       across the list), as the board's tiles do (app.js dragSource); a touch the browser takes back, or
+       Escape, flies the piece home and places or clears nothing, and no later tap finishes it.
+       carried: { id, cancel } of the piece in hand */
+    let carried = null;
+    const axisOf = (el) => { for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) { const cs = getComputedStyle(p); if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1) return 'y'; if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1) return 'x'; } return null; };
+    const stillPage = (on) => { if (SR.carryHold) SR.carryHold(on); };
+    const inHand = (on) => { if (SR.carrying) SR.carrying(on); };
     function draggable(el, payload, cfg) {
       el.classList.add('c-drag');
       el.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0 || e.target.closest('.c-nodrag')) return;
+        if (e.button !== 0 || !e.isPrimary || e.target.closest('.c-nodrag')) return;
+        /* (a first finger means nothing else is down: a piece still marked as carried lost its end) */
+        if (carried) carried.cancel();
         SR.Snd.init();
-        const r = el.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+        const r = el.getBoundingClientRect(), sx = e.clientX, sy = e.clientY, pid = e.pointerId;
+        const touch = e.pointerType === 'touch', axis = touch && getComputedStyle(el).touchAction !== 'none' ? axisOf(el) : null;
+        let armed = !axis, wait = 0, picked = false;
+        const t0 = e.timeStamp;
+        carried = { id: pid, cancel: () => up({ type: 'pointercancel', pointerId: pid }) };
+        const arm = () => { if (armed) return; armed = true; picked = true; el.classList.remove('c-pressing'); el.classList.add('c-lifting'); stillPage(true); snd('pick'); if (navigator.vibrate) { try { navigator.vibrate(8); } catch (err) { /* fine */ } } };
+        if (axis) { wait = setTimeout(arm, 300); el.classList.add('c-pressing'); } else if (e.pointerType !== 'mouse') stillPage(true);
         /* V11: a place that can't take it (cfg.why says why) shows a no while you're over it, and says
            why when you let go there, instead of the piece flying home without a word */
         let ghost = null, over = null, moved = false, refused = null, alt = false;
@@ -1378,16 +1410,30 @@
           sw.raf = requestAnimationFrame(swing);
         };
         const move = (ev) => {
+          if (ev.pointerId !== pid) return;
           const dx = ev.clientX - sx, dy = ev.clientY - sy;
+          /* (held long enough by the events' own clock, whatever order a busy page runs the timer and the move in) */
+          if (!moved && !armed && ev.timeStamp - t0 >= 300) arm();
+          if (!moved && !armed) {
+            if (Math.hypot(dx, dy) < 8) return;
+            const across = axis === 'x' ? -dy > Math.abs(dx) : Math.abs(dx) > Math.abs(dy);
+            /* along the list: a scroll, so the press lets go */
+            if (!across) { stop(); return; }
+            arm();
+          }
           if (!moved && Math.hypot(dx, dy) < 6) return;
           if (!moved) {
             moved = true;
+            el.classList.remove('c-pressing', 'c-lifting');
+            /* (the carry is the page's from here, wherever the piece it came from goes) */
+            try { document.body.setPointerCapture(pid); } catch (err) { /* fine */ }
+            inHand(true);
             ghost = el.cloneNode(true); ghost.classList.add('c-ghost-block'); ghost.classList.remove('c-drag');
             Object.assign(ghost.style, { width: r.width + 'px', height: r.height + 'px', transform: 'none', transformOrigin: (sx - r.left) + 'px ' + (sy - r.top) + 'px', translate: r.left + 'px ' + r.top + 'px', rotate: '-2deg', scale: '1' });
             document.body.appendChild(ghost);
             if (feelOn()) { requestAnimationFrame(() => { if (ghost) ghost.style.scale = '1.07'; }); sw.at = performance.now(); sw.raf = requestAnimationFrame(swing); }
             else ghost.style.scale = '1.07';
-            el.classList.add('c-lifted'); snd('pick');
+            el.classList.add('c-lifted'); if (!picked) snd('pick');
             if (cfg.onLift) cfg.onLift(payload);
           }
           /* V11: Option (Alt) held while dragging a meal copies it; the piece in hand shows a plus */
@@ -1409,14 +1455,27 @@
           if (no !== refused) { if (refused) refused.classList.remove('c-no'); refused = no; if (refused) refused.classList.add('c-no'); }
           if (z !== over) { if (over) over.classList.remove('c-over'); over = z; if (over) { over.classList.add('c-over'); snd('detent'); } }
         }
-        const up = () => {
-          window.removeEventListener('pointermove', move);
+        const stop = () => {
+          clearTimeout(wait); el.classList.remove('c-pressing', 'c-lifting');
+          window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('keydown', esc, true);
+          if (carried && carried.id === pid) carried = null;
+          stillPage(false);
+        };
+        /* Escape while carrying puts the piece back, and letting go after places nothing */
+        const esc = (ev) => { if (ev.key !== 'Escape' || !moved) return; ev.preventDefault(); ev.stopPropagation(); up({ type: 'pointercancel', pointerId: pid }); };
+        const up = (ev) => {
+          if (ev.pointerId !== pid) return;
+          /* taken back by the browser (a system gesture, a call) or by Escape: it flies home, nothing is placed */
+          const cancelled = ev.type === 'pointercancel';
+          stop();
+          inHand(false);
           cancelAnimationFrame(sw.raf); cancelAnimationFrame(auto.raf); auto.sc = null;
-          if (!moved) { if (cfg.onTap) cfg.onTap(payload, el); return; }
+          if (!moved) { if (!cancelled && !(armed && axis) && cfg.onTap) cfg.onTap(payload, el); return; }
           dragEndAt = performance.now();
           if (cfg.onEnd) cfg.onEnd(payload);
           const g = ghost; ghost = null;
           const still = !feelOn();
+          if (cancelled) { if (over) over.classList.remove('c-over'); if (refused) refused.classList.remove('c-no'); over = null; refused = null; }
           const target = over, no = refused;
           if (no) { no.classList.remove('c-no'); refused = null; const say = cfg.why(no, payload); if (say) SR.toast(say, ''); }
           if (target) {
@@ -1427,7 +1486,7 @@
             Object.assign(g.style, { translate: (tr.left + (tr.width - r.width) / 2) + 'px ' + (tr.top + (tr.height - r.height) / 2) + 'px', scale: '1', rotate: '0deg' });
             const copy = alt;
             setTimeout(() => { g.remove(); cfg.onDrop(target, payload, { copy }); snd('clack', 0.85); }, still ? 0 : 190);
-          } else if (cfg.onOut && !no) {
+          } else if (cfg.onOut && !no && !cancelled) {
             el.classList.remove('c-lifted');
             g.style.transition = 'opacity 0.18s, scale 0.18s';
             g.style.opacity = '0'; g.style.scale = '0.9';
@@ -1441,8 +1500,12 @@
           }
         };
         window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up, { once: true });
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+        window.addEventListener('keydown', esc, true);
       });
+      /* (a touch keeps going to the piece it started on even if a redraw takes it off the page) */
+      if (SR.holdStill) el.addEventListener('touchmove', SR.holdStill, { passive: false });
     }
     /* a block drawn in the DOM, the same colors as the desk's */
     function domBlock(name, sub, color, ink, cls) {
@@ -1497,6 +1560,27 @@
       toastHome.parent.insertBefore(t, toastHome.next && toastHome.next.parentElement === toastHome.parent ? toastHome.next : null);
       toastHome = null;
     }
+    /* V11: a mat that's open while the window crosses a phone's size (an iPhone Duo opening or closing, a phone
+       turning) goes with it, the way openMat would have put it: over the phone's own view, the whole screen, or
+       back on the desk. What had focus in it keeps it (docs/APPLE-READINESS.md) */
+    function matCross() {
+      if (!mat) return;
+      const onPhone = !!(SR.view.phone && !SR.view.phoneDesk);
+      if (onPhone === mat.classList.contains('c-onphone')) return;
+      const had = mat.contains(document.activeElement) ? document.activeElement : null;
+      mat.classList.toggle('c-onphone', onPhone);
+      (onPhone ? document.body : app).appendChild(mat);
+      if (onPhone) toastsUp(true);
+      else if (toastHome) {
+        const t = document.getElementById('toasts');
+        toastHome.parent.insertBefore(t, toastHome.next && toastHome.next.parentElement === toastHome.parent ? toastHome.next : null);
+        toastHome = null;
+      }
+      if (had && had.isConnected) had.focus({ preventScroll: true });
+    }
+    /* (at once, after the board's own resize has said which side it's on, so a mat that redraws for its new
+       width, like the meal board turning on a phone, measures itself where it now stands) */
+    window.addEventListener('resize', matCross);
     /* the second mat wears the desk's own wood, groove, and leather, read from the 3D desk once */
     let surfaces = false;
     function deskSurfaces() {
@@ -1612,7 +1696,9 @@
        redraws itself after its own changes, and after anyone else's (an Undo from the keyboard) */
     let mealBusy = false, mealLive = null, mealSigWas = '';
     /* V11: the grocery checks too, since the list lives on the board */
-    const mealSig = () => JSON.stringify([SR.state.meals || null, SR.state.dinners || null, SR.state.mealbook || null, (SR.state.recipes || []).length, SR.state.shopping || null, SR.today]);
+    /* V11 goals: and the Meal prep blocks, which the board lists under its batch cooks */
+    const prepSig = () => { const out = [], ds = SR.state.dates || {}; Object.keys(ds).forEach((d) => ((ds[d] && ds[d].adds) || []).forEach((a) => { if (a.src && a.src.type === 'prep') out.push(d, a.id, a.start, a.dur, !!a.skipped); })); return out; };
+    const mealSig = () => JSON.stringify([SR.state.meals || null, SR.state.dinners || null, SR.state.mealbook || null, (SR.state.recipes || []).length, SR.state.shopping || null, SR.today, prepSig()]);
     Kit.renders.push(() => { if (mealLive && !mealBusy && mealSig() !== mealSigWas) mealLive(); });
     /* breakfasts and lunches this device kept before V11 move onto the board with the first meal change.
        V11: the move is the board catching up, not part of that change, so its Undo never takes them back.
@@ -1638,17 +1724,23 @@
     } catch (e) { /* storage off */ }
     function moveOldMeals(st) {
       if (!oldMeals || SR.view.preview) return;
+      let moved = 0;
+      /* (a meal an older build changed is a new meal, so it comes in whole, as that build named it) */
       Object.keys(oldMeals).forEach((d) => ['breakfast', 'lunch'].forEach((k) => {
         const n = oldMeal(st, d, k);
-        if (n) { st.meals = st.meals || {}; st.meals[d] = Object.assign({}, st.meals[d], { [k]: { name: n } }); }
+        if (n) { st.meals = st.meals || {}; st.meals[d] = Object.assign({}, st.meals[d], { [k]: { name: n } }); moved++; }
       }));
+      /* V11 goals: leftovers of a meal that came in renamed take its name, and ones whose meal it replaced let go */
+      if (moved) M.syncLeftovers(st);
     }
     function commitMeals(fn) {
       const moving = !!oldMeals && !SR.view.preview;
       mealBusy = true;
       let r;
-      /* before commit takes its snapshot, so Undo keeps them */
-      try { if (moving) moveOldMeals(SR.state); r = SR.commit(() => fn(SR.state)); } finally { mealBusy = false; }
+      /* before commit takes its snapshot, so Undo keeps them. V11 goals: every meal change ends with
+         Model.syncLeftovers in the same change, so leftovers follow their meal's name, and let go of a meal
+         that's gone or isn't cooked any more, under one Undo */
+      try { if (moving) moveOldMeals(SR.state); r = SR.commit(() => { const x = fn(SR.state); M.syncLeftovers(SR.state); return x; }); } finally { mealBusy = false; }
       /* commit saves the board only when the change goes through; until then they move again next time */
       if (moving && r !== false && !(r && r.ok === false)) {
         oldWas = JSON.parse(JSON.stringify(oldMeals)); oldMeals = null;
@@ -1661,33 +1753,37 @@
 
     const dinnerOf = (d) => SR.state.dinners[d];
     const hasDinnerBlock = (d) => SR.day(d).blocks.some((b) => b.dinner);
-    /* one shape for every cell: { name, parts, items, how, cook, recipe } */
+    /* one shape for every cell: { name, parts, items, how, cook, recipe }, and from ({ date, slot }) on
+       leftovers that know the meal they come from (V11 goals: a move, a swap, or a new cook keeps it) */
+    const fromOf = (r) => (r && r.from && r.from.date && r.from.slot ? { from: { date: r.from.date, slot: r.from.slot } } : {});
     function mealAt(d, k) {
       if (k === 'dinner') {
         const x = dinnerOf(d);
         if (!x || (!x.name && !x.cook)) return null;
         const how = notCooking(x.cook) ? x.cook : 'home';
-        return { name: x.name || '', parts: x.parts || [], items: x.items || [], how, cook: how === 'home' ? x.cook || 'home' : '', recipe: x.recipe || null };
+        return Object.assign({ name: x.name || '', parts: x.parts || [], items: x.items || [], how, cook: how === 'home' ? x.cook || 'home' : '', recipe: x.recipe || null }, fromOf(x));
       }
       /* V11: a meal an older build kept on this device shows as it will be once it moves (moveOldMeals) */
       const old = oldMeals && oldMeal(SR.state, d, k);
       const m = old || (SR.state.meals && SR.state.meals[d] && SR.state.meals[d][k]) || null;
       if (!m) return null;
       if (typeof m === 'string') return { name: m, parts: [], items: [], how: 'home', cook: '', recipe: null };
-      return { name: m.name || '', parts: m.parts || [], items: m.items || [], how: m.how || 'home', cook: m.cook || '', recipe: m.recipe || null };
+      return Object.assign({ name: m.name || '', parts: m.parts || [], items: m.items || [], how: m.how || 'home', cook: m.cook || '', recipe: m.recipe || null }, fromOf(m));
     }
     /* a dinner with a cook and no dish yet reads Dinner, as on the board */
     const mealLabel = (m) => (m ? m.name || howName(m.how) || 'Dinner' : '');
-    /* writes one cell, inside a commit; null clears it */
+    /* writes one cell, inside a commit; null clears it. V11 goals: leftovers keep the meal they come from
+       (commitMeals ends with Model.syncLeftovers, which lets go of one that no longer comes first or cooks) */
     function putMeal(st, d, k, m) {
       const cooking = m && !notCooking(m.how);
+      const link = m && m.how === 'leftovers' ? fromOf(m) : {};
       if (k === 'dinner') {
         if (!m) { delete st.dinners[d]; return; }
         const was = st.dinners[d] || {};
         const x = { name: m.name || '', cook: cooking ? m.cook || (!notCooking(was.cook) && was.cook) || 'home' : m.how, items: cooking ? (m.items || []).slice() : [] };
         if (cooking && m.recipe) x.recipe = m.recipe;
         if (m.parts && m.parts.length) x.parts = m.parts.slice();
-        st.dinners[d] = x;
+        st.dinners[d] = Object.assign(x, link);
         return;
       }
       st.meals = st.meals || {};
@@ -1698,7 +1794,7 @@
       if (cooking && m.items && m.items.length) x.items = m.items.slice();
       if (cooking && m.cook && m.cook !== 'home') x.cook = m.cook;
       if (cooking && m.recipe) x.recipe = m.recipe;
-      st.meals[d] = Object.assign({}, st.meals[d], { [k]: x });
+      st.meals[d] = Object.assign({}, st.meals[d], { [k]: Object.assign(x, link) });
     }
     /* a night with no Dinner block gets one when a dinner lands there, the way the board does it */
     function canDinner(d) {
@@ -1769,7 +1865,8 @@
       const st = SR.state, u = new Map();
       const note = (d, k, m) => {
         const key = norm(m.name);
-        if (!key) return;
+        /* V11 goals: leftovers named for the meal they come from ("Leftovers: Chili") are that meal again, not one of their own */
+        if (!key || (m.how === 'leftovers' && /^leftovers(?::|$)/.test(key))) return;
         const x = u.get(key) || { n: 0, t: { breakfast: 0, lunch: 0, dinner: 0 }, at: '', m: null };
         x.n++; x.t[k]++;
         if (d >= x.at) { x.at = d; x.m = m; }
@@ -1835,7 +1932,9 @@
     function bringLastWeek(dates, rows) {
       const todo = lastWeekMeals(dates, rows);
       if (!todo.length) { SR.toast('Nothing from last week to bring over.', ''); return 0; }
-      commitMeals((st) => todo.forEach(([d, k, m]) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, m); }));
+      /* V11 goals: last week's leftovers come from this week's same meal, a week on (the same Sunday dinner) */
+      const weekOn = (m) => (m.from ? Object.assign({}, m, { from: { date: M.addDays(m.from.date, 7), slot: m.from.slot } }) : m);
+      commitMeals((st) => todo.forEach(([d, k, m]) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, weekOn(m)); }));
       mealToast(todo.length + (todo.length === 1 ? ' meal' : ' meals') + ' from last week', true);
       snd('clack', 0.8);
       return todo.length;
@@ -1859,6 +1958,219 @@
       dates.forEach((d) => MEAL_KINDS.forEach(([k]) => { const m = mealAt(d, k); if (m) out.set(d + '|' + k, [mealLabel(m), m.how, m.cook, (m.items || []).join()].join('|')); }));
       return out;
     }
+    /* == V11 goals: cook once, eat twice, on the meal board ==
+       A meal cooked to last covers later meals as leftovers (Model.cookExtra). Each leftover knows the meal it
+       comes from (from: { date, slot }), the grocery list buys for every meal a dish feeds (the servings on
+       Model.groceries' lines), and a week's batch cooks can each take a Meal prep block before them. Every
+       change goes through commitMeals, which ends with Model.syncLeftovers. Here: reading the board and
+       saying it, with no DOM (tests/ui-meals.test.mjs cuts this part out and runs it) */
+    const MEAL_ORDER = ['breakfast', 'lunch', 'dinner'];
+    const cellKey = (d, k) => d + '|' + k;
+    const byCell = (a, b) => (a.date === b.date ? MEAL_ORDER.indexOf(a.slot) - MEAL_ORDER.indexOf(b.slot) : a.date < b.date ? -1 : 1);
+    /* does meal a come before meal b ({ date, slot } each) */
+    const comesFirst = (a, b) => byCell(a, b) < 0;
+    const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+    /* "Monday lunch", or "Mon lunch" short */
+    const slotWords = (d, k, short) => (short ? M.DAY_SHORT : M.DAY_LONG)[M.weekday(d)] + ' ' + kindName(k).toLowerCase();
+    const andWords = (xs) => (xs.length <= 1 ? xs.join('') : xs.length === 2 ? xs[0] + ' and ' + xs[1] : xs.slice(0, -1).join(', ') + ', and ' + xs[xs.length - 1]);
+    /* meals said together, by the meal they share: "Monday and Tuesday lunch", "Monday lunch and dinner",
+       "Monday and Tuesday lunch, and Wednesday dinner" (short: Mon, Tue) */
+    function mealsWords(cells, short) {
+      const list = cells.slice().sort(byCell);
+      if (!list.length) return '';
+      const day = (d) => (short ? M.DAY_SHORT : M.DAY_LONG)[M.weekday(d)], slot = (k) => kindName(k).toLowerCase();
+      const days = [...new Set(list.map((x) => x.date))], slots = MEAL_ORDER.filter((k) => list.some((x) => x.slot === k));
+      if (slots.length === 1) return andWords(days.map(day)) + ' ' + slot(slots[0]);
+      if (days.length === 1) return day(days[0]) + ' ' + andWords(slots.map(slot));
+      const groups = slots.map((k) => andWords(list.filter((x) => x.slot === k).map((x) => day(x.date))) + ' ' + slot(k));
+      return groups.length === 2 ? groups.join(groups.some((g) => / and /.test(g)) ? ', and ' : ' and ') : andWords(groups);
+    }
+    /* the meal a leftover comes from, while that meal is cooked and comes first: { date, slot, meal }, or null
+       (m: the leftover, when it's already read) */
+    function sourceOf(d, k, m) {
+      if (m === undefined) m = mealAt(d, k);
+      if (!m || m.how !== 'leftovers' || !m.from) return null;
+      const f = m.from, s = mealAt(f.date, f.slot);
+      if (!s || notCooking(s.how) || !comesFirst({ date: f.date, slot: f.slot }, { date: d, slot: k })) return null;
+      return { date: f.date, slot: f.slot, meal: s };
+    }
+    /* a leftover said as the dish: a name of its own, or the meal it comes from ("Leftovers: Chili" is Chili) */
+    const AUTO_LEFT = /^Leftovers(?::\s*|$)/;
+    function dishOf(d, k, m) {
+      if (m === undefined) m = mealAt(d, k);
+      if (!m) return '';
+      if (m.how !== 'leftovers') return mealLabel(m);
+      const own = (m.name || '').replace(AUTO_LEFT, '').trim(), src = sourceOf(d, k, m);
+      return own || (src && mealLabel(src.meal)) || 'Leftovers';
+    }
+    /* the line under a leftover: "From Sun dinner" (long: "From Sunday dinner"), or '' */
+    const fromWords = (d, k, m, long) => { const s = sourceOf(d, k, m); return s ? 'From ' + slotWords(s.date, s.slot, !long) : ''; };
+    /* a cooked meal's leftovers that are still its leftovers: [{ date, slot }] */
+    const leftoversNow = (d, k) => M.leftoversOf(SR.state, d, k).filter((x) => !!sourceOf(x.date, x.slot));
+    /* "Enough Chicken and rice for Monday and Tuesday lunch too." (said this way round so a dish with a plural
+       name, Tacos, never trips a verb) */
+    const coverWords = (name, cells) => 'Enough ' + name + ' for ' + mealsWords(cells) + ' too';
+    /* the later meals a cooked one can cover, as a small grid: four days (the four after a dinner; from the same
+       day for a breakfast or a lunch), a row for each meal the board shows (breakfasts for a breakfast, lunches
+       and dinners for the rest). A cell is open, one it covers (on), or leftovers from no meal yet; one that has
+       another meal, is over, comes first, or is a day away is null. A row with nothing in it is left out.
+       { days: [date], rows: [{ slot, cells: [{ date, slot, on } or null] }] } */
+    function extraGrid(d, k, rows) {
+      const m = mealAt(d, k), first = k === 'dinner' ? 1 : 0, days = [0, 1, 2, 3].map((i) => M.addDays(d, first + i));
+      const kinds = (k === 'breakfast' ? ['breakfast'] : ['lunch', 'dinner']).filter((x) => rows.includes(x));
+      if (!m || notCooking(m.how) || !kinds.length) return { days, rows: [] };
+      const on = new Set(leftoversNow(d, k).map((x) => cellKey(x.date, x.slot)));
+      const cell = (day, s) => {
+        if (day < SR.today || SR.day(day).trip || !comesFirst({ date: d, slot: k }, { date: day, slot: s })) return null;
+        const x = mealAt(day, s), has = on.has(cellKey(day, s));
+        if (!has && x && !(x.how === 'leftovers' && !sourceOf(day, s, x))) return null;
+        if (!has && !x && s === 'dinner' && !canDinner(day)) return null;
+        return { date: day, slot: s, on: has };
+      };
+      return { days, rows: kinds.map((s) => ({ slot: s, cells: days.map((day) => cell(day, s)) })).filter((r) => r.cells.some(Boolean)) };
+    }
+    /* the cooked meals a leftover can come from: up to four days before it, newest first, breakfasts for a
+       breakfast and lunches and dinners for the rest, at most 6. [{ date, slot, meal }] */
+    function sourceCells(d, k) {
+      const kinds = k === 'breakfast' ? ['breakfast'] : ['dinner', 'lunch'], out = [];
+      for (let i = 0; i <= 4 && out.length < 6; i++) {
+        const day = M.addDays(d, -i);
+        kinds.forEach((s) => {
+          if (out.length >= 6 || !comesFirst({ date: day, slot: s }, { date: d, slot: k })) return;
+          const m = mealAt(day, s);
+          if (m && !notCooking(m.how) && (m.name || '').trim()) out.push({ date: day, slot: s, meal: m });
+        });
+      }
+      return out;
+    }
+    /* every leftover that knows its meal, as cell to meal, so a change can say which ones it let go of */
+    function linkedNow() {
+      const st = SR.state, out = new Map();
+      const add = (d, k, r) => { if (r && typeof r === 'object' && r.from && (k === 'dinner' ? r.cook : r.how) === 'leftovers') out.set(cellKey(d, k), cellKey(r.from.date, r.from.slot)); };
+      Object.keys(st.dinners || {}).forEach((d) => add(d, 'dinner', st.dinners[d]));
+      Object.keys(st.meals || {}).forEach((d) => ['breakfast', 'lunch'].forEach((k) => add(d, k, st.meals[d] && st.meals[d][k])));
+      return out;
+    }
+    /* the leftovers a change let go of (their meal went, moved after them, or isn't cooked now), still leftovers:
+       [{ date, slot }] */
+    function letGoSince(was) {
+      const now = linkedNow(), out = [];
+      was.forEach((src, key) => {
+        if (now.has(key)) return;
+        const [date, slot] = key.split('|'), m = mealAt(date, slot);
+        if (m && m.how === 'leftovers') out.push({ date, slot });
+      });
+      return out.sort(byCell);
+    }
+    /* "Monday and Tuesday lunch stay as leftovers." or '' */
+    const stayWords = (cells) => (cells.length ? mealsWords(cells) + (cells.length === 1 ? ' stays' : ' stay') + ' as leftovers.' : '');
+    /* leftovers follow their meal when it moves (moves: [[{ d, k }, { d, k }]], from and to); syncLeftovers, in the
+       same change, then lets go of the ones that would now come before it */
+    function followMoves(st, moves) {
+      const to = new Map(moves.map(([a, b]) => [cellKey(a.d, a.k), b]));
+      const fix = (r) => { if (!r || typeof r !== 'object' || !r.from) return; const t = to.get(cellKey(r.from.date, r.from.slot)); if (t) r.from = { date: t.d, slot: t.k }; };
+      Object.keys(st.dinners || {}).forEach((d) => fix(st.dinners[d]));
+      Object.keys(st.meals || {}).forEach((d) => ['breakfast', 'lunch'].forEach((k) => fix(st.meals[d] && st.meals[d][k])));
+    }
+    /* the week's batch cooks: meals being cooked, from today on, that cover later meals.
+       [{ date, slot, name, serves, left: [{ date, slot }] }] */
+    function batchCooks(dates) {
+      const out = [];
+      dates.forEach((d) => {
+        if (d < SR.today) return;
+        MEAL_ORDER.forEach((k) => {
+          const m = mealAt(d, k);
+          if (!m || notCooking(m.how)) return;
+          const left = leftoversNow(d, k);
+          if (left.length) out.push({ date: d, slot: k, name: mealLabel(m), serves: left.length + 1, left });
+        });
+      });
+      return out;
+    }
+    /* the Meal prep block on for a batch cook (its makes name the meal), on its day or up to three days before
+       (it can be moved): { date, add }, or null */
+    function prepOf(b) {
+      for (const d of [0, 1, 2, 3].map((i) => M.addDays(b.date, -i))) {
+        const a = ((SR.state.dates[d] || {}).adds || []).find((x) => !x.skipped && x.src && x.src.type === 'prep' && (x.makes || []).some((y) => y.date === b.date && y.slot === b.slot));
+        if (a) return { date: d, add: a };
+      }
+      return null;
+    }
+    const PREP_MIN = 90;
+    /* where a Meal prep block goes for a batch cook, in quiet time where nothing moves: the afternoon (else the
+       morning) of a dinner's day, ending by the Dinner block; the morning of a lunch's day; the evening before a
+       breakfast. Never earlier than now. { date, start }, or null */
+    function prepSpot(b) {
+      const din = b.slot === 'dinner' ? SR.day(b.date).blocks.find((x) => x.dinner) : null, by = din ? din.start : 18 * 60;
+      const tries = b.slot === 'breakfast' ? [[M.addDays(b.date, -1), 'evening', 24 * 60]] : b.slot === 'lunch' ? [[b.date, 'morning', 12 * 60]] : [[b.date, 'afternoon', by], [b.date, 'morning', by]];
+      for (const [d, when, end] of tries) {
+        if (d < SR.today) continue;
+        const at = M.quietSlot(SR.state, d, PREP_MIN, { when, strict: true, after: d === SR.today ? SR.nowMin || 0 : 0 });
+        if (at != null && at + PREP_MIN <= end) return { date: d, start: at };
+      }
+      return null;
+    }
+    /* a batch cook's Meal prep block as the board keeps it: makes is the meal and the leftovers it covers */
+    const prepAdd = (b) => ({ name: 'Meal prep', cat: 'meals', icon: 'pot', dur: PREP_MIN, src: { type: 'prep', week: M.weekStart(b.date) }, makes: [{ date: b.date, slot: b.slot, name: b.name }].concat(b.left.map((x) => ({ date: x.date, slot: x.slot, name: mealLabel(mealAt(x.date, x.slot)) }))) });
+    /* a prep week to look at on the board (Model.prepPlan), less what the board can't take now: a dinner on a
+       night with no room for one takes the leftovers it would make with it, and the Meal prep block when it's
+       that batch's. { plan, cells: Map(cell, item), out: [cell], noRoom: [date], block } */
+    function prepLook(ws) {
+      const plan = M.prepPlan(SR.state, ws, { today: SR.today }, SR.D);
+      const out = new Set(), cells = new Map(), noRoom = [];
+      plan.list.forEach((x) => { if (x.slot === 'dinner' && !canDinner(x.date)) { out.add(cellKey(x.date, x.slot)); noRoom.push(x.date); } });
+      plan.list.forEach((x) => { const f = x.kind === 'leftovers' && x.meal.from; if (f && out.has(cellKey(f.date, f.slot))) out.add(cellKey(x.date, x.slot)); });
+      plan.list.forEach((x) => { const key = cellKey(x.date, x.slot); if (!out.has(key) && !mealAt(x.date, x.slot)) cells.set(key, x); });
+      const m0 = plan.block && (plan.block.add.makes || [])[0];
+      return { plan, cells, out: [...out].sort(), noRoom: noRoom.sort(), block: plan.block && m0 && !out.has(cellKey(m0.date, m0.slot)) ? plan.block : null };
+    }
+    /* what a prep week does, in one line: the plan's own words, or a count when the board can't take all of it */
+    function prepWords(look) {
+      /* (one batch cook covers; Model.prepPlan's own words say cover for one too) */
+      if (!look.out.length) return look.plan.message.replace(/^(One batch cook, [^,]+), cover /, '$1, covers ');
+      const items = [...look.cells.values()], n = (kind) => items.filter((x) => x.kind === kind).length;
+      const bits = [n('batch') && count(n('batch'), 'batch cook', 'batch cooks'), n('leftovers') && count(n('leftovers'), 'meal of leftovers', 'meals of leftovers'), n('fresh') && count(n('fresh'), 'fresh night', 'fresh nights')].filter(Boolean);
+      const days = look.noRoom.map((d) => M.DAY_LONG[M.weekday(d)]);
+      return (bits.length ? cap(andWords(bits)) + '. ' : '') + andWords(days) + (days.length === 1 ? ' has' : ' have') + ' no time for dinner, so ' + (days.length === 1 ? 'it’s' : 'they’re') + ' left out.';
+    }
+    /* the board's own dinner changes (app.js: food dropped on a Dinner block, the dinner panel, a dinner idea)
+       say the leftovers they let go of the same way: the links before, then the words after */
+    window.SR_leftLinks = () => linkedNow();
+    window.SR_leftStay = (was) => stayWords(letGoSince(was));
+    /* a dinner's panel says where leftovers come from, or what a dinner cooked to last covers */
+    window.SR_leftLine = (d, k) => {
+      const m = mealAt(d, k);
+      if (!m) return '';
+      const src = sourceOf(d, k, m);
+      if (src) return 'Leftovers from ' + slotWords(src.date, src.slot) + ': ' + mealLabel(src.meal) + '.';
+      if (notCooking(m.how)) return '';
+      const left = leftoversNow(d, k);
+      return left.length ? 'Enough for ' + count(left.length + 1, 'meal', 'meals') + ', with ' + mealsWords(left) + '.' : '';
+    };
+    /* a Meal prep block's panel (app.js addPanel asks): what it cooks, as the meals stand now, each a tap from
+       its card on the meal board */
+    window.SR_prepPanel = (p, a) => {
+      const makes = (a.makes || []).filter((x) => x && x.date && x.slot);
+      if (!makes.length) return;
+      const b0 = makes[0], src = mealAt(b0.date, b0.slot), cooked = !!src && !notCooking(src.how);
+      const left = cooked ? leftoversNow(b0.date, b0.slot) : [];
+      p.appendChild(h('p', 'side-line', cooked ? 'Cooks ' + mealLabel(src) + ' for ' + count(left.length + 1, 'meal', 'meals') + '.' : 'The meal it was for has changed. The meals stay as they are.'));
+      const rows = cooked ? [{ date: b0.date, slot: b0.slot }].concat(left) : makes;
+      const f = h('div', 'field'), lbl = h('div', 'lbl', 'Makes'), list = h('div', 'list c-prep-makes');
+      lbl.id = 'c-prep-makes-' + a.id; list.setAttribute('role', 'group'); list.setAttribute('aria-labelledby', lbl.id);
+      rows.forEach((x) => {
+        const m = mealAt(x.date, x.slot), first = x.date === b0.date && x.slot === b0.slot;
+        const r = h('button', 'list-row c-prep-make'); r.type = 'button';
+        const t = h('span', 'grow', slotWords(x.date, x.slot));
+        t.appendChild(h('small', '', !m ? 'Nothing planned now' : m.how === 'leftovers' ? 'Leftovers' : mealLabel(m)));
+        r.append(SR.icon(first ? 'pot' : 'bowl', 9, CREAM), t, SR.icon('right', 7, '#AFAFAF'));
+        r.setAttribute('aria-label', slotWords(x.date, x.slot) + ', ' + (!m ? 'nothing planned now' : m.how === 'leftovers' ? 'leftovers' : mealLabel(m)) + '. Open it on the meal board');
+        r.addEventListener('click', () => { SR.Snd.init(); SR.view.sel = null; SR.render(); openMealBoard(M.weekStart(x.date), { cell: [x.date, x.slot] }); });
+        list.appendChild(r);
+      });
+      f.append(lbl, list);
+      p.appendChild(f);
+    };
     /* V11: one meal toast at a time. A new one takes the last one's place, so planning a week isn't a pile of them */
     let mealToastEl = null;
     /* V11: a meal toast's Undo takes back its own change and nothing else. It keeps the board as that change
@@ -1896,15 +2208,19 @@
       const prog = M.groceryProgress(SR.state, dates);
       const got = (SR.state.shopping && SR.state.shopping[M.weekStart(dates[0])]) || {};
       const list = prog.list.map((x) => {
-        /* V11: each meal with its own days, so the line says which day goes with which meal */
+        /* V11: each meal with its own days, so the line says which day goes with which meal. V11 goals: and how
+           many meals it feeds (serves: the meal and its leftovers, from the line's servings), so a dish cooked to
+           last is bought for all of them: "Chicken and rice, Sun, for 3 meals" */
         const meals = [], uses = [];
         x.days.forEach((d) => MEAL_KINDS.forEach(([k]) => {
           const m = mealAt(d, k);
           if (!m || notCooking(m.how) || !(m.items || []).includes(x.id)) return;
           const nm = mealLabel(m), day = M.DAY_SHORT[M.weekday(d)];
           let u = uses.find((y) => y.meal === nm);
-          if (!u) { u = { meal: nm, days: [] }; uses.push(u); meals.push(nm); }
+          if (!u) { u = { meal: nm, days: [], n: 0, serves: 0 }; uses.push(u); meals.push(nm); }
           if (!u.days.includes(day)) u.days.push(day);
+          const sv = (x.servings || []).find((s) => s.date === d && s.slot === k);
+          u.n++; u.serves += sv ? sv.serves : 1;
         }));
         return Object.assign({}, x, { meals, uses, got: !!got[x.id] });
       });
@@ -1949,6 +2265,9 @@
       let shopOpen = opts.shop ? true : (() => { try { const v = localStorage.getItem(SHOP_KEY); return v == null ? null : v === '1'; } catch (e) { return null; } })();
       /* V11: ideas for the open meals (props), what you have at home to use up, and earlier days folded on a phone */
       let props = new Map(), have = new Set(), seed = 1, showPast = !!(opts.cell && opts.cell[0] < SR.today && opts.cell[0] >= ws), landSet = new Set(), shopWas = '';
+      /* V11 goals: a prep week being looked at (prepLook: the plan, the cells it fills, what's left out, its
+         Meal prep block), and withBlock: whether Use this plan puts that block on too */
+      let prepView = null;
       /* the library sorts for one meal of the day, finds by words, and can hide or leave things out */
       let forT = '', find = '', editing = false, leaving = false, showHidden = false, held = null, justSet = '', fresh = '', landKey = '', pop = null;
       const inner = openMat('c-meals', (inner) => {
@@ -1975,16 +2294,20 @@
         const body = h('div', 'c-meal-body'), main = h('div', 'c-meal-main'), side = h('div', 'c-meal-side'), sideScroll = h('div', 'c-meal-scroll c-autoscroll');
         const again = Kit.btn('c-ghost c-again', 'Same as last week', () => sameAsLast());
         const sugBtn = Kit.btn('c-ghost c-again c-sugbtn', 'Suggest meals', () => startSuggest(), 'star');
-        const acts = h('div', 'c-meal-acts'); acts.append(sugBtn, again);
+        /* V11 goals: beside the ideas, a whole prep week: batch cooks, the leftovers they cover, and fresh nights */
+        const prepBtn = Kit.btn('c-ghost c-again c-sugbtn c-prepbtn', 'Plan a prep week', () => startPrep(), 'pot');
+        const acts = h('div', 'c-meal-acts'); acts.append(sugBtn, prepBtn, again);
         const top = h('div', 'c-meal-top'); top.append(rows, acts);
         const sugBar = h('div', 'c-sugbar'); sugBar.hidden = true;
+        /* V11 goals: under the board, the week's batch cooks, each with its Meal prep block or a way to add one */
+        const prepBox = h('section', 'c-prep'); prepBox.setAttribute('aria-label', 'Batch cooks'); prepBox.hidden = true;
         /* V11: under the board, the week's groceries themselves, checked off here (Russell, Oct 14: "I wanted
            to see those on this actual board"). On a phone they wait after the meals, and a line under the
            board goes to them */
         const shop = h('section', 'c-shop'); shop.setAttribute('aria-label', 'Groceries');
         const shopJump = h('button', 'c-shopjump'); shopJump.type = 'button';
         shopJump.addEventListener('click', () => { shopOpen = true; drawShop(); toShop(); snd('detent'); });
-        main.append(top, sugBar, board, shopJump, shop);
+        main.append(top, sugBar, board, prepBox, shopJump, shop);
         /* the library: find or add, sort for a meal, what you leave out, then yours, not cooking, and ideas */
         const libHead = h('div', 'c-libhead');
         const findForm = h('form', 'c-libfind');
@@ -2017,7 +2340,14 @@
           weekWords.textContent = weekLabel();
           /* V11: Same as last week shows only when last week has something to bring */
           again.hidden = !lastWeekMeals(dates, showRows).length;
-          drawRows(); drawSug(); drawBoard(); drawSide(); drawShop();
+          /* V11 goals: a prep week being looked at is worked out again from the board as it is now, so a meal
+             planned meanwhile is never planned over; when nothing's left for it, it says so and goes */
+          if (prepView) {
+            const look = prepLook(ws);
+            if (look.cells.size) prepView = Object.assign(look, { withBlock: prepView.withBlock });
+            else { prepView = null; SR.toast(look.plan.message, ''); }
+          }
+          drawRows(); drawSug(); drawBoard(); drawPrep(); drawSide(); drawShop();
           [main, inner, sideScroll].forEach((el, i) => { if (el.scrollTop !== y[i]) el.scrollTop = y[i]; });
           if (pop) placePop();
           requestAnimationFrame(() => { sideHint(); innerHint(); mainHint(); });
@@ -2102,11 +2432,13 @@
                   tk.addEventListener('change', () => { SR.Snd.init(); snd(tk.checked ? 'pick' : 'detent'); setGot(dates, x.id, tk.checked); drawShop(); });
                   const words = h('span', 'c-shop-words');
                   words.appendChild(h('span', 'c-shop-name', x.name));
-                  /* V11: each meal with its days: "Tacos, Mon and Fri · Turkey chili, Sat" */
+                  /* V11: each meal with its days: "Tacos, Mon and Fri · Turkey chili, Sat". V11 goals: a meal cooked
+                     to cover leftovers says how many meals it's for: "Chicken and rice, Sun, for 3 meals" */
                   const days = (ds) => (ds.length > 1 ? ds.slice(0, -1).join(', ') + ' and ' + ds[ds.length - 1] : ds[0]);
-                  const why = x.uses.length ? x.uses.map((u) => u.meal + ', ' + days(u.days)).join(' · ') : days(x.days.map((d) => M.DAY_SHORT[M.weekday(d)]));
+                  const forN = (u) => (u.serves > u.n ? ', for ' + u.serves + ' meals' : '');
+                  const why = x.uses.length ? x.uses.map((u) => u.meal + ', ' + days(u.days) + forN(u)).join(' · ') : days(x.days.map((d) => M.DAY_SHORT[M.weekday(d)]));
                   words.appendChild(h('small', '', why));
-                  row.title = x.name + ', for ' + why;
+                  row.title = x.name + ': ' + why;
                   const box = h('span', 'c-shop-box'); box.appendChild(SR.icon('check', 7, '#FFFFFF'));
                   row.append(tk, box, words);
                   g.appendChild(row);
@@ -2236,12 +2568,34 @@
             cell.setAttribute('aria-label', dayWords(d, k) + ': idea, ' + pr.name + '. Keep it');
             return cell;
           }
+          /* V11 goals: a prep week being looked at shows its meals in the open days, dashed, until Use this plan.
+             They're a preview, not buttons; a meal dropped on one takes its place */
+          const pp = !m && prepView && prepView.cells.get(cellKey(d, k));
+          if (pp) {
+            cell.classList.add('c-hasprop', 'c-inplan');
+            cell.removeAttribute('role'); cell.tabIndex = -1;
+            const left = pp.kind === 'leftovers', f = left ? pp.meal.from : null;
+            const nm = left ? pp.name.replace(AUTO_LEFT, '').trim() || 'Leftovers' : pp.name;
+            const feeds = pp.kind === 'batch' ? 1 + [...prepView.cells.values()].filter((x) => x.kind === 'leftovers' && x.meal.from && x.meal.from.date === d && x.meal.from.slot === k).length : 0;
+            const line = f ? 'From ' + slotWords(f.date, f.slot, true) : feeds > 1 ? 'For ' + feeds + ' meals' : '';
+            const t = h('div', 'c-prop c-prepprop' + (left ? ' left' : '')); t.style.setProperty('--b', MEAL_COLOR[left ? 'easy' : k]);
+            t.append(h('span', 'sr-only', 'In the prep plan: '), h('b', '', nm));
+            if (line) t.appendChild(h('small', '', line));
+            t.title = (left ? 'Leftovers: ' + nm : nm) + (line ? ', ' + line.toLowerCase() : '') + '. Part of the prep plan';
+            cell.appendChild(t);
+            return cell;
+          }
           if (!m) { cell.appendChild(SR.icon('plus', 9, '#5C4024')); cell.setAttribute('aria-label', dayWords(d, k) + ': nothing yet. Add a meal'); return cell; }
           const easy = notCooking(m.how);
-          const blk = domBlock(mealLabel(m), easy && m.name ? howName(m.how) : '', MEAL_COLOR[easy ? 'easy' : k], MEAL_INK[easy ? 'easy' : k], 'c-in-cell' + (justSet === d + k || landSet.has(d + '|' + k) ? ' c-land' : ''));
+          /* V11 goals: leftovers read as the dish they are, with the meal they come from under it ("From Sun
+             dinner"); a meal cooked to last says how many meals it feeds ("For 3 meals") */
+          const src = m.how === 'leftovers' ? sourceOf(d, k, m) : null, serves = easy ? 0 : leftoversNow(d, k).length + 1;
+          const label = src ? dishOf(d, k, m) : mealLabel(m);
+          const sub = src ? 'From ' + slotWords(src.date, src.slot, true) : easy && m.name ? howName(m.how) : serves > 1 ? 'For ' + serves + ' meals' : '';
+          const blk = domBlock(label, sub, MEAL_COLOR[easy ? 'easy' : k], MEAL_INK[easy ? 'easy' : k], 'c-in-cell' + (justSet === d + k || landSet.has(d + '|' + k) ? ' c-land' : '') + (src ? ' c-leftover' : serves > 1 ? ' c-batch' : ''));
           /* a long word (Sandwiches) steps down a size rather than being cut, and the whole name shows on hover */
-          if (mealLabel(m).split(/\s+/).some((w) => w.length >= 10)) blk.classList.add('c-tight');
-          blk.title = mealLabel(m);
+          if (label.split(/\s+/).some((w) => w.length >= 10)) blk.classList.add('c-tight');
+          blk.title = src ? 'Leftovers: ' + label + ', from ' + slotWords(src.date, src.slot) : mealLabel(m) + (serves > 1 ? ', for ' + serves + ' meals' : '');
           /* V11: the tag names whoever is cooking: you, a partner, or family who live with you. With one
              person who can cook it says nothing new, so it stays away (as on the plan and in the dinner panel) */
           const who = easy || !m.cook || m.cook === 'home' || cookList(m.cook).length < 2 ? '' : cookNamed(m.cook) || (m.cook === 'kim' ? 'Partner' : '');
@@ -2263,7 +2617,7 @@
             onLift: () => { board.dataset.drag = 'swap'; }, onAlt: (alt) => { board.dataset.drag = alt ? 'copy' : 'swap'; }, onEnd: () => { delete board.dataset.drag; }
           });
           cell.appendChild(blk);
-          cell.setAttribute('aria-label', dayWords(d, k) + ': ' + mealLabel(m) + '. Open to change');
+          cell.setAttribute('aria-label', dayWords(d, k) + ': ' + (src ? 'leftovers of ' + label + ' from ' + slotWords(src.date, src.slot) : mealLabel(m) + (serves > 1 ? ', for ' + serves + ' meals' : '')) + '. Open to change');
           return cell;
         }
         /* a tapped meal is held until a day takes it; tapping it again lets go */
@@ -2289,6 +2643,8 @@
           }
           if (z.dataset.zone !== 'meal' || z.dataset.away) return;
           if (props.has(z.dataset.date + '|' + z.dataset.kind)) { keepOne(z.dataset.date, z.dataset.kind); return; }
+          /* V11 goals: a meal in the prep week being looked at is kept with the rest of it */
+          if (prepView && prepView.cells.has(cellKey(z.dataset.date, z.dataset.kind))) { SR.toast('Part of the prep week. Use this plan keeps all of it.', ''); snd('tap'); return; }
           openPop(z, z.dataset.date, z.dataset.kind);
         });
         board.addEventListener('keydown', (e) => {
@@ -2318,12 +2674,15 @@
           if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '. Make room on that day, or plan it for another night.', 'bad'); return false; }
           const add = k === 'dinner' && !hasDinnerBlock(d);
           let at = null;
+          const links = linkedNow();
           const r = commitMeals((st) => { if (add) at = ensureDinner(st, d); putMeal(st, d, k, make(st)); });
           if (r === false) return false;
           justSet = d + k; props.delete(d + '|' + k);
           const now = mealAt(d, k);
-          /* V11: every meal that lands says so, with Undo (the toast is read out too) */
-          if (now) mealToast(mealLabel(now) + ' for ' + dayWords(d, k) + (add && at != null ? ', with a Dinner block' + (typeof at === 'number' ? ' at ' + M.clock(at) : '') : ''), true);
+          /* V11: every meal that lands says so, with Undo (the toast is read out too). V11 goals: a meal that
+             replaced one with leftovers, and isn't cooked, says the leftovers stay */
+          const stay = stayWords(letGoSince(links));
+          if (now) mealToast(mealLabel(now) + ' for ' + dayWords(d, k) + (add && at != null ? ', with a Dinner block' + (typeof at === 'number' ? ' at ' + M.clock(at) : '') : '') + (stay ? '. ' + stay : ''), true);
           return true;
         }
         function placeOn(p, d, k, copy) {
@@ -2334,9 +2693,13 @@
             if (k === 'dinner' && !canDinner(d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(d)] + '. Make room on that day, or plan it for another night.', 'bad'); draw(); return; }
             /* V11: a swap that can't go back says why, never a quiet nothing */
             if (p.from.k === 'dinner' && b && !canDinner(p.from.d)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(p.from.d)] + ', so ' + mealLabel(b) + ' can’t swap there. Drop it on an open night instead.', 'bad'); draw(); return; }
-            commitMeals((st) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, a); putMeal(st, p.from.d, p.from.k, b); });
+            /* V11 goals: leftovers go with the meal they come from; any that would now come before it stay
+               leftovers, from no meal, and the toast says which */
+            const links = linkedNow();
+            commitMeals((st) => { if (k === 'dinner') ensureDinner(st, d); putMeal(st, d, k, a); putMeal(st, p.from.d, p.from.k, b); followMoves(st, [[p.from, { d, k }]].concat(b ? [[{ d, k }, p.from]] : [])); });
             justSet = d + k; props.delete(d + '|' + k);
-            mealToast(b ? 'Swapped ' + mealLabel(a) + ' and ' + mealLabel(b) : mealLabel(a) + ' moved to ' + dayWords(d, k), true);
+            const stay = stayWords(letGoSince(links));
+            mealToast((b ? 'Swapped ' + mealLabel(a) + ' and ' + mealLabel(b) : mealLabel(a) + ' moved to ' + dayWords(d, k)) + (stay ? '. ' + stay : ''), true);
           } else setCell(d, k, (st) => mealFrom(st, p));
           draw();
         }
@@ -2358,10 +2721,13 @@
         function clearMeal(d, k, say) {
           const m = mealAt(d, k);
           if (!m) return;
+          const links = linkedNow();
           commitMeals((st) => putMeal(st, d, k, null));
           draw();
+          /* V11 goals: a meal with leftovers says they stay, from no meal now: "Monday lunch stays as leftovers." */
+          const stay = stayWords(letGoSince(links));
           /* V11: "Took Burrito bowls off Saturday", so a plural name never trips the verb */
-          if (say) mealToast('Took ' + mealLabel(m) + ' off ' + M.DAY_LONG[M.weekday(d)], true);
+          if (say || stay) mealToast('Took ' + mealLabel(m) + ' off ' + M.DAY_LONG[M.weekday(d)] + (stay ? '. ' + stay : ''), true);
           else speak('Took ' + mealLabel(m) + ' off ' + dayWords(d, k));
         }
         function cycleCook(d, k) {
@@ -2402,21 +2768,57 @@
           const partsBox = h('div', 'c-mparts'), more = h('div', 'c-mpop-more'), foot = h('div', 'c-mpop-foot');
           box.append(head, form, partsBox, more, foot);
           /* the meal being made: what it's called, its parts, the ones left off the list, how, and who */
-          const draft = { name: m ? m.name : '', parts: m ? m.parts.slice() : [], off: new Set(), how: m ? m.how : 'home', cook: m ? m.cook : '', recipe: m ? m.recipe : null, items: m ? m.items.slice() : [] };
+          /* (V11 goals: and leftovers, the meal they come from) */
+          const draft = { name: m ? m.name : '', parts: m ? m.parts.slice() : [], off: new Set(), how: m ? m.how : 'home', cook: m ? m.cook : '', recipe: m ? m.recipe : null, items: m ? m.items.slice() : [], from: m && m.from ? m.from : null };
           if (m && m.parts.length > 1) m.parts.forEach((pt) => { const id = pantryFind(groceryName(pt)); if (!id || !m.items.includes(id)) draft.off.add(pt); });
           const built = (st) => {
             const cooking = !notCooking(draft.how);
             const own = draft.parts.length > 1;
             const items = !cooking ? [] : !own && draft.recipe ? draft.items.slice() : own ? pantryIds(st, draft.parts.filter((pt) => !draft.off.has(pt))) : [];
-            return { name: cap(draft.name), parts: own ? draft.parts : [], items, how: draft.how, cook: draft.cook || undefined, recipe: own ? null : draft.recipe };
+            return Object.assign({ name: cap(draft.name), parts: own ? draft.parts : [], items, how: draft.how, cook: draft.cook || undefined, recipe: own ? null : draft.recipe }, draft.how === 'leftovers' && draft.from ? { from: draft.from } : {});
           };
-          /* V11: a change in the card saves as it's made, and the card says so */
+          /* V11: a change in the card saves as it's made, and the card says so. V11 goals: a meal that stops
+             being cooked says its leftovers stay, from no meal now, with Undo */
           const savedMark = h('span', 'c-mpop-saved'); savedMark.setAttribute('role', 'status'); savedMark.hidden = true;
           const saveNow = () => {
+            const links = linkedNow();
             commitMeals((st) => putMeal(st, d, k, built(st))); justSet = ''; draw();
             savedMark.replaceChildren(SR.icon('check', 7, '#8FD3B1'), h('span', '', 'Saved'));
             savedMark.hidden = false;
             if (feelOn()) savedMark.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: FOUT });
+            const stay = stayWords(letGoSince(links));
+            if (stay) mealToast(stay, true, null, dayWords(d, k) + ' is as it was.');
+          };
+          /* V11 goals: cook extra. A tap on a later meal covers it with this one's leftovers (Model.cookExtra; a
+             night without a Dinner block gets one); a tap on one it covers opens that meal again */
+          const toggleExtra = (c) => {
+            const src = mealAt(d, k);
+            if (!src || notCooking(src.how)) return;
+            const cw = slotWords(c.date, c.slot);
+            if (c.on) {
+              commitMeals((st) => putMeal(st, c.date, c.slot, null));
+              draw(); drawMore(); snd('detent');
+              mealToast(cw + ' is open again', true, null, cw + ' is as it was.');
+              return;
+            }
+            if (c.slot === 'dinner' && !canDinner(c.date)) { SR.toast('No open time for dinner on ' + M.DAY_LONG[M.weekday(c.date)] + '. Make room on that day, or pick another meal.', 'bad'); return; }
+            const add = c.slot === 'dinner' && !hasDinnerBlock(c.date);
+            let at = null;
+            const r = commitMeals((st) => { if (add) at = ensureDinner(st, c.date); const x = M.cookExtra(st, { date: d, slot: k }, [{ date: c.date, slot: c.slot }]); return x.ok ? x : false; });
+            if (!r || r.ok === false) { SR.toast('That didn’t take, and nothing changed.', 'bad'); return; }
+            landSet.add(cellKey(c.date, c.slot));
+            draw(); drawMore(); snd('clack', 0.7);
+            mealToast(coverWords(mealLabel(src), leftoversNow(d, k)) + (add && at != null ? ', with a Dinner block' + (typeof at === 'number' ? ' at ' + M.clock(at) : '') : ''), true, null, cw + ' is as it was.');
+          };
+          /* V11 goals: leftovers from no meal yet: a tap on a meal cooked in the days before makes them its leftovers */
+          const linkFrom = (c) => {
+            const r = commitMeals((st) => { const x = M.cookExtra(st, { date: c.date, slot: c.slot }, [{ date: d, slot: k }]); return x.ok ? x : false; });
+            if (!r || r.ok === false) { SR.toast('That didn’t take, and nothing changed.', 'bad'); return; }
+            snd('clack', 0.7);
+            closePop(); landSet.add(cellKey(d, k)); draw();
+            const again = board.querySelector('[data-zone="meal"][data-date="' + d + '"][data-kind="' + k + '"]');
+            if (again) openPop(again, d, k);
+            mealToast(coverWords(mealLabel(c.meal), leftoversNow(c.date, c.slot)), true, null, dayWords(d, k) + ' is as it was.');
           };
           function drawParts() {
             partsBox.replaceChildren();
@@ -2451,7 +2853,9 @@
             if (m) {
               /* how it happens, then who's making it */
               const howRow = h('div', 'c-opts'); howRow.setAttribute('role', 'group'); howRow.setAttribute('aria-label', 'How it happens');
-              [['home', 'Cook']].concat(NOT_COOKING).forEach(([id, n]) => howRow.appendChild(pick(n, '', draft.how === id, () => { draft.how = id; saveNow(); drawParts(); drawMore(); snd('detent'); })));
+              /* (V11 goals: leftovers that become something else keep the dish's name, not "Leftovers: Chili") */
+              const unLeft = (id) => { if (draft.how !== 'leftovers' || id === 'leftovers') return; const rest = (draft.name || '').replace(AUTO_LEFT, '').trim(); if (rest && rest !== draft.name) { draft.name = rest; inp.value = rest; } };
+              [['home', 'Cook']].concat(NOT_COOKING).forEach(([id, n]) => howRow.appendChild(pick(n, '', draft.how === id, () => { if (draft.how === id) return; unLeft(id); draft.how = id; saveNow(); drawParts(); drawMore(); snd('detent'); })));
               more.append(h('div', 'c-kick', 'How'), howRow);
               /* V11: with nobody else at home there's no one to ask about, so the question stays away */
               const cooks = cookList(draft.cook);
@@ -2461,13 +2865,58 @@
                 cooks.map((c) => [c.id, c.name]).concat([['home', 'Anyone']]).forEach(([id, n]) => whoRow.appendChild(pick(n, '', (draft.cook || 'home') === id, () => { draft.cook = id; saveNow(); drawMore(); snd('detent'); })));
                 more.append(h('div', 'c-kick', 'Who’s making it'), whoRow);
               }
+              /* V11 goals: a meal being cooked can cover later meals: each one a toggle (open ones, and the ones it
+                 covers, up to four days on), then how many meals it makes. Leftovers say the meal they come from,
+                 a tap away, or offer the meals cooked in the days before */
+              const now = mealAt(d, k);
+              if (now && !notCooking(now.how)) {
+                const g = extraGrid(d, k, showRows);
+                if (g.rows.length) {
+                  /* a row for each meal, a column for each day: white fill on the ones it covers, as Also on */
+                  const xg = h('div', 'c-xgrid'); xg.setAttribute('role', 'group'); xg.setAttribute('aria-label', 'Cook extra for');
+                  g.rows.forEach((r) => {
+                    xg.appendChild(h('span', 'c-xrow', kindName(r.slot)));
+                    r.cells.forEach((c) => {
+                      if (!c) { const no = h('span', 'c-xnone'); no.setAttribute('aria-hidden', 'true'); xg.appendChild(no); return; }
+                      const b = pick(M.DAY_SHORT[M.weekday(c.date)], 'c-xopt', c.on, () => keepFocus(box, () => toggleExtra(c)));
+                      b.setAttribute('aria-label', slotWords(c.date, c.slot));
+                      b.title = c.on ? 'Leftovers on ' + slotWords(c.date, c.slot) + '. Tap to open it again' : 'Cook enough for ' + slotWords(c.date, c.slot) + ' too';
+                      xg.appendChild(b);
+                    });
+                  });
+                  const n = leftoversNow(d, k).length + 1;
+                  more.append(h('div', 'c-kick', 'Cook extra for'), xg);
+                  if (n > 1) more.appendChild(h('small', 'c-mparts-say c-xsay', 'Enough for ' + n + ' meals.'));
+                }
+              } else if (now && now.how === 'leftovers') {
+                const src = sourceOf(d, k, now);
+                if (src) {
+                  const row = h('div', 'c-xfrom');
+                  row.appendChild(h('span', 'c-xfrom-words', 'From ' + slotWords(src.date, src.slot) + ': ' + mealLabel(src.meal)));
+                  const go = pick('Open ' + slotWords(src.date, src.slot, true), 'c-xgo', null, () => { closePop(); openCell(src.date, src.slot); });
+                  go.setAttribute('aria-label', 'Open ' + slotWords(src.date, src.slot));
+                  row.appendChild(go);
+                  more.append(h('div', 'c-kick', 'Leftovers'), row);
+                } else {
+                  const cands = sourceCells(d, k);
+                  if (cands.length) {
+                    const fr = h('div', 'c-opts c-xtra'); fr.setAttribute('role', 'group'); fr.setAttribute('aria-label', 'Leftovers of');
+                    cands.forEach((c) => {
+                      const b = pick(mealLabel(c.meal) + ', ' + M.DAY_SHORT[M.weekday(c.date)], 'c-xopt', false, () => linkFrom(c));
+                      b.setAttribute('aria-label', mealLabel(c.meal) + ', ' + slotWords(c.date, c.slot));
+                      fr.appendChild(b);
+                    });
+                    more.append(h('div', 'c-kick', 'Leftovers of'), fr);
+                  }
+                }
+              }
               /* the same meal on other days: tap a day to add it there, tap it again to take it off */
               const also = h('div', 'c-opts c-also'); also.setAttribute('role', 'group'); also.setAttribute('aria-label', 'Also on');
               const mine = norm(mealLabel(mealAt(d, k) || m));
               dates.forEach((dd) => {
                 const there = mealAt(dd, k), same = !!there && norm(mealLabel(there)) === mine;
                 const b = pick(M.DAY_SHORT[M.weekday(dd)].slice(0, 1), 'c-dayopt', same || dd === d, () => {
-                  if (same) { commitMeals((st) => putMeal(st, dd, k, null)); draw(); mealToast('Took ' + mealLabel(m) + ' off ' + dayWords(dd, k), true); }
+                  if (same) { const links = linkedNow(); commitMeals((st) => putMeal(st, dd, k, null)); draw(); const stay = stayWords(letGoSince(links)); mealToast('Took ' + mealLabel(m) + ' off ' + dayWords(dd, k) + (stay ? '. ' + stay : ''), true); }
                   else if (setCell(dd, k, (st) => built(st))) draw();
                   drawMore(); snd('detent');
                 });
@@ -2576,6 +3025,19 @@
           board.querySelectorAll('.c-popped').forEach((y) => y.classList.remove('c-popped'));
           if (back) { const c = board.querySelector('[data-zone="meal"][data-date="' + p.d + '"][data-kind="' + p.k + '"]'); if (c) c.focus({ preventScroll: true }); }
         }
+        /* V11 goals: one meal's card, from another's (leftovers open the meal they come from). The board moves to
+           that meal's week, shows its row, and opens the days already over when it's one of them */
+        function openCell(cd, ck) {
+          let moved = false;
+          if (cd < dates[0] || cd > dates[6]) { ws = M.weekStart(cd); dates = M.range(ws, 7); props = new Map(); prepView = null; showPast = false; moved = true; }
+          if (!showRows.includes(ck)) { showRows = MEAL_KINDS.map(([x]) => x).filter((x) => x === ck || showRows.includes(x)); moved = true; }
+          if (cd < SR.today && !showPast) { showPast = true; moved = true; }
+          if (moved) { draw(); speak(weekLabel()); }
+          const c = board.querySelector('[data-zone="meal"][data-date="' + cd + '"][data-kind="' + ck + '"]');
+          if (!c || c.dataset.away) return;
+          c.scrollIntoView({ block: 'nearest' });
+          openPop(c, cd, ck);
+        }
         /* a tap outside the card closes it; a tap on another day opens that one */
         const outside = (e) => { if (pop && !pop.box.contains(e.target) && !e.target.closest('[data-zone="meal"]')) closePop(); };
         document.addEventListener('pointerdown', outside, true);
@@ -2594,7 +3056,7 @@
         /* the slash key goes to Find, as in most apps */
         const slash = (e) => { if (e.key === '/' && !e.metaKey && !e.ctrlKey && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) { e.preventDefault(); findIn.focus(); } };
         document.addEventListener('keydown', slash);
-        function moveWeek(n) { ws = M.addDays(ws, n); dates = M.range(ws, 7); props = new Map(); showPast = false; closePop(); letGoHeld(); draw(); speak(weekLabel()); snd('slide'); }
+        function moveWeek(n) { ws = M.addDays(ws, n); dates = M.range(ws, 7); props = new Map(); prepView = null; showPast = false; closePop(); letGoHeld(); draw(); speak(weekLabel()); snd('slide'); }
         matEsc = () => {
           if (pop) { closePop(true); return true; }
           if (held) { letGoHeld(); return true; }
@@ -2646,8 +3108,69 @@
           seed = (seed % 997) + 1;
           props = suggestAll();
           if (!props.size) { SR.toast('Every meal left this week is planned.', ''); return; }
+          prepView = null;
           closePop(); letGoHeld(); draw(); snd('clack', 0.6);
           speak(props.size + (props.size === 1 ? ' idea' : ' ideas') + ' for the open meals');
+        }
+        /* V11 goals: Plan a prep week. Two batch cooks, the leftovers they cover, and fresh nights, from your own
+           meals first (Model.prepPlan), shown dashed on the board with the plan's own words over it. Nothing
+           changes until Use this plan, which puts it all on with one Undo */
+        function startPrep() {
+          const look = prepLook(ws);
+          if (!look.cells.size) { SR.toast(look.plan.message, ''); snd('tap'); return; }
+          /* the meals it fills show, even in a row that was hidden */
+          const need = MEAL_KINDS.map(([x]) => x).filter((x) => showRows.includes(x) || [...look.cells.values()].some((i) => i.slot === x));
+          if (need.length !== showRows.length) { showRows = need; keep(MEAL_ROWS, showRows); }
+          props = new Map(); prepView = Object.assign(look, { withBlock: !!look.block });
+          closePop(); letGoHeld(); draw(); snd('clack', 0.6);
+          speak(prepWords(prepView));
+        }
+        function usePrepPlan() {
+          const pv = prepView;
+          if (!pv) return;
+          const list = [...pv.cells.values()], block = pv.withBlock ? pv.block : null;
+          let out = null;
+          const r = commitMeals((st) => {
+            /* a night without a Dinner block gets one, the way a dinner dropped there does */
+            list.forEach((x) => { if (x.slot === 'dinner') ensureDinner(st, x.date); });
+            out = M.applyPrepPlan(st, Object.assign({}, pv.plan, { list, block }), { block: !!block });
+            return out.meals || out.block ? { ok: true } : false;
+          });
+          prepView = null;
+          if (!r || r.ok === false || !out) { draw(); prepFocus(); SR.toast('Nothing changed. Those meals have plans now.', ''); return; }
+          landSet = new Set(list.map((x) => cellKey(x.date, x.slot)));
+          draw(); prepFocus(); snd('clack', 0.9);
+          const n = out.meals, b = out.block, bd = block ? M.DAY_LONG[M.weekday(block.date)] : '';
+          mealToast('Prep week planned: ' + count(n, 'meal', 'meals') + (b ? ', and Meal prep on ' + bd + ' at ' + M.clock(b.start) : ''), true, null, (n === 1 ? 'That meal is' : 'Those meals are') + ' off the week' + (b ? ', and so is Meal prep.' : '.'));
+          if (block && !b) SR.toast('Meal prep didn’t fit on ' + bd + ' any more. Add it from Batch cooks, under the board.', '');
+        }
+        /* the bar went with the prep week, so focus goes to what's there now: Plan a prep week, or the board's title */
+        function prepFocus() {
+          const t = !prepBtn.hidden ? prepBtn : inner.querySelector('.c-mat-head h2'), a = document.activeElement;
+          if (t && (!a || a === document.body || !a.isConnected || sugBar.contains(a))) t.focus({ preventScroll: true });
+        }
+        /* the bar over the board while a prep week shows: what it does, its Meal prep block (on unless you say),
+           Clear, and Use this plan */
+        function drawPrepBar() {
+          const pv = prepView;
+          const line = h('div', 'c-sugline');
+          const words = h('div', 'c-prepwords');
+          words.append(h('div', 'c-kick', 'Prep week'), h('p', '', prepWords(pv)));
+          /* (the block's toggle sits with the words, so it comes before Use this plan on a phone too) */
+          if (pv.block) {
+            const b = pv.block;
+            const t = Kit.btn('c-opt c-preptog', 'Meal prep block, ' + M.DAY_LONG[M.weekday(b.date)] + ' ' + M.span(b.start, b.start + b.dur), () => { pv.withBlock = !pv.withBlock; keepFocus(sugBar, drawSug); snd('detent'); });
+            t.setAttribute('aria-pressed', String(!!pv.withBlock));
+            if (pv.withBlock) t.prepend(SR.icon('check', 7, '#252928'));
+            const row = h('div', 'c-have'); row.appendChild(t);
+            words.appendChild(row);
+          }
+          const btns = h('div', 'c-sugbtns');
+          btns.append(
+            Kit.btn('c-opt', 'Clear', () => { prepView = null; draw(); prepFocus(); speak('Prep week cleared'); }),
+            Kit.btn('c-go c-keepall', 'Use this plan', () => usePrepPlan()));
+          line.append(words, btns);
+          sugBar.appendChild(line);
         }
         function keepOne(d, k) {
           const p = props.get(d + '|' + k);
@@ -2677,10 +3200,15 @@
           return top.map(([key, v]) => [key, v.name]);
         }
         function drawSug() {
-          sugBar.hidden = !props.size;
-          sugBtn.hidden = !!props.size;
-          if (!props.size) return;
+          /* (V11 goals: or the prep week being looked at) */
+          const on = !!props.size || !!prepView;
+          sugBar.hidden = !on;
+          /* (a prep week plans dinners, so it's offered while the board helps with them) */
+          sugBtn.hidden = on; prepBtn.hidden = on || !SR.useDinners();
+          sugBar.classList.toggle('c-prepbar', !!prepView);
+          if (!on) return;
           sugBar.replaceChildren();
+          if (prepView) { drawPrepBar(); return; }
           const line = h('div', 'c-sugline');
           line.append(h('p', '', (props.size === 1 ? 'An idea for 1 open meal.' : 'Ideas for ' + props.size + ' open meals.') + ' Tap one to keep it.'));
           const btns = h('div', 'c-sugbtns');
@@ -2703,6 +3231,58 @@
           f.addEventListener('submit', (e) => { e.preventDefault(); const w = singular(groceryName(inp.value) || inp.value); if (!w) return; have.add(w); seed++; props = suggestAll(); draw(); const again = sugBar.querySelector('.c-haveform input'); if (again) again.focus(); });
           hv.appendChild(f);
           sugBar.append(line, hv);
+        }
+
+        /* == V11 goals: batch cooks, under the board ==
+           Each meal this week that's cooked to cover later meals, with how many meals it makes, and its Meal prep
+           block: Add a prep block puts one before it in quiet time, where nothing moves (prepSpot), and Take it
+           off takes off the block alone. Its block on the desk lists what it makes (app.js addPanel) */
+        function drawPrep() { keepFocus(prepBox, drawPrep0); }
+        function drawPrep0() {
+          const list = prepView ? [] : batchCooks(dates);
+          prepBox.hidden = !list.length;
+          if (!list.length) { prepBox.replaceChildren(); return; }
+          const kids = [h('div', 'c-kick', list.length === 1 ? 'Batch cook' : 'Batch cooks')];
+          list.forEach((b) => {
+            const row = h('div', 'c-prep-row'); row.dataset.k = cellKey(b.date, b.slot);
+            const words = h('div', 'c-prep-words');
+            words.append(h('b', '', b.name), h('span', '', slotWords(b.date, b.slot) + ', for ' + b.serves + ' meals'));
+            row.append(SR.icon('pot', 9, CREAM), words);
+            const on = prepOf(b), day = (d) => M.DAY_LONG[M.weekday(d)];
+            if (on) {
+              const at = h('span', 'c-prep-on');
+              at.append(SR.icon('check', 7, '#8FD3B1'), h('span', '', 'Meal prep, ' + (on.date === b.date ? '' : day(on.date) + ' ') + M.span(on.add.start, on.add.start + on.add.dur)));
+              const off = Kit.btn('c-mpop-off c-prep-off', 'Take it off', () => takePrepOff(b, on), 'x');
+              off.setAttribute('aria-label', 'Take Meal prep off ' + day(on.date));
+              row.append(at, off);
+            } else {
+              const add = Kit.btn('c-again c-prep-add', 'Add a prep block', () => addPrep(b), 'plus');
+              add.setAttribute('aria-label', 'Add a prep block before ' + b.name + ', ' + slotWords(b.date, b.slot));
+              row.appendChild(add);
+            }
+            kids.push(row);
+          });
+          prepBox.replaceChildren(...kids);
+        }
+        function addPrep(b) {
+          const spot = prepSpot(b);
+          if (!spot) { SR.toast('No quiet 90 minutes before ' + b.name + ' on ' + M.DAY_LONG[M.weekday(b.date)] + '. Make room that day, then add it.', 'bad'); snd('tap'); return; }
+          let put = null;
+          const r = commitMeals((st) => { put = M.applyPrepPlan(st, { list: [], block: { date: spot.date, start: spot.start, dur: PREP_MIN, add: prepAdd(b) } }, { block: true }).block; return put ? { ok: true } : false; });
+          if (!r || r.ok === false || !put) { SR.toast('That didn’t take, and nothing changed.', 'bad'); return; }
+          draw(); snd('clack', 0.8);
+          const dd = M.DAY_LONG[M.weekday(spot.date)];
+          mealToast('Meal prep on ' + dd + ', ' + M.span(put.start, put.start + put.dur), true, null, 'Meal prep is off ' + dd + '.');
+          const t = prepBox.querySelector('[data-k="' + cellKey(b.date, b.slot) + '"] .c-prep-off'); if (t && (!document.activeElement || document.activeElement === document.body)) t.focus({ preventScroll: true });
+        }
+        function takePrepOff(b, on) {
+          const dd = M.DAY_LONG[M.weekday(on.date)];
+          const r = commitMeals((st) => (M.removeAdd(st, on.add.id) ? { ok: true } : false));
+          if (!r || r.ok === false) return;
+          draw(); snd('slide');
+          mealToast('Meal prep is off ' + dd + '. Its meals stay', true, null, 'Meal prep is back on ' + dd + '.');
+          /* (focus stays on the row: its Add a prep block took Take it off's place) */
+          const t = prepBox.querySelector('[data-k="' + cellKey(b.date, b.slot) + '"] .c-prep-add'); if (t && (!document.activeElement || document.activeElement === document.body)) t.focus({ preventScroll: true });
         }
 
         /* == the library == */
@@ -2821,7 +3401,7 @@
             let said = 0;
             const why = () => { if (Date.now() - said < 2500) return; said = Date.now(); SR.toast('You’re editing the list. Tap Done editing, then drag ' + y.name + ' onto a day.', ''); snd('tap'); };
             b.addEventListener('click', why);
-            b.addEventListener('pointerdown', (e) => { const x1 = e.clientX, y1 = e.clientY; const mv = (ev) => { if (Math.abs(ev.clientX - x1) + Math.abs(ev.clientY - y1) > 12) { off(); why(); } }; const off = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', off); }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', off); });
+            b.addEventListener('pointerdown', (e) => { const x1 = e.clientX, y1 = e.clientY, pid = e.pointerId; const mv = (ev) => { if (ev.pointerId !== pid) return; if (Math.abs(ev.clientX - x1) + Math.abs(ev.clientY - y1) > 12) { off(); why(); } }; const off = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', off); window.removeEventListener('pointercancel', off); }; window.addEventListener('pointermove', mv); window.addEventListener('pointerup', off); window.addEventListener('pointercancel', off); });
             wrap.append(b, x0);
             return wrap;
           }
@@ -2927,10 +3507,13 @@
           if (!showRows.includes(ck)) { showRows = MEAL_KINDS.map(([x]) => x).filter((x) => x === ck || showRows.includes(x)); draw(); }
           setTimeout(() => { const c = board.querySelector('[data-zone="meal"][data-date="' + cd + '"][data-kind="' + ck + '"]'); if (c && !c.dataset.away && mat) { c.scrollIntoView({ block: 'nearest' }); openPop(c, cd, ck); } }, feelOn() ? 420 : 60);
         } else if (opts.shop) setTimeout(() => { toShop(); const t = shop.querySelector('.c-shop-tog'); if (t) t.focus({ preventScroll: true }); }, feelOn() ? 420 : 60);
+        /* V11 goals: opened to plan a prep week (the reset's Meals step), the plan shows at once, and focus goes
+           to Use this plan */
+        else if (opts.prep) { startPrep(); setTimeout(() => { const g = sugBar.querySelector('.c-keepall'); if (g && mat) g.focus({ preventScroll: true }); }, feelOn() ? 420 : 60); }
         /* V11: focus moves into the board when it opens (to its title; a day's card or the list take it
            when the board opens on them) */
         const title = inner.querySelector('.c-mat-head h2');
-        if (title) { title.tabIndex = -1; if (!opts.cell && !opts.shop) setTimeout(() => { if (mat && !mat.contains(document.activeElement)) title.focus({ preventScroll: true }); }, 60); }
+        if (title) { title.tabIndex = -1; if (!opts.cell && !opts.shop && !(opts.prep && prepView)) setTimeout(() => { if (mat && !mat.contains(document.activeElement)) title.focus({ preventScroll: true }); }, 60); }
         closeWords = () => {
           const now = mealSnap();
           let add = 0, change = 0, off = 0;
@@ -2973,7 +3556,8 @@
         setTimeout(() => {
           if (mat) return;
           const fk = opener && opener.dataset && opener.dataset.mfk;
-          const again = opener && opener.isConnected ? opener : fk ? document.querySelector('[data-mfk="' + fk + '"]') : openerKey ? [...document.querySelectorAll(opener.tagName)].find((x) => [x.tagName, x.className, x.getAttribute('aria-label') || x.textContent].join('|') === openerKey) : null;
+          /* (V11 goals: a control that left the step with what it did, Plan a prep week, gives focus to the step's meal board card) */
+          const again = opener && opener.isConnected ? opener : fk ? document.querySelector('[data-mfk="' + fk + '"]') || document.querySelector('[data-mfk="ms-go"]') : openerKey ? [...document.querySelectorAll(opener.tagName)].find((x) => [x.tagName, x.className, x.getAttribute('aria-label') || x.textContent].join('|') === openerKey) : null;
           if (opts.back) { opts.back(); return; }
           if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
         }, feelOn() ? 300 : 40);
@@ -3013,7 +3597,8 @@
       { name: 'Squats', sets: 3, reps: 10 }, { name: 'Push-ups', sets: 3, reps: 12 }, { name: 'Lunges', sets: 3, reps: 10 }, { name: 'Deadlifts', sets: 3, reps: 8 },
       { name: 'Rows', sets: 3, reps: 10 }, { name: 'Bench press', sets: 3, reps: 8 }, { name: 'Plank', sets: 3, sec: 45 }, { name: 'Stretch', min: 10 }
     ];
-    const isMove = (b) => b && (/workout|run|walk|stretch|gym|yoga|swim|bike|lift|train/i.test(b.name || '') || ['dumbbell', 'runner', 'shoe'].includes(b.icon));
+    /* (V11 goals: a goal's session named like a move, Long runs, is the goal's, so it opens its own panel, not a routine) */
+    const isMove = (b) => b && !(b.src && b.src.type === 'goal') && (/workout|run|walk|stretch|gym|yoga|swim|bike|lift|train/i.test(b.name || '') || ['dumbbell', 'runner', 'shoe'].includes(b.icon));
     const exWords = (x) => (x.min ? x.min + ' min' : x.sec ? x.sets + ' × ' + x.sec + ' s' : x.sets + ' × ' + x.reps);
     const exMin = (x) => (x.min ? x.min : x.sec ? Math.ceil((x.sets * (x.sec + 45)) / 60) : Math.ceil((x.sets * (x.reps * 4 + 60)) / 60));
     let detail = null;
@@ -3157,6 +3742,8 @@
       /* V11: People lights up time with anyone; Moving lights up the workouts, runs, and walks */
       kim: (b) => (SR.withPeople ? SR.withPeople(b) : b.cat === 'us'),
       move: (b) => !!(SR.isMoving && SR.isMoving(b)),
+      /* V11 goals: Goals lights up each goal's sessions */
+      goals: (b) => !!(b.src && b.src.type === 'goal'),
       yours: (b) => b.cat === 'yours',
       todo: (b) => !!(b.src && (b.src.type === 'task' || b.src.type === 'step'))
     }[k] || null);
@@ -3381,11 +3968,14 @@
     let msPast = false;
     window.SR_mealStep = (body, dates, ws) => {
       const rows = mealRows(), cnt = mealCount(dates, rows);
+      /* V11 goals: leftovers are meals planned (the engine's count, and mealCount's), and the line says how many
+         of them there are, over the same days */
+      const soon = dates.filter((d) => d >= SR.today), lo = (soon.length ? soon : dates).filter((d) => !SR.day(d).trip).reduce((a, d) => a + rows.filter((k) => { const m = mealAt(d, k); return m && m.how === 'leftovers'; }).length, 0);
       /* V11: a big raised card, not gold: Next is the step's one gold call. Midweek the count is from today on */
       const go = h('button', 'c-mealgo c-ms-go'); go.type = 'button'; go.dataset.mfk = 'ms-go';
       const words = h('span', 'grow');
       /* V11: how many are planned, never out of a total that guesses how many meals a day you eat */
-      words.append(h('b', '', 'Open the meal board'), h('small', '', cnt.n ? cnt.n + (cnt.n === 1 ? ' meal' : ' meals') + ' planned' + (cnt.span ? ', ' + cnt.span : '') : 'Drag meals onto the week'));
+      words.append(h('b', '', 'Open the meal board'), h('small', '', cnt.n ? cnt.n + (cnt.n === 1 ? ' meal' : ' meals') + ' planned' + (cnt.span ? ', ' + cnt.span : '') + (lo ? ', ' + lo + ' from leftovers' : '') : 'Drag meals onto the week'));
       go.append(SR.icon('pot', 10, '#FFFFFF'), words, SR.icon('right', 7, '#AFAFAF'));
       go.addEventListener('click', () => { SR.Snd.init(); openMealBoard(ws); });
       body.appendChild(go);
@@ -3394,7 +3984,11 @@
       const head = h('div', 'c-ms-head');
       head.appendChild(h('h3', 'rsec-h', weekTitle(ws, 'meals')));
       /* V11: the button leaves once last week is brought over, so focus goes to the meal board's card */
-      if (lastWeekMeals(dates, rows).length) head.appendChild(Kit.btn('c-again c-ms-again', 'Same as last week', () => { SR.Snd.init(); if (bringLastWeek(dates, rows)) { SR.render(); const g = document.querySelector('[data-mfk="ms-go"]'); if (g) g.focus({ preventScroll: true }); } }));
+      const msActs = h('div', 'c-ms-acts');
+      if (lastWeekMeals(dates, rows).length) msActs.appendChild(Kit.btn('c-again c-ms-again', 'Same as last week', () => { SR.Snd.init(); if (bringLastWeek(dates, rows)) { SR.render(); const g = document.querySelector('[data-mfk="ms-go"]'); if (g) g.focus({ preventScroll: true }); } }));
+      /* V11 goals: a prep week, offered while there's one to plan: it opens on the meal board, ready to use */
+      if (prepLook(ws).cells.size) { const pb = Kit.btn('c-again c-ms-again c-ms-prep', 'Plan a prep week', () => { SR.Snd.init(); openMealBoard(ws, { prep: true }); }, 'pot'); pb.dataset.mfk = 'ms-prep'; msActs.appendChild(pb); }
+      if (msActs.children.length) head.appendChild(msActs);
       const grid = h('div', 'c-ms-grid'); grid.style.setProperty('--rows', rows.length);
       grid.appendChild(h('span'));
       rows.forEach((k) => grid.appendChild(h('span', 'c-ms-k', kindName(k))));
@@ -3416,15 +4010,18 @@
         rows.forEach((k) => {
           const m = mealAt(d, k), easy = m && notCooking(m.how);
           const b = h('button', 'c-ms-cell' + (m ? ' on' : '') + (d < SR.today ? ' past' : '')); b.type = 'button'; b.dataset.mfk = 'ms-' + d + '-' + k;
+          /* V11 goals: leftovers say the dish they are, and Leftovers under it, at any size */
+          const left = m && m.how === 'leftovers', nm = m ? (left ? dishOf(d, k, m) : mealLabel(m)) : '';
           if (m) {
             b.style.setProperty('--b', MEAL_COLOR[easy ? 'easy' : k]); b.style.setProperty('--i', MEAL_INK[easy ? 'easy' : k]);
-            b.appendChild(h('b', '', mealLabel(m)));
+            b.appendChild(h('b', '', nm));
             /* V11: with one person who can cook, no line says who */
             const who = easy || !m.cook || m.cook === 'home' || cookList(m.cook).length < 2 ? '' : cookNamed(m.cook, meName || 'You');
-            if (who && rows.length < 3) b.appendChild(h('small', '', who === 'You' ? 'You cook' : who + ' cooks'));
+            if (left && nm !== 'Leftovers') b.appendChild(h('small', '', 'Leftovers'));
+            else if (who && rows.length < 3) b.appendChild(h('small', '', who === 'You' ? 'You cook' : who + ' cooks'));
           } else if (d >= SR.today) b.appendChild(SR.icon('plus', 7, '#AFAFAF'));
-          b.setAttribute('aria-label', mealDayWords(d, k) + ': ' + (m ? mealLabel(m) : 'nothing yet') + '. Open on the meal board');
-          b.title = m ? mealLabel(m) : 'Add ' + mealDayWords(d, k);
+          b.setAttribute('aria-label', mealDayWords(d, k) + ': ' + (m ? (left && nm !== 'Leftovers' ? 'leftovers of ' + nm : mealLabel(m)) : 'nothing yet') + '. Open on the meal board');
+          b.title = m ? (left && nm !== 'Leftovers' ? 'Leftovers: ' + nm : mealLabel(m)) : 'Add ' + mealDayWords(d, k);
           b.addEventListener('click', () => { SR.Snd.init(); openMealBoard(ws, { cell: [d, k] }); });
           grid.appendChild(b);
         });
@@ -3580,7 +4177,9 @@
       const freeMin = dates.reduce((a, d) => a + SR.day(d).blocks.filter((b) => b.free && b.cat === 'yours').reduce((s, b) => s + b.dur, 0), 0);
       const open = M.totals(dates.map((d) => SR.day(d))).free || 0;
       const yours = yoursWeek(ws);
-      return { ws, last, me, pt, yours, more: Math.max(0, yours - freeMin), evenings: evenings.map((d) => dates.indexOf(d)), dates, evFrom, dinners, other: otherMeals(other, !!(dinners && dinners.length)), timed, need: c.unplaced.length, late: c.lateTimes.length, together, moves, coming, openMin: open, grocery: g && g.total ? SR.grocerySub(dates) : '', open: !!(c.unplaced.length || c.lateTimes.length || (SR.useDinners() && c.openNights.length)) };
+      /* V11 goals: each goal with sessions this week, its hours and its days */
+      const goals = (SR.goalWeek ? SR.goalWeek(ws) : []).filter((x) => x.min).map((x) => ({ id: x.id, name: x.name, when: x.line + ' · ' + runWords(x.days, dates, 'Every day') }));
+      return { ws, last, me, pt, yours, more: Math.max(0, yours - freeMin), evenings: evenings.map((d) => dates.indexOf(d)), dates, evFrom, dinners, other: otherMeals(other, !!(dinners && dinners.length)), timed, need: c.unplaced.length, late: c.lateTimes.length, together, moves, goals, coming, openMin: open, grocery: g && g.total ? SR.grocerySub(dates) : '', open: !!(c.unplaced.length || c.lateTimes.length || (SR.useDinners() && c.openNights.length)) };
     }
     /* V11: the breakfasts and lunches in words, after the dinners ("And 3 breakfasts and 2 lunches.") or on
        their own ("3 breakfasts and 2 lunches planned."); '' when there are none */
@@ -3609,7 +4208,7 @@
       ? { big: plural(f.evenings.length, 'free evening', 'free evenings'), lines: [runWords(f.evenings, f.dates, 'Every evening') + ', from ' + M.clock(f.evFrom) + '.'].concat(f.more >= 30 ? ['And ' + M.hours(f.more) + ' more to yourself.'] : []) }
       : f.yours > 0 ? { big: M.hours(f.yours), lines: ['to yourself ' + SR.weekWords(f.ws)] } : null);
     /* nothing planned yet and nothing due: the finish says what's open instead of showing empty cards */
-    const finEmpty = (f) => !(f.dinners && f.dinners.length) && !f.other && !keptWords(f) && !f.timed.length && !f.need && !f.late && !f.together.length && !f.moves.length && !f.coming.length;
+    const finEmpty = (f) => !(f.dinners && f.dinners.length) && !f.other && !keptWords(f) && !f.timed.length && !f.need && !f.late && !f.together.length && !f.moves.length && !(f.goals || []).length && !f.coming.length;
     const stepAt = (key) => SR.stepsNow().findIndex((s) => s.key === key);
     let finishWas = '';
     /* V11: the finish takes two columns only where its panel is 600 wide (shell.css, the same width) */
@@ -3619,7 +4218,7 @@
     window.SR_finishBody = (body, ws) => {
       const f = finishData(ws);
       /* two columns, and the wider panel (shell.css, body.c-finwide), only when there are cards enough to fill them */
-      const cardsN = ((f.dinners && f.dinners.length) || f.other ? 1 : 0) + (keptWords(f) ? 1 : 0) + 1 + (f.together.length ? 1 : 0) + (f.moves.length ? 1 : 0) + (f.coming.length ? 1 : 0);
+      const cardsN = ((f.dinners && f.dinners.length) || f.other ? 1 : 0) + (keptWords(f) ? 1 : 0) + 1 + (f.together.length ? 1 : 0) + (f.moves.length ? 1 : 0) + ((f.goals || []).length ? 1 : 0) + (f.coming.length ? 1 : 0);
       const twoCol = finTwo() && !finEmpty(f) && cardsN >= 3;
       document.body.classList.toggle('c-finwide', twoCol);
       const wrap = h('div', 'c-fin' + (twoCol ? ' two' : ''));
@@ -3692,6 +4291,8 @@
       };
       if (f.together.length) listCard('People', f.together.slice(0, 5), 'kim', 4, false);
       if (f.moves.length) listCard('Moving', f.moves.slice(0, 4), 'move', 5, false, SR.moveWords && ((SR.state.settings || {}).move || {}).n ? SR.moveWords(ws).text : '');
+      /* V11 goals: each goal's week, after the to-dos; a row goes back to the Goals step */
+      if ((f.goals || []).length) listCard('Goals', f.goals.slice(0, 4), 'goals', 3.5, true);
       if (f.coming.length) listCard('Coming up', f.coming, 'ahead', 6, true);
       if (twoCol) cols.forEach((c) => { if (c.children.length) wrap.appendChild(c); });
       else one.sort((a, b) => a[0] - b[0]).forEach(([, c]) => wrap.appendChild(c));
@@ -4027,7 +4628,8 @@
       t.append(h('b', '', ch), h('small', '', String(POINTS[ch] || 0)));
       t.setAttribute('aria-label', 'Letter ' + ch + '. Tap to put it on the rack');
       t.tabIndex = 0;
-      t.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault(); t.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 0, clientY: 0 })); window.dispatchEvent(new PointerEvent('pointerup', { clientX: 0, clientY: 0 })); });
+      /* (a key press is a tap from the first pointer, with its id, as dragTile checks) */
+      t.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault(); const p = { isPrimary: true, pointerId: 1, pointerType: 'mouse' }; t.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ button: 0, clientX: 0, clientY: 0 }, p))); window.dispatchEvent(new PointerEvent('pointerup', Object.assign({ clientX: 0, clientY: 0 }, p))); });
       dragTile(t);
       return t;
     }
@@ -4093,8 +4695,11 @@
     }
     function dragTile(t) {
       t.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || !e.isPrimary) return;
+        if (carried) carried.cancel();
         e.preventDefault(); SR.Snd.init();
+        /* (V11: the letter in hand is this pointer's; another finger moves or drops nothing) */
+        const pid = e.pointerId; carried = { id: pid, cancel: () => up({ type: 'pointercancel', pointerId: pid }) };
         const r = t.getBoundingClientRect();
         const ox = e.clientX - r.left, oy = e.clientY - r.top;
         const fromSlot = t.parentElement && t.parentElement.dataset.slot != null ? +t.parentElement.dataset.slot : null;
@@ -4104,6 +4709,7 @@
         let over = null, moved = false;
         const sx = e.clientX, sy = e.clientY;
         const move = (ev) => {
+          if (ev.pointerId !== pid) return;
           if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
           moved = true;
           putAt(t, ev.clientX - ox, ev.clientY - oy, 0);
@@ -4114,8 +4720,12 @@
           if (s !== over) { if (over) over.classList.remove('c-over'); over = s; if (over) { over.classList.add('c-over'); snd('detent'); } }
         };
         const up = (ev) => {
-          window.removeEventListener('pointermove', move);
+          if (ev.pointerId !== pid) return;
+          window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+          if (carried && carried.id === pid) carried = null;
           t.classList.remove('c-up');
+          /* V11: taken back by the browser: the letter stays where it is, and lands nowhere */
+          if (ev.type === 'pointercancel') { if (over) over.classList.remove('c-over'); over = null; return; }
           if (!moved && fromSlot == null) { const open = nextSlot(t.dataset.ch); if (open != null) over = slots[open]; }
           if (!moved && fromSlot != null) { putAt(t, r.left, r.top + 64, (Math.random() - 0.5) * 18); snd('detent'); return; }
           if (over) {
@@ -4133,7 +4743,8 @@
           } else { putAt(t, ev.clientX - ox, ev.clientY - oy, (Math.random() - 0.5) * 18); snd('detent'); }
         };
         window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up, { once: true });
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
       });
     }
     /* the bag: spell a word, or deal seven, or put the letters back */
@@ -4224,12 +4835,16 @@
       if (pv && pv.id === 'firstrun' && helloPreview !== pv) { helloPreview = pv; const k = trying || 'first'; trying = null; if (k === 'card') SR.openSetup(); else if (k === 'first') openSetupIntro({ preview: true }); else openDeskSetup({ preview: true }); return; }
       if (!pv && su && su.preview && !su.built) closeMat();
       if (!pv) { helloPreview = null; if (realRack) { rack = realRack; realRack = null; putBack(); drawRack(); } }
-      if (wasPreview && !pv) {
+      /* (V11: said first, so a reload that fails can't fail again on every redraw) */
+      const leaving = wasPreview && !pv;
+      wasPreview = !!pv;
+      if (leaving) {
         const reload = (obj, k) => { Object.keys(obj).forEach((x) => delete obj[x]); Object.assign(obj, stored(k, {})); };
-        reload(meals, 'sundayreset.v7.meals'); reload(routines, 'sundayreset.v7.routines'); reload(planned, 'sundayreset.v7.planned');
+        /* (V11: meals live on the board and come back with it; reloading their old name threw on every redraw
+           after leaving a made up board, and the bottom bar stopped changing) */
+        reload(routines, 'sundayreset.v7.routines'); reload(planned, 'sundayreset.v7.planned');
         snooze = stored('sundayreset.v7.snooze', null);
       }
-      wasPreview = !!pv;
       if (hello && hello.preview && !pv) { hello = null; helloCard.hidden = true; putBack(); }
       let met = true; try { met = localStorage.getItem('sundayreset.v7.met') === '1'; } catch (e) { /* fine */ }
       /* V11: a first visit opens the way the Sunday Reset does: one page that says what's ahead, then the
@@ -4863,8 +5478,16 @@
         try { el.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         snd('pick'); el.classList.add('c-drag-on');
         let last = null;
+        /* V11: the answers as they were, for a touch the browser takes back: that puts them back, never at
+           where the cancel happened to be (it jumped work to 5 am) */
+        const before = su && su.a ? JSON.stringify(su.a) : null;
         const move = (ev) => { const v = f(ev.clientX, step, false); if (v != null && v !== last) { last = v; snd('detent'); } };
-        const up = (ev) => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.classList.remove('c-drag-on'); f(ev.clientX, step, true); snd('clack', 0.7); refresh(); };
+        const up = (ev) => {
+          el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.classList.remove('c-drag-on');
+          if (ev.type !== 'pointercancel') { f(ev.clientX, step, true); snd('clack', 0.7); }
+          else if (before && su && su.a) { const was = JSON.parse(before); Object.keys(su.a).forEach((x) => { if (!(x in was)) delete su.a[x]; }); Object.assign(su.a, was); }
+          refresh();
+        };
         el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
       });
     }
@@ -5336,7 +5959,9 @@
       Kit.renders.push(() => { const open = libOpen(); if (open && !wasOpen) used(); wasOpen = open; });
       setInterval(() => {
         if (!tidyOn() || !libOpen() || SR.view.reset || SR.view.preview && SR.view.preview.id === 'firstrun') return;
+        /* (never while anything is in hand: a tile, a piece, a block being moved, a meal; that's use too) */
         if (document.querySelector('.c-ghost-block') || document.body.classList.contains('c-away')) return;
+        if (document.body.classList.contains('carrying') || (SR.inHand)) { lastUse = Date.now(); return; }
         if (Date.now() - lastUse < IDLE) return;
         if (SR.view.zoom === 'day' && !SR.view.bench) kitAway(true); else if (SR.view.bench && SR.view.bench.tab === 'blocks') SR.view.bench = null; else return;
         if (SR.Snd.slide) SR.Snd.slide();
@@ -5383,4 +6008,221 @@
       };
     }
   });
+
+  /* == V11: smart breakdowns ==
+     docs/SMART-BREAKDOWNS.md. Claude suggests a to-do's steps with a time on each, or a goal's parts, for
+     a name the board's own library doesn't know (Model.breakdown and Model.goalForExam always come first).
+     Private by default: nothing is sent until the person turns it on on this device, after a sheet that
+     says what's sent; then an ask sends only the words of that one to-do or goal (and the step size, or
+     the goal's date) to /api/smart, which asks Claude Haiku. It never stands in the way of the built-in
+     steps: an ask settles within 15 seconds, and anything that went wrong or came back odd settles as null.
+       SR_ai.ready()       the server is set up (asked once a page load; false until it answers)
+       SR_ai.available()   ready, and turned on on this device
+       SR_ai.enable(fn, { kind })  on already: fn() now. Otherwise the sheet (kind 'parts' words it for a
+                           goal); Turn on keeps the choice on this device (localStorage sundayreset.ai, never
+                           the board; a made up board keeps it in memory only) and calls fn. Gives a Promise
+                           of whether it's on. { sheet: false } is for Settings, whose page says the same
+                           things beside the switch.
+       SR_ai.disable()     off on this device
+       SR_ai.breakdown(name, { size })  a Promise of { steps: [{ name, dur }], total, source: 'claude' } or null
+       SR_ai.goalParts(name, { date })  a Promise of { parts: [{ name, min }], note, total, source: 'claude' } or null
+       SR_ai.lastError()   what the last ask that settled as null ran into, { code, message }, or null
+     The same ask (name, and size or date) is answered once a page load; { fresh: true } asks again. A window
+     event, sr-ai, says when the server answered ready or the switch changed. Characters past ASCII in the
+     patterns here are \u{...} escapes, so no dash sits in this file. */
+  {
+    const AI_KEY = 'sundayreset.ai', AI_URL = '/api/smart', AI_WAIT = 15000;
+    const AI_POLICY = 'https://sunday-reset-site.vercel.app/privacy';
+    /* smart: the checks. Nothing from the server is used until it passes them. Steps: 1 to 15, each 5 to
+       240 minutes on the 5 minute grid, names cut at a word to 60 characters with no dash for a pause and
+       none of the filler words left in, and a first step of 10 minutes or less (a longer one splits off its
+       first 10, as Model.breakdown does). Parts: 1 to 15, each 15 minutes to 500 hours on the same grid. */
+    const aiCtrl = /[\u{0}-\u{1F}\u{7F}-\u{9F}\u{2028}\u{2029}\u{202A}-\u{202E}\u{2066}-\u{2069}]/u;
+    const aiCut = (text, max) => {
+      let t = String(text || '');
+      if (t.length <= max) return t;
+      const head = t.slice(0, max + 1), sp = head.lastIndexOf(' ');
+      t = sp >= Math.floor(max / 2) ? head.slice(0, sp) : t.slice(0, max);
+      for (;;) {
+        const next = t.replace(/[\s,;:.\u{2019}'-]+$/u, '').replace(/\s+(?:and|or|but|the|a|an|to|of|for|with|in|on|at|by|from|into|your|my|their|its)$/i, '');
+        if (next === t) return t;
+        t = next;
+      }
+    };
+    const aiWords = (text, max, sentence) => {
+      let t = String(text == null ? '' : text).replace(new RegExp(aiCtrl.source, 'gu'), ' ')
+        .replace(/(\d)\s*[\u{2012}-\u{2015}]\s*(\d)/gu, '$1 to $2')
+        .replace(/\s*(?:[\u{2012}-\u{2015}]|-{2,})\s*|\s+-\s+/gu, ', ')
+        .replace(/\b(?:just|simply|really|please|actually)\b/gi, ' ')
+        .replace(/(\w)'(\w)/g, '$1\u{2019}$2')
+        .replace(/\s+/g, ' ').replace(/\s+([,.;:!?])/g, '$1').replace(/([,;:])(?:\s*[,;:])+/g, '$1')
+        .trim().replace(/^[\s,;:.!?]+/, '').replace(/[\s,;:]+$/, '');
+      if (!sentence) t = t.replace(/[.!]+$/, '');
+      t = aiCut(t, sentence ? max - 1 : max);
+      if (!t) return '';
+      t = t.charAt(0).toUpperCase() + t.slice(1);
+      return sentence && !/[.!?]$/.test(t) ? t + '.' : t;
+    };
+    const aiGrid = (n, lo, hi) => Number.isInteger(n) && n % 5 === 0 && n >= lo && n <= hi;
+    function aiSteps(list) {
+      if (!Array.isArray(list) || !list.length || list.length > 15) return null;
+      const out = [];
+      for (const s of list) {
+        if (!s || typeof s !== 'object' || typeof s.name !== 'string' || !aiGrid(s.dur, 5, 240)) return null;
+        const name = aiWords(s.name, 60);
+        if (name) out.push({ name, dur: s.dur });
+      }
+      if (!out.length) return null;
+      const f = out[0];
+      if (f.dur > 10) out.splice(0, 1, { name: aiCut(f.name, 42) + ', first 10 minutes', dur: 10 }, { name: aiCut(f.name, 50) + ', the rest', dur: f.dur - 10 });
+      return out.length <= 15 ? out : null;
+    }
+    function aiParts(data) {
+      if (!data || typeof data !== 'object' || !Array.isArray(data.parts) || !data.parts.length || data.parts.length > 15) return null;
+      const parts = [];
+      for (const p of data.parts) {
+        if (!p || typeof p !== 'object' || typeof p.name !== 'string' || !aiGrid(p.min, 15, 30000)) return null;
+        const name = aiWords(p.name, 60);
+        if (name) parts.push({ name, min: p.min });
+      }
+      if (!parts.length) return null;
+      return { parts, note: typeof data.note === 'string' ? aiWords(data.note, 160, true) : '', total: parts.reduce((a, p) => a + p.min, 0), source: 'claude' };
+    }
+    /* smart: asking */
+    let aiReady = null, aiErr = null, aiMem = null;
+    const aiAsked = new Map();
+    const aiEmit = () => { try { window.dispatchEvent(new CustomEvent('sr-ai')); } catch (e) { /* fine */ } };
+    const aiBoard = () => (window.SR && SR.view && SR.view.preview ? SR.view.preview.id || 'preview' : null);
+    /* the switch is this device's own; a made up board (a preview) holds it in memory, and lets go of it after */
+    const aiOn = () => {
+      if (aiMem && aiMem.board === aiBoard()) return aiMem.on;
+      aiMem = null;
+      try { const v = JSON.parse(localStorage.getItem(AI_KEY) || 'null'); return !!(v && v.on === true); } catch (e) { return false; }
+    };
+    const aiSet = (on) => {
+      aiAsked.clear();
+      if (aiBoard()) { aiMem = { on, board: aiBoard() }; return; }
+      try { localStorage.setItem(AI_KEY, JSON.stringify({ on, at: Date.now() })); aiMem = null; } catch (e) { aiMem = { on, board: null }; }
+    };
+    /* is the server set up? Asked once a page load; when it says yes, the screens that offer it draw again */
+    const aiCheck = () => {
+      if (aiReady !== null) return;
+      aiReady = 'asking';
+      const ac = typeof AbortController === 'function' ? new AbortController() : null;
+      const t = setTimeout(() => { if (ac) ac.abort(); }, AI_WAIT);
+      Promise.resolve().then(() => fetch(AI_URL, { cache: 'no-store', credentials: 'same-origin', signal: ac ? ac.signal : undefined }))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => !!(d && d.ready === true), () => false)
+        .then((yes) => {
+          clearTimeout(t);
+          aiReady = yes;
+          if (!yes) return;
+          aiEmit();
+          try { if (window.SR && SR.state && document.getElementById('hud-title') && !document.querySelector('.c-ghost-block')) SR.render(); } catch (e) { /* the next draw shows it */ }
+        });
+    };
+    const ready = () => { if (aiReady === null) aiCheck(); return aiReady === true; };
+    const available = () => ready() && aiOn();
+    /* smart: the sheet that asks first, once a device: what it does, exactly what's sent, that nothing else
+       leaves, who processes it, the policy, and Turn on or Not now. Closing it any other way is Not now, and
+       focus goes back where it was. */
+    function aiSheet(kind, then) {
+      const goal = kind === 'parts', back = document.activeElement;
+      let settled = false, card = null;
+      const settle = (yes) => { if (settled) return; settled = true; then(yes); };
+      /* words where "to-do" never breaks at its hyphen on a narrow screen */
+      const said = (tag, cls, text) => { const x = h(tag, cls); text.split(/(to-dos?)/).forEach((part, i) => { if (part) x.append(h('span', i % 2 ? 'c-ai-nb' : '', part)); }); return x; };
+      Kit.sheet('Smart breakdowns', (c) => {
+        card = c;
+        c.append(h('div', 'c-kick', 'Smart breakdowns'), h('h2', '', goal ? 'Let Claude suggest the parts?' : 'Let Claude suggest the steps?'));
+        c.appendChild(said('p', 'c-ai-lede', goal ? 'When the board doesn’t know a goal, Claude can suggest its parts and about how many hours each takes.' : 'When the board’s own steps don’t fit a to-do, Claude can suggest steps with a time on each.'));
+        const facts = h('ul', 'c-ai-facts');
+        [['What’s sent', goal ? 'The words of this goal, and its date.' : 'The words of this to-do, and the step size.'],
+          ['What stays here', 'Everything else on your board. Your other to-dos, your days, and the names on it never leave this device.'],
+          ['Who reads it', 'Anthropic, the company that makes Claude, processes it under its API terms. Sunday Reset doesn’t keep it.']]
+          .forEach(([k, v]) => { const li = h('li'); li.append(h('b', '', k), said('span', '', v)); facts.appendChild(li); });
+        c.appendChild(facts);
+        const link = h('a', 'link-out c-ai-link', 'Read the privacy policy');
+        link.href = AI_POLICY; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        c.appendChild(link);
+        const acts = h('div', 'c-ai-acts');
+        acts.append(Kit.btn('c-go', 'Turn on', () => { aiSet(true); Kit.closeSheet(); settle(true); }), Kit.btn('c-ghost', 'Not now', () => { Kit.closeSheet(); settle(false); }));
+        c.appendChild(acts);
+        c.appendChild(h('p', 'c-ai-small', 'Turn it off any time in Settings, Smart breakdowns.'));
+        /* Tab stays inside while it's open */
+        c.addEventListener('keydown', (e) => {
+          if (e.key !== 'Tab') return;
+          const list = [...c.querySelectorAll('button, a[href]')].filter((x) => !x.disabled && x.offsetParent !== null);
+          if (!list.length) return;
+          const first = list[0], last = list[list.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        });
+      }, 'c-ai');
+      /* however it closes (Turn on, Not now, the x, Esc, a tap outside), it answers once, and focus goes back */
+      const box = document.getElementById('app');
+      if (!card || !box || typeof MutationObserver !== 'function') return;
+      const mo = new MutationObserver(() => {
+        if (card.isConnected) return;
+        mo.disconnect();
+        settle(false);
+        const now = document.activeElement;
+        if ((!now || now === document.body) && back && back.isConnected && typeof back.focus === 'function') back.focus({ preventScroll: true });
+      });
+      mo.observe(box, { childList: true });
+    }
+    function enable(fn, opts) {
+      const o = opts || {};
+      const go = () => { if (typeof fn !== 'function') return; try { fn(); } catch (e) { console.error(e); } };
+      if (!ready()) return Promise.resolve(false);
+      if (aiOn()) { go(); return Promise.resolve(true); }
+      if (o.sheet === false) { aiSet(true); aiEmit(); go(); return Promise.resolve(true); }
+      return new Promise((done) => aiSheet(o.kind, (yes) => { if (yes) { aiEmit(); go(); } done(yes); }));
+    }
+    function disable() { aiSet(false); aiEmit(); }
+    /* one ask: only this one name (and its size or date) goes, and it settles within 15 seconds */
+    function aiAsk(body, check, fresh) {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!available() || !name || name.length > 140 || aiCtrl.test(name)) return Promise.resolve(null);
+      const send = JSON.stringify(Object.assign({}, body, { name }));
+      if (!fresh && aiAsked.has(send)) return aiAsked.get(send);
+      const p = new Promise((done) => {
+        let over = false;
+        const ac = typeof AbortController === 'function' ? new AbortController() : null;
+        const finish = (v, err) => {
+          if (over) return;
+          over = true; clearTimeout(t); aiErr = err || null;
+          if (ac) ac.abort();
+          if (!v) aiAsked.delete(send);
+          /* switched off while it was out: what came back isn't used */
+          done(v && aiOn() ? v : null);
+        };
+        const t = setTimeout(() => finish(null, { code: 'upstream', message: 'Claude took longer than 15 seconds.' }), AI_WAIT);
+        Promise.resolve().then(() => fetch(AI_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: send, cache: 'no-store', credentials: 'same-origin', signal: ac ? ac.signal : undefined }))
+          .then((r) => r.json().then((d) => ({ r, d }), () => ({ r, d: null })))
+          .then(({ r, d }) => {
+            if (r.ok) { const v = check(d); finish(v, v ? null : { code: 'upstream', message: 'Claude’s answer didn’t fit the board.' }); return; }
+            const code = d && typeof d.error === 'string' ? d.error : 'upstream';
+            if (code === 'not_ready') { aiReady = false; aiEmit(); }
+            finish(null, { code, message: d && typeof d.message === 'string' ? d.message.slice(0, 200) : 'Claude didn’t answer this time.' });
+          })
+          .catch(() => finish(null, { code: 'upstream', message: 'Claude didn’t answer this time.' }));
+      });
+      aiAsked.set(send, p);
+      return p;
+    }
+    function breakdown(name, opts) {
+      const o = opts || {}, size = ['small', 'medium', 'big'].includes(o.size) ? o.size : 'medium';
+      return aiAsk({ kind: 'steps', name, size }, (d) => {
+        const steps = d && aiSteps(d.steps);
+        return steps ? { steps, total: steps.reduce((a, s) => a + s.dur, 0), source: 'claude' } : null;
+      }, o.fresh);
+    }
+    function goalParts(name, opts) {
+      const o = opts || {}, date = typeof o.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : null;
+      return aiAsk(date ? { kind: 'parts', name, date } : { kind: 'parts', name }, (d) => aiParts(d), o.fresh);
+    }
+    window.SR_ai = { ready, available, enable, disable, breakdown, goalParts, lastError: () => aiErr };
+    aiCheck();
+  }
 })();

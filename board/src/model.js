@@ -346,6 +346,8 @@
     recMemo = { state, map: new Map() };
     try { return fn(); } finally { recMemo = was; }
   }
+  /* a planner that changes a date while the memo is on forgets that date's records */
+  function memoForget(state, date) { if (recMemo && recMemo.state === state) recMemo.map.delete(date); }
   function calendarRecords(state, ownerDate) {
     if (recMemo && recMemo.state === state) {
       let hit = recMemo.map.get(ownerDate);
@@ -1613,17 +1615,37 @@
      A soft block that's yours or open (Creative projects, Breathing room, a Free evening) makes room
      without moving; Work, an evening with someone, and everything hard don't. */
   const quietBlock = (b) => !!b.soft && !b.sleep && (b.cat === 'yours' || b.cat === 'open');
+  /* A date's blocks, the way calendarDay has them, for quiet time. When nothing from the days around it
+     reaches into the date and nothing of its own runs past midnight, its own records laid alone are
+     exactly those blocks, at a fraction of the work; otherwise calendarDay works them out. */
+  function dayBlocks(state, date) {
+    const own = calendarRecords(state, date);
+    if (own.some((b) => b.start < 0 || b.start + b.dur > 1440)) return calendarDay(state, date).blocks;
+    for (let k = -7; k <= 1; k++) {
+      if (!k) continue;
+      const owner = addDays(date, k);
+      for (const b of calendarRecords(state, owner)) {
+        const s = windowTime(date, owner, b.start);
+        if (s < 1440 && s + b.dur > 0) return calendarDay(state, date).blocks;
+      }
+    }
+    let list = [];
+    own.slice().sort((a, b) => a.layer - b.layer || byStart(a, b)).forEach((b) => { list = lay(list, b); });
+    return clip(list, 0, 1440, 1);
+  }
   /* The quiet stretches of a date inside a part of the day, from `after` on, snapped to the grid:
-     [{ start, end, free }] (free: inside time kept free on purpose). Trips have none. */
-  function quietWindows(state, date, when, after) {
+     [{ start, end, free }] (free: inside time kept free on purpose). Trips have none. dayOf: the app's
+     own cached calendarDay for the board as it is, when it has one (optional). */
+  function quietWindows(state, date, when, after, dayOf) {
     if (tripOn(state, date)) return [];
     const span = PART_SPAN[when] || PART_SPAN.any;
     const lo = Math.max(span[0], after || 0), hi = span[1];
     if (hi - lo < STEP) return [];
-    const day = calendarDay(state, date);
+    const given = typeof dayOf === 'function' ? dayOf(date) : null;
+    const blocks = given && Array.isArray(given.blocks) ? given.blocks : dayBlocks(state, date);
     const pieces = [];
     let c = lo;
-    for (const b of day.blocks.filter((x) => x.start < hi && x.start + x.dur > lo).sort(byStart)) {
+    for (const b of blocks.filter((x) => x.start < hi && x.start + x.dur > lo).sort(byStart)) {
       const s = Math.max(lo, b.start), e = Math.min(hi, b.start + b.dur);
       if (s > c) pieces.push({ start: c, end: s, free: false });
       if (quietBlock(b) && e > Math.max(s, c)) pieces.push({ start: Math.max(s, c), end: e, free: !!b.free });
@@ -1678,6 +1700,7 @@
   }
   /* put an add on a date at a start already found quiet (no pushes to apply) */
   function putAdd(state, date, add, start) {
+    memoForget(state, date);
     const dd = dateRec(state, date);
     dd.adds = dd.adds || [];
     const a = Object.assign({}, add, { id: add.id || newId('a'), start, dur: gridDur(add.dur) });
@@ -2201,24 +2224,31 @@
     }
     return t;
   }
-  const quietMinutes = (state, date, when, after) => quietWindows(state, date, when, after).reduce((a, w) => a + w.end - w.start, 0);
-  function goalProgress(state, goal, today, nowMin) {
+  const quietMinutes = (state, date, when, after, dayOf) => quietWindows(state, date, when, after, dayOf).reduce((a, w) => a + w.end - w.start, 0);
+  /* Days from today on where one of the goal's sessions was skipped or kept short: the person said how
+     that day went, so the planner leaves it as it is. Nothing new goes on it, nothing on it comes off,
+     and its time spreads forward from the next day. */
+  const heldDays = (sessions, today) => new Set(sessions.filter((x) => x.date >= today && (x.add.skipped || x.add.partial)).map((x) => x.date));
+  /* opts.day: the app's cached calendarDay for the board as it is now, so a what-if (another day, longer
+     days, a later date) costs little; without it each day is worked out here */
+  function goalProgress(state, goal, today, nowMin, opts) {
     const g = goalOf(state, goal);
     if (!g) return null;
-    return withRecMemo(state, () => progressOf(state, g, today, nowMin));
+    return withRecMemo(state, () => progressOf(state, g, today, nowMin, opts && opts.day));
   }
-  function progressOf(state, g, today, nowMin) {
+  function progressOf(state, g, today, nowMin, dayOf) {
     const now = nowMin == null ? 0 : nowMin, tl = goalTally(state, g, today, nowMin);
     const parts = (g.parts || []).map((p) => {
       const did = tl.doneBy[p.id] || 0;
       return { id: p.id, name: p.name, min: p.min, done: !!p.done, doneMin: p.done ? p.min : Math.min(p.min, did), leftMin: p.done ? 0 : Math.max(0, p.min - did) };
     });
     const totalMin = parts.reduce((a, p) => a + p.min, 0), doneMin = parts.reduce((a, p) => a + p.doneMin, 0), leftMin = totalMin - doneMin;
-    const days = goalDays(state, g, today);
+    const days = goalDays(state, g, today), held = heldDays(tl.sessions, today);
     let capacityMin = 0;
     for (const d of days) {
       const room = Math.max(0, goalCap(g, d) - (tl.spent[d] || 0));
-      capacityMin += Math.min(room, floorGrid(quietMinutes(state, d, (g.rhythm || {}).when, d === today ? ceilGrid(now) : 0) + (tl.own[d] || 0)));
+      /* a day left as it is holds only what's still on it */
+      capacityMin += held.has(d) ? Math.min(room, tl.own[d] || 0) : Math.min(room, floorGrid(quietMinutes(state, d, (g.rhythm || {}).when, d === today ? ceilGrid(now) : 0, dayOf) + (tl.own[d] || 0)));
     }
     const ws = weekStart(today), we = addDays(ws, 6), week = { plannedMin: 0, doneMin: 0 };
     let next = null;
@@ -2255,15 +2285,22 @@
      until its date, in proportion to each day's cap, within the quiet time of the part of the day it
      likes, in sessions no longer than its chunk, parts in order. Nothing goes on a trip day, an easy
      day, or the goal's own date. Returns { placed, removed, shortMin, message }. */
+  /* opts: { horizon: 14, day } (day as goalProgress has it, used only past the horizon, which planning
+     doesn't change) */
   function planGoal(state, goalId, today, nowMin, opts) {
+    return withRecMemo(state, () => planGoalNow(state, goalId, today, nowMin, opts || {}));
+  }
+  function planGoalNow(state, goalId, today, nowMin, opts) {
     const g = goalOf(state, goalId);
     const res = { placed: 0, removed: 0, shortMin: 0, message: '' };
     if (!g) return Object.assign(res, { message: 'That goal is gone.' });
-    const now = nowMin == null ? 0 : nowMin, H = Math.max(1, (opts && opts.horizon) || 14);
+    const now = nowMin == null ? 0 : nowMin, H = Math.max(1, opts.horizon || 14);
     const last = g.date ? addDays(g.date, -1) : addDays(today, H - 1), hEnd = minDate(addDays(today, H - 1), last);
-    for (const x of goalSessions(state, g.id)) {
-      if (x.add.pinned || x.add.skipped || x.date < today || x.date > hEnd || windowTime(today, x.date, x.add.start) < now) continue;
+    const sessions0 = goalSessions(state, g.id), held = heldDays(sessions0, today);
+    for (const x of sessions0) {
+      if (x.add.pinned || x.add.skipped || held.has(x.date) || x.date < today || x.date > hEnd || windowTime(today, x.date, x.add.start) < now) continue;
       removeAdd(state, x.add.id);
+      memoForget(state, x.date);
       res.removed++;
     }
     if (g.archived) return res;
@@ -2275,10 +2312,10 @@
     const toPlace = queue.reduce((a, x) => a + x.left, 0);
     if (!toPlace) return Object.assign(res, { message: (g.parts || []).every((p) => p.done) ? 'Every part is done.' : weekLine(state, g, today, nowMin) || 'Everything left already has a time.' });
     const when = (g.rhythm || {}).when, chunk = Math.max(STEP, floorGrid((g.rhythm || {}).chunk || 60));
-    const days = withRecMemo(state, () => goalDays(state, g, today).map((d) => {
-      const room = Math.max(0, goalCap(g, d) - (tl.spent[d] || 0) - (tl.own[d] || 0));
-      return { d, w: goalCap(g, d), c: floorGrid(Math.min(room, quietMinutes(state, d, when, d === today ? ceilGrid(now) : 0))) };
-    }));
+    const days = goalDays(state, g, today).map((d) => {
+      const room = held.has(d) ? 0 : Math.max(0, goalCap(g, d) - (tl.spent[d] || 0) - (tl.own[d] || 0));
+      return { d, w: goalCap(g, d), c: room ? floorGrid(Math.min(room, quietMinutes(state, d, when, d === today ? ceilGrid(now) : 0, d > hEnd ? opts.day : null))) : 0 };
+    });
     const share = evenShares(toPlace, days);
     res.shortMin = Math.round(share.short);
     /* each day's share on the grid, carrying what rounding leaves to the next day */
@@ -2324,13 +2361,15 @@
     if (!n) return '';
     return hoursText(total) + ' this week, about ' + hoursText(total / n) + ' a day.';
   }
-  /* a session that didn't happen: skipped, or shortened to what was done. Returns the minutes freed. */
+  /* a session that didn't happen: skipped, or shortened to what was done (partial). Returns the minutes
+     freed. Either way its day is left as it is from then on (heldDays). */
   function markSkip(a, how, minutes) {
     if (how === 'some' && minutes > 0) {
       const did = Math.max(STEP, Math.round(minutes / STEP) * STEP);
       if (did >= a.dur) return 0;
       const back = a.dur - did;
       a.dur = did;
+      a.partial = true;
       return back;
     }
     a.skipped = true;
@@ -2598,7 +2637,8 @@
          goalForExam('CFA Level I', Data): ten parts, hours 300, note 'About 300 hours is a common estimate.'
 
      Quiet time, the only time any planner here uses
-       quietWindows(state, date, when, after) gives [{ start, end, free }]; when: 'any' | 'morning' | 'afternoon' | 'evening'.
+       quietWindows(state, date, when, after, day) gives [{ start, end, free }]; when: 'any' | 'morning' | 'afternoon' | 'evening';
+         day (optional): the app's cached calendarDay(state, date) for the board as it is now.
        quietSlot(state, date, minutes, { when, strict, after }) gives the first start where it fits and nothing moves, or null.
 
      Spreading a to-do's steps
@@ -2624,17 +2664,22 @@
        newGoal(fields) gives { id, name, kind, date, start, parts: [{ id, name, min, done }], rhythm: { days, wd, we, when, chunk },
          cat, icon, paused, archived, answers } with ids and defaults; push it onto state.goals.
        goalSessions(state, goalId) gives [{ date, add }] in time order.
-       goalProgress(state, goalOrId, today, nowMin) gives { totalMin, doneMin, leftMin, daysLeft, capacityMin, behindMin, onTrack,
+       goalProgress(state, goalOrId, today, nowMin, { day }) gives { totalMin, doneMin, leftMin, daysLeft, capacityMin, behindMin, onTrack,
          week: { plannedMin, doneMin }, nextSession, partsLeft, parts: [{ id, name, min, done, doneMin, leftMin }], perDay }.
-         About 20 ms for a goal four months away, so work it out once a render.
-       planGoal(state, goalId, today, nowMin, { horizon: 14 }) gives { placed, removed, shortMin, message }:
+         Pass a goal object with a different rhythm or date for a what-if. day (optional) is the app's cached
+         calendarDay for the board as it is now: about 1 ms a call with it, about 15 ms without, for a goal
+         four months away.
+       planGoal(state, goalId, today, nowMin, { horizon: 14, day }) gives { placed, removed, shortMin, message }
+         (day is used only past the horizon, which planning doesn't change; it helps when the cache is warm):
          '14.5 h this week, about 2 h a day.' or 'Behind by 137 h. Add a day, make days a little longer, or move the date.'
        skipGoalSession(state, date, addId, today, nowMin, 'all' | 'some', minutesDone) gives planGoal's result with { ok, skipped, how,
          back, spread }: '1 h spread over the days before Feb 24.'
        goalCheckIn(state, today) gives yesterday's unanswered sessions, one entry a goal: [{ goal, name, date, min, sessions }].
        answerCheckIn(state, goalId, date, 'yes' | 'some' | 'no', { today, nowMin, minutes }) gives planGoal's result with { ok, answer, back }.
-       A session is an add: { name, cat, icon, dur, start, src: { type: 'goal', id, part }, pinned, skipped }. moveAdd and
-       resizeBlock pin a session or a step; a skipped session stays in the adds and takes no time on the board.
+       A session is an add: { name, cat, icon, dur, start, src: { type: 'goal', id, part }, pinned, skipped, partial }.
+       placeAdd, moveAdd, and resizeBlock pin a session or a step. A skipped session stays in the adds and takes
+       no time on the board. A day where a session was skipped or kept short (partial) is left as it is from
+       then on: nothing new goes on it, what's on it stays, and its time spreads forward from the next day.
 
      Cook once, eat twice (slot: 'breakfast' | 'lunch' | 'dinner')
        cookExtra(state, { date, slot }, [{ date, slot }]) gives { ok, linked, name, to }. From Sunday's dinner to Monday's

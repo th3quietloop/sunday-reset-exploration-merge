@@ -163,6 +163,42 @@ test('a skipped session spreads forward under the cap', () => {
   assert.equal(M.skipGoalSession(st, '2026-11-06', 'nope', '2026-11-06', 0, 'all').ok, false);
 });
 
+test('a session that didn’t happen leaves the rest of its day alone; its time goes to the next days', () => {
+  // the sample family, a launch on weekdays: at 5:25 pm, the 5:15 session didn't happen
+  const OCT14 = '2026-10-14', st = D.sampleState(OCT14);
+  const tpl = M.goalForExam('Launch my portfolio site', D);
+  const g = M.newGoal({ name: 'Launch my portfolio site', kind: tpl.kind, date: '2026-11-20', today: OCT14, parts: tpl.parts, rhythm: { days: [1, 2, 3, 4, 5], wd: 60, we: 0, when: 'any' } });
+  st.goals.push(g);
+  M.planGoal(st, g.id, OCT14, 600);
+  const today = sessions(st, g).filter((x) => x.date === OCT14);
+  assert.deepEqual(today.map((x) => [x.add.start, x.add.dur]), [[1035, 45]], 'the open 45 minutes after pick up');
+  const r = M.skipGoalSession(st, OCT14, today[0].add.id, OCT14, 1045, 'all');
+  assert.equal(r.back, 45);
+  assert.deepEqual(sessions(st, g).filter((x) => x.date === OCT14 && !x.add.skipped), [], 'nothing new five minutes later');
+  assert.ok(r.spread.every((x) => x.date > OCT14));
+  // planning again later the same evening still leaves it alone
+  M.planGoal(st, g.id, OCT14, 1080);
+  assert.deepEqual(sessions(st, g).filter((x) => x.date === OCT14 && !x.add.skipped), []);
+  // a day skipped ahead of time keeps its other session where it is and gets nothing new, every time it's planned
+  const solo = board(), b = withGoal(solo);
+  b.parts.filter((p) => /Essay|Performance/.test(p.name)).forEach((p) => { p.done = true; });
+  M.planGoal(solo, b.id, NOV1, 600);
+  const THU = '2026-11-05', two = sessions(solo, b).filter((x) => x.date === THU);
+  assert.equal(two.length, 2);
+  M.skipGoalSession(solo, THU, two[0].add.id, NOV1, 600, 'all');
+  const kept = sessions(solo, b).filter((x) => x.date === THU && !x.add.skipped);
+  assert.deepEqual(kept.map((x) => x.add.id), [two[1].add.id], 'the other one stays as it was');
+  M.planGoal(solo, b.id, '2026-11-02', 420);
+  assert.deepEqual(sessions(solo, b).filter((x) => x.date === THU && !x.add.skipped).map((x) => [x.add.id, x.add.start]), [[two[1].add.id, two[1].add.start]]);
+  // kept short (some of it happened) holds its day the same way
+  const FRI = '2026-11-06', fri = sessions(solo, b).find((x) => x.date === FRI);
+  const before = sessions(solo, b).filter((x) => x.date === FRI).length;
+  M.skipGoalSession(solo, FRI, fri.add.id, FRI, 9 * 60, 'some', 30);
+  assert.equal(M.findAdd(solo, fri.add.id).add.partial, true);
+  assert.equal(sessions(solo, b).filter((x) => x.date === FRI).length, before, 'nothing new on Friday');
+  for (const d of DAYS) assert.ok(onDay(solo, b, d, true) <= capOf(d), d);
+});
+
 test('behind when the cap can’t hold it, and it says so', () => {
   const st = board(), g = withGoal(st);
   M.planGoal(st, g.id, NOV1, 600);
@@ -295,6 +331,30 @@ test('two devices answer different days: the merge keeps both answers', () => {
   b.goals = [];
   assert.deepEqual(M.mergeBoards(copy(st), a, b).doc.goals.map((x) => x.name), ['Run a 10k']);
   assert.equal(g.name, 'Pass the bar exam');
+});
+
+test('quiet time read the quick way is exactly what calendarDay says, on every day of a year', () => {
+  const russell = D.defaultState('2026-09-27');
+  const night = board();
+  night.settings.hours = { start: 300, end: 1620 };
+  night.rhythm.days[5] = Object.assign({}, night.rhythm.days[5], { bed: 1560 });
+  night.dates['2026-11-20'] = { adds: [{ id: 'late', name: 'Late show', cat: 'yours', icon: 'film', start: 1380, dur: 150, src: { type: 'block', id: 'x' } }] };
+  night.events.push({ id: 'long', kind: 'timed', name: 'Retreat', cat: 'family', icon: 'star', date: '2026-12-03', start: 1200, dur: 2000 });
+  const fam = D.sampleState(NOV1);
+  M.placeAdd(fam, '2026-11-04', { name: 'Errand', cat: 'home', icon: 'car', dur: 60, src: { type: 'block', id: 'errand' } }, 450);
+  for (const st of [russell, night, fam]) {
+    const cal = (d) => M.calendarDay(st, d);
+    for (const d of M.range('2026-09-27', 366)) {
+      for (const when of ['any', 'morning', 'evening']) assert.deepEqual(M.quietWindows(st, d, when, 0), M.quietWindows(st, d, when, 0, cal), d + ' ' + when);
+    }
+  }
+  // and progress worked out from the app's own days is the same
+  const st = board(), g = withGoal(st);
+  M.planGoal(st, g.id, NOV1, 600);
+  const cache = new Map(), day = (d) => { if (!cache.has(d)) cache.set(d, M.calendarDay(st, d)); return cache.get(d); };
+  assert.deepEqual(M.goalProgress(st, g, NOV1, 600, { day }), M.goalProgress(st, g, NOV1, 600));
+  const what = Object.assign({}, g, { date: '2027-03-24' });
+  assert.ok(M.goalProgress(st, what, NOV1, 600, { day }).capacityMin > M.goalProgress(st, g, NOV1, 600, { day }).capacityMin, 'a later date, as a what-if');
 });
 
 test('random plans, misses, and edits on Russell’s week keep every day whole and never move a locked block', () => {

@@ -1,0 +1,45 @@
+/* == V11: picking things up with a finger, and what steps aside while something is in hand ==
+   Loads after frame.css (the files load in name order), so its sheet rules win where both speak. */
+
+/* A list full of tiles still scrolls under a thumb: a tile lets its list scroll until a press lifts it
+   (app.js dragSource, LIFT_MS), or a first move across the list does. The tray that scrolls sideways lets a
+   thumb scroll it sideways. A tile that adds something is a plain button. A handle (a step's grip) keeps
+   touch-action none and lifts as it moves. */
+body.feel .tile { touch-action: pan-y; }
+body.feel .rack:not(.resetting) .rack-body .tile { touch-action: pan-x; }
+body.feel .tile.add { touch-action: manipulation; }
+body.feel .c-drag { touch-action: pan-y; }
+body.feel .c-su-lane .c-su-lb.block { touch-action: pan-y; }
+/* (no gray flash on a tap, and a long press never opens the system's menu or selects the words) */
+body.feel { -webkit-tap-highlight-color: transparent; }
+body.feel .tile, body.feel .c-drag, body.feel .onb-piece, body.feel .c-ltile, body.feel .step .grip { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* The press: it dips (the :active press), then the tile rises as it's held, so the hold reads as a lift on
+   its way; held long enough, it's in hand (.held), and the carry takes over from there */
+body.feel .tile.pressing:not(.add), body.feel .tile.pressing:not(.add):active, body.feel .c-drag.c-pressing { transform: translateY(-2px) scale(1.04); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 14px 26px rgba(0, 0, 0, 0.36); transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s, box-shadow 0.24s ease-out 0.06s; }
+body.feel .tile.held:not(.add), body.feel .tile.held:not(.add):active, body.feel .c-drag.c-lifting { transform: translateY(-3px) scale(1.06); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 18px 32px rgba(0, 0, 0, 0.4); transition: transform 0.12s ease-out, box-shadow 0.12s ease-out; }
+/* (Calmer motion and the system's reduced motion: no rise, the press still shows by its shadow) */
+body.calm .tile.pressing, body.calm .tile.held, body.calm .c-drag.c-pressing, body.calm .c-drag.c-lifting { transform: none; transition: none; }
+@media (prefers-reduced-motion: reduce) { body.feel .tile.pressing, body.feel .tile.held, body.feel .c-drag.c-pressing, body.feel .c-drag.c-lifting { transform: none; transition: none; } }
+
+/* While something is in hand (body.carrying: a tile, a piece, a block being moved or stretched, a meal), a
+   toast never stands between it and the board: a drop goes through, and the toasts step aside until it's
+   put down, so the rows under them show. They come back as they were, Undo and all */
+body.carrying #toasts, body.carrying #toasts .toast { pointer-events: none !important; }
+body.feel #toasts { transition: opacity 0.12s ease-out; }
+body.carrying #toasts { opacity: 0; visibility: hidden; transition: opacity 0.12s ease-out, visibility 0s linear 0.12s; }
+body.calm #toasts, body.calm.carrying #toasts { transition: none; }
+@media (prefers-reduced-motion: reduce) { body.feel #toasts, body.carrying #toasts { transition: none; } }
+
+/* The reset's sheet along the bottom of a phone, or an upright tablet, clears the home indicator */
+@media (max-width: 759px) { body.c-resetting .rack.resetting { bottom: max(8px, env(safe-area-inset-bottom)) !important; } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { body.c-resetting .rack.resetting { bottom: max(12px, env(safe-area-inset-bottom)) !important; } }
+
+/* A place to drop is never cut off: on a board too narrow for the name's nine slots beside its label (an
+   upright iPad, a phone on its side), the name's row stacks, the label over the rack, and the slots share
+   the row's whole width. The ninth slot sat under the board's edge there, and a letter dropped on it
+   landed nowhere */
+@container (max-width: 440px) {
+  .c-su-row.on:has(.c-su-rackslot) { grid-template-columns: minmax(0, 1fr); }
+  .c-su-row.on .c-su-rackslot { --slot: clamp(22px, calc((100cqw - 56px) / 9 - 6px), 46px); }
+}

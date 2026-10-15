@@ -1,0 +1,139 @@
+/* == V11: big things, small blocks. Break it down and Spread it out in a to-do's panel, the reset's To-dos
+   tiles with what they can do, and Didn't get to it (the screens in board/src/app.js, "V11: big things, small
+   blocks") ==
+   On the surface tokens (polish.css): raised cards at 6 percent white, white fill for the picked choice, gold
+   only for the one call to action. Spacing on 4 px steps; words 12 px and up; 44 px targets for a finger. */
+
+/* a to-do's actions: Give the next step a time is a long label, so it keeps a row of its own, gold or not */
+.c-tdp-acts .small.c-tdp-wide { flex-basis: 100%; }
+/* a part of the panel brought into view lands under the panel's band, not behind it */
+.side .c-tdp-steps { scroll-margin-top: 76px; }
+/* a step's longer time line ("Was yesterday, 7 pm") lets its length move under it rather than off the row */
+.side .c-tdp-list .step-meta { flex-wrap: wrap; row-gap: 4px; }
+
+/* a to-do with no steps offers Break it down first, in its list, saying what it would give */
+.side .c-tdp-list .c-tdp-bdrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 16px 8px 12px; border: 0; border-radius: 0; background: transparent; color: var(--tx); text-align: left; cursor: pointer; box-shadow: inset 0 -1px 0 var(--sf-edge); }
+.side .c-tdp-list .c-tdp-bdrow:hover { background: var(--sf-hover); }
+.side .c-tdp-list .c-tdp-bdrow:focus-visible { outline: 3px solid #FFFFFF; outline-offset: -3px; border-radius: 12px 12px 0 0; }
+.c-tdp-bdrow > canvas { width: 16px !important; height: 16px !important; margin-left: 4px; }
+.c-tdp-bdrow > canvas:last-child { width: 12px !important; height: 12px !important; }
+.c-tdp-bdw { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-tdp-bdw b { font: 600 14px/1.3 var(--font); color: var(--tx); }
+.c-tdp-bdw span { font: 500 13px/1.3 var(--font); color: var(--tx-2); }
+
+/* a name that sounds like a goal with a date: one calm line, and a way to Goals */
+.c-bd-goal { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 8px 8px 8px 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-tdp-steps > .c-bd-goal { margin-top: -4px; }
+.c-bd-goal p { margin: 0; flex: 1 1 160px; font: 500 14px/1.4 var(--font); color: var(--tx-2); }
+.c-bd-goal .small { min-height: 36px; padding: 0 12px; font-size: 13px; background: var(--sf-hover); }
+
+/* == Break it down: a raised card in the Steps section == */
+.c-bd { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--sf-raised); scroll-margin-top: 76px; }
+.c-bd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.c-bd-h, .c-sp-h { margin: 0; font: 600 16px/1.3 var(--font); color: var(--tx); }
+.c-bd-h:focus, .c-sp-h:focus { outline: none; }
+.c-bd-h:focus-visible, .c-sp-h:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; border-radius: 4px; }
+.c-bd-head .small.quiet { min-height: 32px; padding: 0 8px; margin-right: -8px; font-size: 13px; }
+/* finer or coarser: two halves of one control, the picked one white */
+.c-bd-size { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.22); }
+.c-bd-seg { min-height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tx-2); font: 600 13px/1.2 var(--font); cursor: pointer; }
+.c-bd-seg:hover { background: var(--sf-hover); color: var(--tx); }
+.c-bd-seg[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); }
+.c-bd-seg:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 1px; }
+/* the steps: a name to type over and its x on one line, how long under it */
+.c-bd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.c-bd-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "start start" "name x" "len len"; column-gap: 8px; row-gap: 4px; padding: 8px 0; box-shadow: inset 0 -1px 0 var(--sf-edge); }
+.c-bd-row:first-child { padding-top: 0; }
+.c-bd-start { grid-area: start; justify-self: start; font: 600 12px/1.3 var(--font); color: #8FD3B1; padding-left: 4px; }
+.c-bd-name { grid-area: name; display: block; width: 100%; min-width: 0; min-height: 32px; font: 600 14px/1.35 var(--font); color: var(--tx); background: transparent; border: 0; border-radius: 6px; padding: 6px 4px; resize: none; overflow: hidden; field-sizing: content; }
+.c-bd-name:hover { background: var(--sf-raised); }
+.c-bd-name:focus { outline: none; background: var(--sf-raised); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
+.c-bd-row .c-bd-x { grid-area: x; align-self: start; }
+.c-bd-len { grid-area: len; display: inline-flex; align-items: center; gap: 2px; justify-self: start; }
+.c-bd-len .mini-btn { background: var(--sf-hover); }
+.c-bd-len .mini-btn:hover:not(:disabled) { background: var(--sf-press); }
+.c-bd-len .mini-btn:disabled { background: transparent; }
+.c-bd-dur { min-width: 56px; text-align: center; font: 600 13px/1.2 var(--font); font-variant-numeric: tabular-nums; color: var(--tx-2); white-space: nowrap; }
+/* one of your own, last */
+.c-bd-addrow { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 4px 0 8px; border-radius: 8px; }
+.c-bd-addrow canvas { width: 14px !important; height: 14px !important; flex: none; }
+.side .c-bd-addrow .input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 8px 0; font-size: 14px; font-weight: 500; }
+.side .c-bd-addrow .input:focus, .side .c-bd-addrow .input:focus-visible { outline: none; }
+.c-bd-addrow:focus-within { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
+.c-bd-total { margin: 0; font: 500 14px/1.4 var(--font); color: var(--tx-2); }
+.c-bd-line { margin: 0; font: 500 13px/1.45 var(--font); color: var(--tx-2); }
+.c-bd-line:empty { display: none; }
+.c-bd-ai { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.c-bd-ai .small.quiet { min-height: 36px; padding: 0 12px; margin-left: -12px; font-size: 14px; color: var(--tx); }
+.side .c-bd-go, .side .c-sp-go { width: 100%; min-height: 44px; font-size: 14px; justify-content: center; }
+/* a button that can't be used is the surface with quiet words, never a lit gold */
+.side .small.primary.c-bd-go:disabled { background: var(--sf-raised); color: var(--tx-3); cursor: default; }
+
+/* == Spread it out: its own raised card, above the steps == */
+.c-sp { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--sf-raised); scroll-margin-top: 76px; }
+.c-sp .c-sp-field { gap: 8px; }
+.c-sp .field > .lbl { font: 600 13px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--tx-2); }
+.c-sp .chips { gap: 4px; }
+.c-sp .chip-btn { min-height: 36px; padding: 0 12px; font: 600 13px/1.2 var(--font); background: var(--sf-hover); }
+.c-sp .chip-btn:hover { background: var(--sf-press); }
+.c-sp .chip-btn[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); }
+.c-sp .chips.days7 { margin-top: -8px; grid-template-columns: repeat(7, minmax(0, 40px)); gap: 4px; }
+.c-sp .chips.days7 .chip-btn { padding: 0; min-height: 0; }
+.c-sp-cap { gap: 4px; }
+.c-sp-cap .c-sp-capv { flex: 1; text-align: center; font: 600 14px/1.2 var(--font); color: var(--tx); }
+.c-sp-cap button { background: var(--sf-hover); }
+.c-sp-cap button:disabled { background: transparent; cursor: default; }
+.c-sp-cap button:disabled canvas { opacity: 0.35; }
+.c-sp > .c-sp-by { align-self: flex-start; max-width: 100%; background: var(--sf-hover); }
+.c-sp > .c-sp-by:hover { background: var(--sf-press); }
+.c-sp-by span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the days as the engine fills them: a week to a row, each step a chip in its block's color */
+.c-sp-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.c-sp-wd { font: 600 12px/1.2 var(--font); color: var(--tx-3); text-align: center; padding-bottom: 4px; }
+.c-sp-day { display: flex; flex-direction: column; gap: 4px; min-height: 52px; padding: 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); min-width: 0; }
+.c-sp-day.off { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-sp-day.out { background: transparent; }
+.c-sp-dn { font: 600 12px/16px var(--font); color: var(--tx-2); text-align: center; font-variant-numeric: tabular-nums; }
+.c-sp-day.out .c-sp-dn, .c-sp-day.off .c-sp-dn { color: var(--tx-4); }
+.c-sp-day.today .c-sp-dn { color: var(--tx); }
+.c-sp-day.today .c-sp-dn::after { content: ""; display: block; width: 4px; height: 4px; margin: 1px auto 0; border-radius: 50%; background: #FFFFFF; }
+.c-sp-day.by { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5); }
+.c-sp-chip { display: block; min-width: 0; padding: 0; border-radius: 4px; background: var(--bg); color: var(--ink); font: 600 12px/20px var(--font); text-align: center; white-space: nowrap; overflow: hidden; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
+.c-sp-msg { margin: 0; font: 500 14px/1.45 var(--font); color: var(--tx); }
+.c-sp-msg.ask::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #E88A6E; margin-right: 8px; vertical-align: 1px; }
+.c-sp-choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -8px; }
+.c-sp-choices .small { min-height: 40px; padding: 0 12px; font-size: 14px; background: var(--sf-hover); }
+.c-sp-choices .small:hover { background: var(--sf-press); }
+.c-sp-wait { margin: 0; font: 500 13px/1.45 var(--font); color: var(--tx-3); }
+/* on a phone a day is a little shorter, and a tile's two buttons may take two lines for their words */
+@media (max-width: 599px) {
+  .c-sp-day { min-height: 48px; }
+  .c-tdw-btn { white-space: normal; }
+}
+
+/* == the reset's To-dos step: a tile with what it can do, under it == */
+.c-tilegrid > .c-tdw { display: flex; flex-direction: column; min-width: 0; transition: transform 0.16s ease-out; }
+.c-tdw > .tile { flex: 1 1 auto; width: auto !important; min-width: 0 !important; max-width: none !important; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.c-tdw > .tile:hover { transform: none; }
+.c-tdw:has(> .tile:hover) { transform: translateY(-2px); }
+.c-tdw-acts { display: flex; border-radius: 0 0 12px 12px; background: var(--sf-hover); overflow: hidden; }
+.c-tdw-btn { flex: 1 1 0; min-width: 0; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 4px; border: 0; background: transparent; color: var(--tx); font: 600 13px/1.2 var(--font); text-align: center; white-space: nowrap; cursor: pointer; }
+/* two to a bar: the words alone, so each fits on one line */
+.c-tdw-btn + .c-tdw-btn, .c-tdw-btn:has(+ .c-tdw-btn) { font-size: 12px; }
+.c-tdw-btn + .c-tdw-btn canvas, .c-tdw-btn:has(+ .c-tdw-btn) canvas { display: none; }
+.c-tdw-btn + .c-tdw-btn { box-shadow: inset 1px 0 0 var(--sf-edge); }
+.c-tdw-btn:hover { background: var(--sf-press); }
+.c-tdw-btn:focus-visible { outline: 3px solid #FFFFFF; outline-offset: -3px; }
+.c-tdw-btn canvas { width: 14px !important; height: 14px !important; flex: none; }
+
+/* a finger gets 44 px */
+@media (pointer: coarse) {
+  .c-bd-seg, .c-sp .chip-btn, .c-bd-goal .small, .c-bd-ai .small.quiet, .c-bd-head .small.quiet, .c-sp-choices .small, .c-tdw-btn { min-height: 44px; }
+  .c-sp .chips.days7 { grid-template-columns: repeat(7, minmax(0, 44px)); }
+  .c-bd-name { min-height: 44px; padding: 10px 4px; }
+  .side .c-tdp-list .c-tdp-bdrow { min-height: 64px; }
+}
+/* calmer motion: nothing lifts */
+body.calm .c-tilegrid > .c-tdw { transition: none; }
+body.calm .c-tdw:has(> .tile:hover) { transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-tilegrid > .c-tdw { transition: none; } .c-tdw:has(> .tile:hover) { transform: none; } }

@@ -473,7 +473,10 @@
     const grip = new T.Mesh(gripGeo, new T.MeshBasicMaterial({ transparent: true, depthWrite: false }));
     grip.visible = false; grip.renderOrder = 2;
     g.add(grip);
-    g.userData = { body, face, pin, halo, grip, canGrip: false, key: null, w: -1, sig: '', target: new T.Vector3(), lift: 0, squash: 0, shrink: null, pickable: true, kind: 'block' };
+    /* (V11: every number a block moves by starts here, set: its speed, its dip, its grip, its glow. Started
+       lazily in three places, one of them left the dip unset, and a block set down before its first frame
+       went NaN and vanished where it landed) */
+    g.userData = { body, face, pin, halo, grip, canGrip: false, key: null, w: -1, sig: '', target: new T.Vector3(), lift: 0, squash: 0, shrink: null, pickable: true, kind: 'block', vel: new T.Vector3(), pressK: 0, gripK: 0, haloK: 0 };
     body.userData.owner = g; face.userData.owner = g;
     return g;
   }
@@ -3206,7 +3209,7 @@
      board is there the moment you look. */
   function wake() { fit(); snapCamera(); settleTiles(); for (let k = 0; k < 40 && pops.length; k++) stepPops(0.1); }
   /* true when the board is framed: the camera found a distance that shows it inside the panels */
-  const framed = () => camTo.dist < 290 && cam.dist < 290 && isFinite(cam.dist);
+  const framed = () => camTo.dist < 290 && cam.dist < 290 && isFinite(cam.dist) && (!FEEL || (isFinite(cam.look.x) && isFinite(cam.look.y) && isFinite(cam.look.z)));
   /* the desk leans a little toward a mouse; never on a phone's day, where a lean left behind by the
      last tap turns the board crooked */
   function parallax(nx, ny) { if (quality === 'low' || reduced || phoneDay) { parTarget.set(0, 0, 0); return; } parTarget.set(nx * 0.35, -ny * 0.2, 0); }
@@ -3268,7 +3271,8 @@
   function resetView() { focus.pt = null; user.zoomTo = 1; user.panTo.set(0, 0, 0); user.panVel.set(0, 0, 0); }
   /* lean in toward a point on the desk (null to settle back); k is how strongly */
   function lean(p, k) {
-    if (!p) { user.leanTo = 0; user.leaning = false; return; }
+    /* (V11: a point that isn't a number is no point to lean toward: the camera settles instead) */
+    if (!p || (FEEL && (!Number.isFinite(p.x) || !Number.isFinite(p.z)))) { user.leanTo = 0; user.leaning = false; return; }
     /* feel: with calmer motion the camera doesn't lean at all, rather than jump */
     if (FEEL && reduced) { user.leanTo = 0; return; }
     /* V11: a piece carried off the bench keeps the week and the bench side by side, so no lean in */
@@ -3399,6 +3403,64 @@
     } else if (u.grow == null) m.scale.set(1, 1, 1);
   }
 
+  /* == every number a block moves by stays a number ==
+     V11: a number that isn't one (NaN, Infinity) in a block's place, size, or turn draws it nowhere, and a
+     block that isn't drawn is a block that vanished (the demo at the Apple Store: a dip left unset, and a
+     dropped block never showed). Each frame step() looks at every block on the desk (watchBlocks): one with
+     such a number goes back to rest in its slot, at its own size, level and still, and the desk says so,
+     once for each block and what it was (World.debug.repairs, and the console, where the drag gate sees
+     it). The block in hand and the camera's aim get the same. */
+  const finite3 = (v) => !!v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+  const repairs = { count: 0, list: [], said: new Set() };
+  function noteRepair(what, key) {
+    repairs.count++;
+    if (repairs.list.length < 40) repairs.list.push({ what, key: key || null, at: Date.now() });
+    const k = what + '|' + (key || '');
+    if (repairs.said.has(k)) return;
+    repairs.said.add(k);
+    try { console.error('Sunday Reset: ' + what + (key ? ' (' + key + ')' : '') + ' had a number that is not a number, and was put back at rest'); } catch (e) { /* fine */ }
+  }
+  /* everything a block moves by is a number (a field it doesn't have yet is fine) */
+  const num = (v) => v == null || Number.isFinite(v);
+  function blockFinite(m) {
+    const u = m.userData;
+    return finite3(m.position) && finite3(m.scale) && finite3(m.rotation) && (!u.vel || finite3(u.vel))
+      && num(u.lift) && num(u.pressK) && num(u.gripK) && num(u.haloK);
+  }
+  /* back to rest: in its slot, at its own size, level, still, with nothing moving it */
+  function restBlock(m) {
+    const u = m.userData;
+    if (!finite3(u.target)) u.target.set(0, 0, 0);
+    m.position.copy(u.target); m.scale.set(1, 1, 1); m.rotation.set(0, 0, 0);
+    if (u.vel) u.vel.set(0, 0, 0); else u.vel = new T.Vector3();
+    u.lift = 0; u.pressK = 0; u.gripK = 0; u.haloK = 0; u.squash = 0;
+    u.fall = null; u.sq = null; u.rock = null; u.knock = null; u.grow = null; u.appear = null;
+    if (u.wave) { u.wave = null; tileMotions.delete(m); }
+  }
+  /* each frame: every block on the desk, the one in hand, the ones flying home, and the camera's aim */
+  function watchBlocks() {
+    const look = (m) => { if (!blockFinite(m)) { restBlock(m); noteRepair('a block', m.userData.key || m.userData.bkey); } };
+    week.blocks.forEach(look); dayb.blocks.forEach(look); bench.pieces.forEach(look);
+    const o = drag.obj;
+    if (o) {
+      if (!finite3(drag.target)) { drag.target.copy(finite3(o.position) ? o.position : new T.Vector3(0, BOARD_Y + 1.1, 0)); noteRepair('the aim of the block in hand'); }
+      if (!finite3(drag.vel)) { drag.vel.set(0, 0, 0); noteRepair('the speed of the block in hand'); }
+      if (!Number.isFinite(drag.roll.x) || !Number.isFinite(drag.roll.v)) drag.roll = { x: 0, v: 0 };
+      if (!Number.isFinite(drag.pitch.x) || !Number.isFinite(drag.pitch.v)) drag.pitch = { x: 0, v: 0 };
+      if (!finite3(o.position) || !finite3(o.scale) || !finite3(o.rotation)) { o.position.copy(drag.target); o.scale.set(1, 1, 1); o.rotation.set(-0.06, 0, 0); o.userData.appear = null; noteRepair('the block in hand'); }
+    }
+    if (drag.last && (!finite3(drag.last.pos) || !finite3(drag.last.vel))) drag.last = null;
+    homes.forEach((h) => { if (!finite3(h.from) || !finite3(h.to) || !finite3(h.m.position)) { if (finite3(h.to)) h.from.copy(h.to); else { h.from.set(0, 0, 0); h.to.set(0, 0, 0); } h.t = h.dur; noteRepair('a block on its way home'); } });
+    if (!finite3(user.leanAt) || !Number.isFinite(user.lean) || !Number.isFinite(user.leanTo)) { user.leanAt.set(0, 0, 0); user.lean = 0; user.leanTo = 0; camV.lean = 0; user.leaning = false; noteRepair('the lean'); }
+    if (!finite3(user.pan) || !finite3(user.panTo) || !finite3(user.panVel)) { user.pan.set(0, 0, 0); user.panTo.set(0, 0, 0); user.panVel.set(0, 0, 0); camV.pan.set(0, 0, 0); noteRepair('the pan'); }
+    if (!Number.isFinite(user.zoom) || !Number.isFinite(user.zoomTo)) { user.zoom = 1; user.zoomTo = 1; camV.zoom = 0; noteRepair('the zoom'); }
+    if (!finite3(cam.look) || !Number.isFinite(cam.dist) || !Number.isFinite(cam.elev) || !finite3(camV.look)) {
+      if (finite3(camTo.look) && Number.isFinite(camTo.dist) && Number.isFinite(camTo.elev)) snapCamera();
+      else { cam.look.set(0, 0, 0); camV.look.set(0, 0, 0); }
+      noteRepair('the camera');
+    }
+  }
+
   /* == feel: how a block moves ==
      One place for all of it: its lift (pointed at, picked), a dip while it's pressed, a fall and a landing
      when it's set down, and a small knock when another lands beside it. Everything rides on springs. */
@@ -3410,7 +3472,10 @@
     /* V11: a block set down before its first frame (adoptPosition and land give it a speed first) still
        starts with no dip, grip, or glow; left unset they were NaN, and the block vanished where it landed */
     if (!u.vel) u.vel = new T.Vector3();
-    if (u.pressK == null || u.pressK !== u.pressK) { u.pressK = 0; u.gripK = 0; u.haloK = 0; }
+    else if (!finite3(u.vel)) u.vel.set(0, 0, 0);
+    if (!Number.isFinite(u.pressK)) u.pressK = 0;
+    if (!Number.isFinite(u.gripK)) u.gripK = 0;
+    if (!Number.isFinite(u.haloK)) u.haloK = 0;
     /* a block placed from a panel waits, unseen, for the copy flying to it (land() lets it go) */
     if (u.held) {
       u.heldT = (u.heldT || 0) + dt;
@@ -3535,6 +3600,8 @@
     ms.forEach((m, i) => {
       const u = m.userData;
       if (!u.vel) u.vel = new T.Vector3();
+      /* (V11: a block that lands starts from numbers that are numbers, whatever it carried before) */
+      if (!blockFinite(m)) { restBlock(m); noteRepair('a block as it landed', u.key || u.bkey); }
       const held = u.held;
       if (held) { u.held = false; m.visible = true; }
       if (u.fall) { u.fall.fx = fx; return; }
@@ -3609,6 +3676,8 @@
   /* the landing outline fades in and glides from slot to slot */
   function ghostAim(g, x, y, z, sx, sz) {
     const u = g.userData;
+    /* (V11: an outline aimed at a point that isn't a number isn't shown, rather than drawn nowhere) */
+    if (![x, y, z, sx, sz].every(Number.isFinite)) { if (u.to) u.on = false; return; }
     const was = g.visible && u.on;
     if (!u.to) { u.to = new T.Vector3(); u.v = new T.Vector3(); u.op = 0; }
     u.to.set(x, y, z); u.sx = sx; u.sz = sz; u.on = true;
@@ -3720,6 +3789,10 @@
         o.scale.setScalar(u.appear == null ? 1 : u.appear);
       }
     } else if (drag.obj) {
+      /* (V11, calmer motion: a block picked up off a panel starts where it's aimed, at its own size, instead of
+         gliding in from the middle of the desk at the size it appears at) */
+      if (drag.fresh) { drag.obj.position.copy(drag.target); drag.fresh = false; }
+      if (drag.obj.userData.appear != null) { drag.obj.userData.appear = null; drag.obj.scale.setScalar(1); }
       drag.obj.position.lerp(drag.target, 1 - Math.exp(-dt * 16));
       drag.obj.rotation.z += (drag.tilt - drag.obj.rotation.z) * (1 - Math.exp(-dt * 10));
       drag.tilt *= Math.exp(-dt * 6);
@@ -3734,6 +3807,8 @@
         const now = nowMs();
         for (let i = feelQueue.length - 1; i >= 0; i--) if (now >= feelQueue[i].at) { const q = feelQueue.splice(i, 1)[0]; feelSay(q.kind, q.a); }
       }
+      /* V11: nothing on the desk keeps a number that isn't one into the frame it's drawn in */
+      watchBlocks();
     }
     stepCamera(dt);
     /* a small light's pool follows its thing while the desk rearranges */
@@ -3908,7 +3983,9 @@
     opts = opts || {};
     /* feel: a block traded for a bigger or smaller one mid drag (crossing between the day and the week)
        carries on from where the last one was, at its speed */
-    const keep = !FEEL ? null : drag.obj ? { pos: drag.obj.position.clone(), vel: drag.vel.clone(), origin: drag.origin, surface: drag.surface } : drag.last && nowMs() - drag.last.at < 200 ? drag.last : null;
+    let keep = !FEEL ? null : drag.obj ? { pos: drag.obj.position.clone(), vel: drag.vel.clone(), origin: drag.origin, surface: drag.surface } : drag.last && nowMs() - drag.last.at < 200 ? drag.last : null;
+    /* (V11: a place or a speed that isn't a number is never carried into the next block in hand) */
+    if (keep && (!finite3(keep.pos) || !finite3(keep.vel))) keep = null;
     endDrag();
     drag.last = null;
     const m = makeBlock(b);
@@ -3949,10 +4026,12 @@
      lurching from slot to slot; surface, the height of the board under it, for its shadow */
   function dragTo(x, y, z, tilt, o) {
     if (!drag.obj) return;
+    /* (V11: the block in hand is never aimed at a point that isn't a number; it stays where it was aimed) */
+    if (FEEL && !(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) return;
     drag.target.set(x, y, z);
     if (FEEL && o) {
-      if (o.hand) { drag.target.x += (o.hand.x - x) * 0.3; drag.target.z += (o.hand.z - z) * 0.3; }
-      if (o.surface != null) drag.surface = o.surface;
+      if (o.hand && Number.isFinite(o.hand.x) && Number.isFinite(o.hand.z)) { drag.target.x += (o.hand.x - x) * 0.3; drag.target.z += (o.hand.z - z) * 0.3; }
+      if (o.surface != null && Number.isFinite(o.surface)) drag.surface = o.surface;
     }
     drag.tilt = FEEL && reduced ? 0 : Math.max(-0.22, Math.min(0.22, (tilt || 0) * -0.035));
   }
@@ -4063,6 +4142,8 @@
   function adoptPosition(date, bkey) {
     if (!drag.obj) return;
     const wp = drag.obj.getWorldPosition(new T.Vector3());
+    /* (V11: a hand whose place isn't a number hands nothing over; the block lands from its own slot) */
+    if (FEEL && !finite3(wp)) { noteRepair('the block in hand as it was let go'); return; }
     let ms = blockMeshes(date, bkey);
     if (FEEL) ms = ms.filter((m) => (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block'));
     ms.forEach((m) => {
@@ -4072,11 +4153,36 @@
       if (!FEEL || reduced) return;
       const u = m.userData, s = m.parent.getWorldScale(new T.Vector3()).x || 1;
       if (!u.vel) u.vel = new T.Vector3();
-      u.vel.copy(drag.vel).multiplyScalar(1 / s);
+      if (finite3(drag.vel) && Number.isFinite(s) && s > 0) u.vel.copy(drag.vel).multiplyScalar(1 / s); else u.vel.set(0, 0, 0);
       u.grow = null; u.newTile = false; u.held = false;
-      const y0 = Math.max(0, m.position.y - u.target.y), far = Math.hypot(m.position.x - u.target.x, m.position.z - u.target.z);
+      /* (V11: the motion it lands with starts from numbers: its dip, grip, and glow included) */
+      if (!Number.isFinite(u.pressK)) u.pressK = 0;
+      if (!Number.isFinite(u.gripK)) u.gripK = 0;
+      if (!Number.isFinite(u.haloK)) u.haloK = 0;
+      const y0 = Math.max(0, m.position.y - u.target.y) || 0, far = Math.hypot(m.position.x - u.target.x, m.position.z - u.target.z) || 0;
       /* a short fall from the height it was carried at, a little longer when it's still some way off its slot */
       u.fall = { t: 0, delay: 0, dur: Math.max(0.09, Math.min(0.15, 0.07 + 0.06 * Math.sqrt(y0)), Math.min(0.22, 0.05 + far * 0.06)), y0, fx: null };
+    });
+  }
+  /* V11: is a block that was set down drawn? false when the board has it and none of its pieces shows (hidden,
+     held back, still marked as in hand, a number that isn't one, flat), true when one does, null when this
+     board doesn't have it (another week, another zoom) */
+  function blockShown(date, bkey) {
+    if (!FEEL) return null;
+    const ms = blockMeshes(date, bkey).filter((m) => m.parent && (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block'));
+    if (!ms.length) return null;
+    return ms.some((m) => m.visible && !m.userData.held && !m.userData.inHand && blockFinite(m) && m.scale.y > 0.5);
+  }
+  /* V11: and drawn again: shown at rest, nothing holding it back. o.stale: nothing is in the app's hand, so a
+     block the desk still thinks is carried is put away */
+  function showBlock(date, bkey, o) {
+    if (!FEEL) return;
+    if (o && o.stale && (drag.obj || drag.match)) endDrag();
+    blockMeshes(date, bkey).forEach((m) => {
+      const u = m.userData;
+      u.held = false; u.inHand = false;
+      if (!blockFinite(m) || m.scale.y <= 0.5) restBlock(m);
+      m.visible = true;
     });
   }
   /* The screen point just above the picked block, for the tools that float over it. */
@@ -4188,8 +4294,55 @@
   }
   function owner(o) { while (o && !(o.userData && (o.userData.owner || o.userData.pickable))) o = o.parent; return o && o.userData.owner ? o.userData.owner : o; }
   const live = (m) => m.visible && m.userData.shrink == null && !m.userData.back && !m.userData.wave;
-  /* What's under the pointer: a block (on the week or the day), a day tab, a bench piece, a month card, or a year card. */
-  function pick(px, py) {
+  /* V11: how near a block's end counts as its stretch edge, in board units: a fixed share of a unit for a
+     mouse (base); for a finger (o.edgePx), that many pixels on screen, but never more than a third of the
+     block (wU), so a short block still moves when it's held in the middle. at is a point on the board in
+     group's own units, where the edge is measured */
+  function edgeU(group, at, base, wU, o) {
+    if (!FEEL || !o || !o.edgePx) return base;
+    const a = group.localToWorld(at.clone()).project(camera), b = group.localToWorld(at.clone().setX(at.x + 1)).project(camera);
+    const pxU = Math.abs(b.x - a.x) / 2 * renderer.domElement.getBoundingClientRect().width;
+    if (!(pxU > 0) || !Number.isFinite(pxU)) return base;
+    return Math.max(base, Math.min(o.edgePx / pxU, wU / 3));
+  }
+  /* V11: a finger right past a block's end, on open board: the block whose end is within edgePx to the left
+     of the point, on the same row or lane, as a pick of that block's stretch edge (null when there's none) */
+  function edgeAt(px, py, edgePx) {
+    if (!FEEL || !(edgePx > 0)) return null;
+    const o = { edgePx };
+    if (layout === 'week' && zoomName === 'day') {
+      const d = dayAt(px, py);
+      if (!d || d.lane == null || !Number.isFinite(d.x)) return null;
+      let best = null;
+      dayb.blocks.forEach((m) => {
+        const u = m.userData;
+        if (!live(m) || u.fly || u.lane !== d.lane || !u.last || !u.orig || u.orig.dur < 30 || u.orig.free) return;
+        const end = dayX(u.lane, u.segEnd), gap = d.x - end;
+        if (gap < 0 || gap > edgeU(dayb.group, new T.Vector3(end, BOARD_Y, laneZ(u.lane)), 0, 1e9, o)) return;
+        if (!best || gap < best.gap) best = { gap, m, u };
+      });
+      if (!best) return null;
+      const u = best.u;
+      return Object.assign({ kind: 'block', board: 'day', obj: best.m, date: u.date, displayDate: u.date, key: u.bkey, block: u.orig, min: LANES[u.lane].from + (d.x - LX0) / DU * 60, nearR: true, nearL: false, outside: true }, sourceOf(u.orig, u.date));
+    }
+    if (layout !== 'week' || !week.group.userData.shown) return null;
+    const p = boardAt(px, py);
+    if (!p || p.row == null || !Number.isFinite(p.x)) return null;
+    let best = null;
+    week.blocks.forEach((m) => {
+      const u = m.userData, b = u.block;
+      if (!live(m) || u.row !== p.row || !b || b.dur < 30 || b.free) return;
+      const end = xOf(b.start + b.dur), gap = p.x - end;
+      if (gap < 0 || gap > edgeU(week.group, new T.Vector3(end, BOARD_Y, rowZ(u.row)), 0, 1e9, o)) return;
+      if (!best || gap < best.gap) best = { gap, m, u };
+    });
+    if (!best) return null;
+    const u = best.u;
+    return Object.assign({ kind: 'block', board: 'week', obj: best.m, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: p.x, min: minOf(p.x), nearR: true, nearL: false, outside: true }, sourceOf(u.block, u.date));
+  }
+  /* What's under the pointer: a block (on the week or the day), a day tab, a bench piece, a month card, or a year card.
+     opt (V11): edgePx, the size of a stretch edge on screen for a finger (edgeU) */
+  function pick(px, py, opt) {
     setNdc(px, py);
     let list = [];
     const dayOn = layout === 'week' && zoomName === 'day';
@@ -4212,13 +4365,15 @@
       if (u.kind === 'dblock') {
         const local = dayb.group.worldToLocal(h.point.clone());
         const min = LANES[u.lane].from + (local.x - LX0) / DU * 60;
-        return Object.assign({ kind: 'block', board: 'day', obj: o, date: u.date, displayDate: u.date, key: u.bkey, block: u.orig, min, nearR: u.last && dayX(u.lane, u.segEnd) - local.x < 0.32 && u.orig.dur >= 30, nearL: u.first && local.x - dayX(u.lane, u.segStart) < 0.32 }, sourceOf(u.orig, u.date));
+        const ez = edgeU(dayb.group, new T.Vector3(local.x, BOARD_Y, laneZ(u.lane)), 0.32, dayX(u.lane, u.segEnd) - dayX(u.lane, u.segStart), opt);
+        return Object.assign({ kind: 'block', board: 'day', obj: o, date: u.date, displayDate: u.date, key: u.bkey, block: u.orig, min, nearR: u.last && dayX(u.lane, u.segEnd) - local.x < ez && u.orig.dur >= 30, nearL: u.first && local.x - dayX(u.lane, u.segStart) < ez }, sourceOf(u.orig, u.date));
       }
       if (u.kind === 'block') {
         if (dayOn) return { kind: 'miniRow', obj: o, row: u.row, date: u.date };
         const local = week.group.worldToLocal(h.point.clone());
         const right = xOf(u.block.start + u.block.dur), left = xOf(u.block.start);
-        return Object.assign({ kind: 'block', board: 'week', obj: o, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: local.x, min: minOf(local.x), nearR: right - local.x < 0.22 && u.block.dur >= 30, nearL: local.x - left < 0.22 }, sourceOf(u.block, u.date));
+        const ez = edgeU(week.group, new T.Vector3(local.x, BOARD_Y, rowZ(u.row)), 0.22, right - left, opt);
+        return Object.assign({ kind: 'block', board: 'week', obj: o, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: local.x, min: minOf(local.x), nearR: right - local.x < ez && u.block.dur >= 30, nearL: local.x - left < ez }, sourceOf(u.block, u.date));
       }
       if (u.kind === 'tab') return dayOn ? { kind: 'miniRow', obj: o, row: u.row } : { kind: 'tab', obj: o, row: u.row };
       if (u.kind === 'card') return { kind: 'card', obj: o, date: u.date };
@@ -4303,6 +4458,9 @@
   const rowWorld = (i) => new T.Vector3(0, 0, rowZ(i));
   /* World point for a minute on a week row or on the day board, for placing the block you're dragging. */
   function slotWorld(where, row, min) {
+    /* (V11: a minute that isn't a number is the start of the day, so nothing aimed from here is NaN) */
+    if (FEEL && !Number.isFinite(min)) min = RAIL0;
+    if (FEEL && where !== 'day' && !Number.isFinite(row)) row = 3;
     if (where === 'day') { const at = Math.max(RAIL0, Math.min(RAIL1, min)), li = laneOf(at); return dayb.group.localToWorld(new T.Vector3(dayX(li, at), BOARD_Y, laneZ(li))); }
     return week.group.localToWorld(new T.Vector3(xOf(min), BOARD_Y, rowZ(row)));
   }
@@ -4320,12 +4478,12 @@
      question (what's under the pointer, where a block is on screen) doesn't */
   const changes = { fit, setNow, setDaylight, setWeek, setMonth, setYear, setDay, setBench, setBenchOpen, showLayout, rippleWeek, beginNavigation, setZoom, setPhoneDay, setInsets, snapCamera, setSelected, showDayGhost,
     startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces, setFocus, setPropsAway, setAway,
-    press, land, holdBack, weekSet, direct, leanAmount, setKinds, benchCarry,
+    press, land, holdBack, weekSet, direct, leanAmount, setKinds, benchCarry, showBlock,
     setLamp, setLight, setNotepad, setDayOnly, setAlone, setTheme, setDesk, setClock24, setQuality, wake, setTight, setHours };
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
     init, render, step, parallax, touch, setWeekStart, setDayShape,
-    pick, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, kindCardScreen, get kindsOn() { return kinds.on; }, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    pick, edgeAt, blockShown, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, kindCardScreen, get kindsOn() { return kinds.on; }, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
     /* true when nothing on the desk is moving and nothing changed lately: the frame can be skipped.
        lazy: only something slow is moving (steam), so a few frames a second are plenty */
     get idle() { return stillFrames > 12; }, get lazy() { return lazyOnly && !moving && nowMs() >= activeUntil; },
@@ -4347,7 +4505,7 @@
     get userZoom() { return user.zoomTo; }, get focused() { return !!focus.pt; },
     xOf, minOf, rowZ, BOARD_Y, BLOCK_D, H_HARD, DB_HMUL,
     get layout() { return layout; }, get camera() { return camera; }, get busy() { return pops.length > 0 || tileMotions.size > 0; },
-    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size } }; },
+    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size }, repairs: { count: repairs.count, list: repairs.list.slice() } }; },
     get hours() { return { start: RAIL0, end: RAIL1 }; },
     get benchOn() { return benchOn; },
     /* V11: the bench's close framing, for checking by hand: wanted, how close, where it is now, in hand */
