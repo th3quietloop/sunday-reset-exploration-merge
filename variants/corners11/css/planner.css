@@ -1,0 +1,151 @@
+/* == V11, the Planner walk (Oct 15, docs/walk/planner.md) ==
+   What Russell and Kim needed on a Sunday afternoon, and what a new person needed the first time in the Planner:
+   an Undo that stays, arrows that stay put, a Duo that fits, a hand-off that stays on the board, and the rest of
+   the walk's list, screen by screen. Every color here is a token from polish.css or contrast.css, every size is
+   on the HUD's scale (12, 13, 14, 16, 19, 22, 26, 30), and a target a finger uses is 44 px on a touch screen. */
+
+/* == 15.1 Undo and Redo in the bottom bar ==
+   Quiet pills like their neighbors. Beside Undo, where there's room, the change it takes back in a quieter grey
+   (13 px, #CDCDCD on the bar's near black, about 11 to 1); narrower, the words live in its name and its tip */
+.c-br .c-undo-what { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--tx-2); }
+.c-br .c-undo-what[hidden] { display: none; }
+@media (max-width: 1279px) { .c-br .c-undo-what { display: none !important; } }
+.c-br .c-redo { margin-right: 9px; position: relative; }
+.c-br .c-redo::after, .c-br .c-undo:not(:has(+ .c-redo:not([hidden])))::after { content: ""; position: absolute; right: -6px; top: 10px; bottom: 10px; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; }
+.c-br .c-undo:not(:has(+ .c-redo:not([hidden]))) { margin-right: 9px; }
+
+/* == 2.1 The date card: arrows that never move ==
+   The words between the arrows keep one width for each zoom (variant.js measures the longest it can say), centered,
+   with a long line ending in an ellipsis instead of pushing Later along. Today is a chip of its own outside the card,
+   left of it on a wide window and under it on a narrow one. In the day view the kind of day takes the card's width
+   and never sets it (a long kind's name ends in an ellipsis), so the seven days hold the card, and its arrows, still */
+.c-tc.c-fixedwhen .k-when { flex: none; align-items: center; text-align: center; }
+.c-tc.c-fixedwhen .k-title, .c-tc.c-fixedwhen .k-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.k-chip.c-todaychip { top: 0; right: calc(100% + 10px); left: auto; bottom: auto; transform: none; z-index: 31; }
+.c-todaychip .k-back { margin-left: 0; }
+@media (max-width: 759px) { .k-chip.c-todaychip { right: 0; top: calc(100% + 8px); } }
+.c-tc.c-dayview .c-kinds { width: 0; min-width: 100%; }
+.c-tc.c-dayview #kinds { max-width: 100%; min-width: 0; }
+.c-tc.c-dayview .kinds-pick { min-width: 0; max-width: 100%; }
+.c-tc.c-dayview .kinds-pick > span:not(.chev) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* (where the card starts at the window's left edge, the open Duo's left page, Today stands right of it) */
+@media (min-width: 760px) { .k-chip.c-todaychip.c-right { right: auto; left: calc(100% + 10px); } }
+
+/* == 2.2 A finger's targets: 44 px on a touch screen (the iPad, the open Duo) ==
+   The date card's arrows and its words, Today, the zoom switch and List, the bottom bar, the reset's chip, the kind of
+   day, and the stack strip were 38 tall; under a finger they're 44, and the chips around them grow with them */
+@media (pointer: coarse) {
+  .k-arrow { width: 44px; height: 44px; }
+  .c-tc .k-when { min-height: 44px; justify-content: center; }
+  .c-tc .k-back, .c-tr .k-seg button, .k .c-listbtn, .c-br .k-pill, .k .c-rchip, .c-kinds .kinds-pick, .k .c-stack, .c-spreadbar button { height: 44px; min-height: 44px; }
+  .k .c-stackx { width: 44px; }
+  .c-tc .kinds-allbtn { width: 44px; height: 44px; }
+  .c-nowsplit button:first-of-type::after, .k .c-listbtn::before { top: 12px; bottom: 12px; }
+}
+
+/* == 2.3 A gold dot on a day that needs a look ==
+   An overlap or a dinner still open: a small gold dot in the day's top corner, the color of an open question (on the
+   white of the day you're on, a deeper gold that still reads, 4.9 to 1). The day says why in its name and its tip */
+.c-days .daypill .dlook { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--k-gold); pointer-events: none; }
+.c-days .daypill.on .dlook { background: #8C6A1E; }
+
+/* == 3.2 The kinds of day's list fits the window (variant.js sets its height to the room under the card) == */
+.kinds-row { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+
+/* == 12 Quick add ==
+   12.1: on a phone (the iPhone, the folded Duo) its buttons stack: the gold one across the sheet, the quiet one under
+   it, then Adjust, so none is cut or off the screen. 12.3: the kind of time, one row of chips under the preview */
+@media (max-width: 600px) {
+  .quick-acts { flex-direction: column; align-items: stretch; }
+  .quick-acts > button { width: 100%; min-height: 44px; justify-content: center; white-space: normal; text-align: center; }
+}
+.quick .quick-kinds { margin: -2px 0 0; gap: 6px; }
+.quick .quick-kinds .chip-btn { min-height: 34px; font-size: 13px; }
+@media (pointer: coarse) { .quick .quick-kinds .chip-btn { min-height: 44px; } }
+/* (on a phone the kinds of time are one row that scrolls sideways, so the sheet keeps its buttons in view) */
+@media (max-width: 600px) { .quick .quick-kinds { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -2px; margin-right: -2px; padding: 2px; } .quick .quick-kinds::-webkit-scrollbar { display: none; } .quick .quick-kinds .chip-btn { flex: none; } }
+
+/* == 4.3 Done on the kinds of day is a quiet button: white fill means picked everywhere, and Done is an action == */
+.k .c-spreaddone { background: var(--sf-hover); color: var(--tx); }
+.k .c-spreaddone:hover { background: var(--sf-press); }
+
+/* == 3.3 Saving a kind: its blocks as rows with a check, and a Save button the width of the panel, 44 tall == */
+.side .c-kindrows .list-row { gap: 10px; }
+.side .c-kindrows .list-row small { margin-left: auto; color: var(--tx-2); font-size: 13px; white-space: nowrap; }
+.side .go.c-savekind { width: 100%; min-height: 44px; justify-content: center; }
+
+/* == 9.1 A picked pill keeps its white under the pointer ==
+   polish.css's hover rule loads after the picked rule with the same weight, so pointing at Home (picked) swapped its
+   white for the dark hover and its dark words vanished. Picked stays white, a shade greyer while pointed at */
+.k .c-stack.on, .k .c-stack.on:hover { background: var(--cream); color: var(--sf-ink); }
+.k .c-stack.on:hover, .k-pill[aria-pressed="true"]:hover { background: #E9E9EA; color: var(--sf-ink); }
+.k-seg.c-slide button[aria-pressed="true"]:hover { background: transparent; color: var(--sf-ink); }
+
+/* == 9.3 Words on the bar at the open Duo's width ==
+   Between a phone and a laptop (760 to 1000 wide) Add, To-dos, and Block library keep their words; This week's plan
+   steps into your menu there (its Plan heading has it), and Undo and Redo show their marks, named for a screen reader */
+@media (min-width: 760px) and (max-width: 1000px) {
+  body:not(.c-docked) .c-br .c-add > span, body:not(.c-docked) .c-br .c-todos > span:not(.k-count), body:not(.c-docked) .c-br .c-lib > span { display: inline; position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  body:not(.c-docked) .c-br .k-pill { padding: 0 12px; }
+  .k .c-rchip.plan { display: none !important; }
+}
+@media (max-width: 1179px) {
+  .c-br .c-undo > span, .c-br .c-redo > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .c-br .c-undo, .c-br .c-redo { padding: 0 12px; }
+}
+
+/* == 9.4 This week's plan reads like the pills beside it, not an underlined link == */
+.k .c-rchip.plan b { text-decoration: none; font-weight: 600; }
+
+/* == 9.2 An empty stack says so in its strip, with a way to add one, instead of an empty bench == */
+.k .c-stacksay { display: inline-flex; align-items: center; height: 38px; padding: 0 12px 0 14px; font-size: 14px; color: var(--tx-2); white-space: nowrap; }
+@media (pointer: coarse) { .k .c-stacksay { height: 44px; } }
+
+/* == 5.1 A way back to fit, in the Planner too ==
+   Zoomed in by a pinch or Ctrl and scroll, the Fit chip shows under the zoom switch, as it does in the reset (a tap on
+   the zoom you're on fits the desk as well, variant.js). Not in Now, whose day is always fitted, nor on a phone's day */
+body.c-deskzoomed:not(.k-today):not(.phone-desk):not(.phone):not(.c-detail):not(.c-sheet-aside) .k.c-fitchip { display: inline-flex; }
+@media (max-width: 759px) { body.c-deskzoomed:not(.c-resetting) .k.c-fitchip { top: 126px; } }
+
+/* == 13 Make a block ==
+   13.3: the usual lengths as tiles, with the stepper beside them for any other. 13.1: in the side panel, Add to Block
+   library stays at the panel's foot (the place panel's sticky foot). 13.2: its toast offers Put it on Thursday before
+   its Undo, two buttons of the same kind */
+.c-lenpick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.c-lenpick > .chips { flex: 0 1 auto; }
+.side .c-blockfoot .go.wide { width: 100%; min-height: 44px; justify-content: center; }
+.toast .toast-also + .toast-act { margin-left: 6px; }
+@media (pointer: coarse) { .toast-act { min-height: 44px; } }
+
+/* == 16 Find a free day and a free evening, under the month's name in Month and Year == */
+.c-tc.c-freeview { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px 8px; }
+.c-freerow { display: flex; gap: 6px; justify-content: center; }
+.c-freerow[hidden] { display: none; }
+.k .c-free { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--tx); background: var(--sf-raised); white-space: nowrap; }
+.k .c-free:hover { background: var(--sf-hover); }
+.k .c-free canvas { width: 14px !important; height: 14px !important; }
+@media (pointer: coarse) { .k .c-free { height: 44px; } }
+@media (max-width: 759px) { .k .c-free { font-size: 13px; padding: 0 10px; } }
+
+/* == 11.3 The place panel on a short phone (the folded Duo, 386 by 580) ==
+   The board keeps the top half (the sheet stops at 52 percent, sheet.css) and shows where the block lands; the panel
+   leaves out its day strip there, so the days and the steppers sit above Add without scrolling */
+@media (max-width: 600px) and (max-height: 700px) {
+  body.phone-desk #side .field:has(> .daystrip), body.phone #side .field:has(> .daystrip) { display: none; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero, body.phone #side:has(.daystrip) .bprev.hero { padding: 8px 14px; gap: 12px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero > canvas, body.phone #side:has(.daystrip) .bprev.hero > canvas { width: 24px; height: 24px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero .bprev-name, body.phone #side:has(.daystrip) .bprev.hero .bprev-name { font-size: 19px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero .bprev-time, body.phone #side:has(.daystrip) .bprev.hero .bprev-time { font-size: 13px; }
+}
+
+/* == 19.2 The desk page on a tablet: a sheet along the bottom, the board framed above it ==
+   (app.js sets body.drawer-sheet for The desk page on a window narrower than 1180 and taller than 700) */
+body.drawer-sheet .drawer { top: auto !important; bottom: 16px; left: 16px; right: 16px; width: auto !important; max-width: none; height: min(54%, 640px); }
+body.drawer-sheet .scrim { background: transparent !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+body.drawer-sheet .c-tl, body.drawer-sheet .c-tc, body.drawer-sheet .c-tr, body.drawer-sheet .c-bl, body.drawer-sheet .c-br,
+body.drawer-sheet .c-stackbar, body.drawer-sheet .c-steps, body.drawer-sheet .c-peek, body.drawer-sheet #side, body.drawer-sheet #btools, body.drawer-sheet #chip { visibility: hidden; }
+
+/* == 20.3 A picked block's tools on a phone's day: one row, the length as one stepper (app.js drawTools) == */
+#btools .tool-len { display: inline-flex; align-items: center; gap: 2px; }
+#btools .tool-len .tool-step { min-width: 44px; justify-content: center; padding-left: 0; padding-right: 0; }
+#btools .tool-len .tool-lenv { min-width: 56px; text-align: center; font-size: 14px; font-weight: 600; color: var(--tx); white-space: nowrap; }

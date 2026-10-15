@@ -152,7 +152,9 @@ test('a missed day: the step takes the next day and the rest slide, never over t
   const r = M.reflowTask(st, 'room', WED, 7 * 60);
   assert.deepEqual(r.moved.map((m) => [m.name, m.from, m.to]), [['Put away laundry', TUE, WED], ['Make the bed', WED, THU], ['Clear the desk', THU, FRI], ['Dust', FRI, SAT]]);
   assert.deepEqual(r.unplaced, ['room-s6']);
-  assert.equal(r.message, 'Put away laundry moved to today. This needs one more day than is left before Saturday.');
+  assert.deepEqual(r.short, ['Vacuum']);
+  assert.equal(r.message, 'Put away laundry moved to today. Vacuum doesn’t fit by Saturday now.', 'the step that comes off the board is named, never quietly');
+  assert.ok(task(st).steps.some((s) => s.id === 'room-s6' && !s.done), 'Vacuum is still a step of the to-do, waiting for a choice');
   assert.deepEqual(mine(st, TUE), [], 'the missed time leaves Tuesday');
   for (const d of WEEK) { assert.ok(minutesOn(st, d) <= 15, d + ' stays under its cap'); noOverlap(st, d); }
   assert.deepEqual(snapshot(st), was, 'nothing else moved');
@@ -165,17 +167,30 @@ test('a missed day: the step takes the next day and the rest slide, never over t
   assert.deepEqual(mine(late, TUE), []);
 });
 
-test('with room to spare, it’s still done by Saturday', () => {
+test('with room to spare, the steps spread out, and a missed one joins the next day under its cap', () => {
   const st = board();
   M.applySpread(st, 'room', M.spreadPlan(st, 'room', { cap: 30 }, MON, 7 * 60));
-  assert.deepEqual([MON, TUE, WED].map((d) => minutesOn(st, d)), [30, 30, 30]);
-  task(st).steps[0].done = true; task(st).steps[1].done = true;
+  assert.deepEqual(WEEK.map((d) => minutesOn(st, d)), [15, 15, 15, 15, 15, 15], 'a step a day to Saturday, never packed into the first three');
+  task(st).steps[0].done = true;
   const r = M.reflowTask(st, 'room', WED, 7 * 60);
-  assert.equal(r.message, 'Make the bed and clear the desk moved to today. Still done by Saturday.');
+  assert.equal(r.message, 'Put away laundry moved to today. Still done by Saturday.');
   assert.deepEqual(r.unplaced, []);
-  assert.equal(minutesOn(st, WED), 30, 'Wednesday stays at its cap of 30');
-  assert.equal(minutesOn(st, THU), 30, 'what was on Wednesday slid to Thursday');
+  assert.equal(minutesOn(st, WED), 30, 'Wednesday takes it, up to its cap of 30');
+  assert.deepEqual([THU, FRI, SAT].map((d) => minutesOn(st, d)), [15, 15, 15], 'the rest stay on their days');
   assert.equal(M.taskPlan(task(st), M.placements(st).get('room'), WED, 7 * 60).status, 'planned');
+});
+
+test('spreading aims each step at its share of the days: four over two weeks land about every third day', () => {
+  const st = board([{ name: 'Make a list of ideas', dur: 10 }, { name: 'Pick one', dur: 10 }, { name: 'Order it or buy it', dur: 15 }, { name: 'Wrap it', dur: 15 }]);
+  Object.assign(task(st), { name: 'Gift for Jill', due: '2026-10-24' });
+  const plan = M.spreadPlan(st, 'room', {}, MON, 7 * 60);
+  assert.equal(plan.ok, true);
+  const days = plan.days.map((d) => d.date);
+  assert.equal(days.length, 4, 'a step a day');
+  assert.equal(days[0], MON, 'starting today');
+  for (let i = 1; i < days.length; i++) assert.ok(M.diffDays(days[i - 1], days[i]) >= 2, days.join() + ': spread out, not packed');
+  assert.ok(days[3] >= '2026-10-20', 'the last one comes in the last days before it’s due');
+  assert.ok(days[3] <= '2026-10-24');
 });
 
 test('calling it again moves nothing, and a preview changes nothing', () => {

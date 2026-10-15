@@ -366,6 +366,9 @@
     beside(g) { g.translate(-0.8, 0); fillRR(g, 2.5, 5, 12, 14, 2); g.lineWidth = 2.2; strokeRR(g, 16.5, 5, 5.5, 14, 1.6); },
     /* an empty square drawn in dashes: time held open */
     blank(g) { g.lineWidth = 2.6; g.setLineDash([3.4, 2.6]); strokeRR(g, 4, 4, 16, 16, 3.5); g.setLineDash([]); },
+    /* V11 (the Today walk): open time as the board draws it, a block's outline in dashes, wider than tall so it
+       never reads as a box to tick. Hand drawn in every version (the vector set has no such mark) */
+    opentime(g) { g.lineWidth = 2.4; g.setLineDash([3.2, 2.4]); strokeRR(g, 2.5, 7, 19, 10, 2.6); g.setLineDash([]); },
     /* a speaker, with sound waves or with a small cross */
     sound(g) { g.translate(-0.8, 0); poly(g, [3, 9, 7.5, 9, 13, 4.5, 13, 19.5, 7.5, 15, 3, 15]); g.lineWidth = 2.4; g.beginPath(); g.arc(13.5, 12, 4.2, -0.9, 0.9); g.stroke(); g.beginPath(); g.arc(13.5, 12, 8, -0.85, 0.85); g.stroke(); },
     mute(g) { g.translate(-0.6, 0); poly(g, [3, 9, 7.5, 9, 13, 4.5, 13, 19.5, 7.5, 15, 3, 15]); g.lineWidth = 2.6; line(g, [16, 9, 21, 15]); line(g, [21, 9, 16, 15]); },
@@ -390,6 +393,16 @@
       fillRR(g, 2, 4.5, 13.5, 8, 2);
       cut(g, () => { g.lineWidth = 3.2; strokeRR(g, 8.5, 11.5, 13.5, 8, 2); });
       g.lineWidth = 2.4; strokeRR(g, 8.5, 11.5, 13.5, 8, 2);
+    },
+    /* a block running past the end of its lane: a plan that doesn't fit the day (Oct 15, the first-visit walk) */
+    overrun(g) {
+      fillRR(g, 4.5, 7.5, 18, 6.5, 1.6);
+      line(g, [3, 18.5, 15.8, 18.5]);
+      line(g, [16.5, 16.5, 16.5, 20.5]);
+    },
+    /* two peaks: something big ahead (Big things are hard to start) */
+    mountain(g) {
+      poly(g, [1.5, 20, 9, 6, 13.2, 13.8, 15.8, 9.4, 22.5, 20]);
     },
     /* a cloud: the household's copy */
     cloud(g) {

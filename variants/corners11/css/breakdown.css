@@ -129,7 +129,10 @@
 /* a finger gets 44 px */
 @media (pointer: coarse) {
   .c-bd-seg, .c-sp .chip-btn, .c-bd-goal .small, .c-bd-ai .small.quiet, .c-bd-head .small.quiet, .c-sp-choices .small, .c-tdw-btn { min-height: 44px; }
-  .c-sp .chips.days7 { grid-template-columns: repeat(7, minmax(0, 44px)); }
+  /* Pick days: each day 44 px to tap; the round day shows a little smaller inside its own target (the chip's
+     transparent border), the gaps close up first, and in a phone's narrow card the days take two rows */
+  .c-sp .chips.days7 { grid-template-columns: repeat(7, 44px); column-gap: clamp(0px, calc((100% - 308px) / 6), 4px); }
+  .c-sp .chips.days7 .chip-btn { width: 44px; height: 44px; aspect-ratio: auto; background-clip: padding-box; }
   .c-bd-name { min-height: 44px; padding: 10px 4px; }
   .side .c-tdp-list .c-tdp-bdrow { min-height: 64px; }
 }
@@ -137,3 +140,10 @@
 body.calm .c-tilegrid > .c-tdw { transition: none; }
 body.calm .c-tdw:has(> .tile:hover) { transform: none; }
 @media (prefers-reduced-motion: reduce) { .c-tilegrid > .c-tdw { transition: none; } .c-tdw:has(> .tile:hover) { transform: none; } }
+
+/* V11: a to-do whose steps stopped fitting asks on the phone's Today, with the gold edge of a question */
+.td-card.c-sp-ask { box-shadow: inset 0 0 0 1.5px var(--cta-edge), var(--sf-shadow) !important; }
+.td-card.c-sp-ask .td-acts .small { min-height: 44px; }
+@media (pointer: coarse) and (max-width: 600px) {
+  .c-sp .chips.days7 { grid-template-columns: repeat(4, 44px); gap: 8px; }
+}

@@ -63,7 +63,20 @@ try {
     say(`== ${size} ${await g.load(size)}`);
     for (const pathId of paths) {
       let setup = await g.setupPath(pathId);
-      if (setup.skip) { say(`   ${pathId} at ${size}: not here (${setup.skip})`); results.push({ size, path: pathId, skip: setup.skip }); summary[`${pathId} | ${size}`] = { na: setup.skip }; continue; }
+      /* n/a means only that a path isn't on this size (the path says so: na). A setup that couldn't open its place
+         (a button that moved, a panel that didn't come) is a path that broke: not run, which fails the gate */
+      if (setup.skip && setup.na) { say(`   ${pathId} at ${size}: not here (${setup.skip})`); results.push({ size, path: pathId, skip: setup.skip, na: true }); summary[`${pathId} | ${size}`] = { na: setup.skip }; continue; }
+      if (setup.skip) {
+        for (const input of inputs) {
+          if (input === 'touch' && !SIZES[size].mobile) continue;
+          const key = `${pathId} | ${size} | ${input}`;
+          summary[key] = { pass: 0, n: 0, skip: 1, why: [], soft: [] };
+          say(`   ${key}: could not open (${setup.skip})`);
+          results.push({ size, input, path: pathId, i: 0, style: styles[0], skip: 'could not open: ' + setup.skip });
+        }
+        save();
+        continue;
+      }
       for (const input of inputs) {
         if (input === 'touch' && !SIZES[size].mobile) continue;
         for (const style of styles) {

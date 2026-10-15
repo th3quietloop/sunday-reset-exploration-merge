@@ -8,6 +8,8 @@ This is the one spec for that moment: picking a block up (from a panel, the tray
 
 **What it fits.** A reliability builder is fixing, at the same time: a second finger, cancelled touches, toasts over the board, hold to lift in scrolling lists, ghost clicks, NaN guards, and the drag gate (now `scripts/gate/`). This spec builds on that work and doesn't repeat it. Where a fix is theirs, the QA list says so. Their touch rule is part of this spec: on touch, in a list that scrolls, a tile lifts after a short hold (about 300 ms, rising while held) or at once on a move across the list's scroll direction.
 
+**Built Oct 15:** see section 14 for what was built, how it was proven, and what's left.
+
 **Line numbers** are from `5b5f853` (the code map's reference). `board/src/app.js` is moving under the reliability builder's changes, so read function names first and line numbers second.
 
 ## The choreography in ten lines
@@ -271,7 +273,7 @@ Today the brick vanishes, the card fades where you let go, and the block grows o
 
 One DOM engine for all of them, the same as the card in hand (3.20): the grabbed spot under the pointer, the lift to 1.06 on (0.22 s, 0.62), the pendulum, the deeper shadow.
 
-- **Meal board** (`draggable` in variant.js: meals, Not cooking, routines, exercises, the setup's pieces and letters). Today a drop glides to the zone's center in 0.2 s and the meal appears 190 ms later with the clack. Instead: the piece flies into the zone's box (FLIP, 160 ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`), level, its shadow tightening to `0 2px 4px -1px`; on arrival `onDrop` runs and `Snd.clack(0.85)` plays in the same frame, and the placed piece squashes (scale 1.02 by 0.96, back over 140 ms). Escape sends it home (today it lands). The cook tag starts a drag after 6 px of travel, and only a tap with no travel changes the cook (today 40 percent of a meal refuses a drag). The scroll edge is measured from below the sticky title, 80 px on touch, and the scroll stops the moment the finger leaves it.
+- **Meal board** (`draggable` in variant.js: meals, Not cooking, routines, exercises, the setup's pieces and letters). Today a drop glides to the zone's center in 0.2 s and the meal appears 190 ms later with the clack. Instead: the piece flies into the zone's box (FLIP, 160 ms, `cubic-bezier(0.2, 0.8, 0.2, 1)`), level, its shadow tightening to `0 2px 4px -1px`; on arrival `onDrop` runs and `Snd.clack(0.85)` plays in the same frame, and the placed piece squashes (scale 1.02 by 0.96, back over 140 ms). Escape sends it home (today it lands). The cook tag starts a drag after 6 px of travel, and only a tap with no travel changes the cook (today 40 percent of a meal refuses a drag). The scroll edge is measured from below the sticky title, 80 px on touch, and the scroll stops the moment the finger leaves it. (As built: inside the edge it waits a quarter second, and it holds still while the finger rests on a place it can drop that's wholly in view, because on a short screen the first row under the title sits inside the edge. Onto the title or past the edge, it scrolls at once.)
 - **Setup Try it** (`try(c)`, the first drag a new person makes). The float keeps the grabbed spot (today it sits at the pointer minus 34 and 22 px), shrinks toward the slot's size as it nears the lane (140 ms), falls and squashes into the slot, and the tray keeps its height so the page doesn't jump. Escape puts the piece back and keeps the setup open.
 - **Desk setup lanes** (`laneDrag`). Steps are the same detents; release settles with a 0.03 squash and the clack.
 - Cancels never commit (the reliability builder).
@@ -616,6 +618,79 @@ Each item is a question a person would ask, ranked by how much it breaks or chea
 13. **One drag engine for every DOM surface** (meals, the setup, letters). Recommended: **yes.**
 14. **The Blender brick master.** Recommended: **yes, after the build now list lands.** It makes stretch and length changes smooth and lets the desk draw bricks in far fewer calls.
 15. **Haptics.** Recommended: **in the native shell only**, per section 7.
+
+## 14. Built, Oct 15
+
+Built on the night of Oct 14 into V11, with every recommendation in section 13 taken. The hand is on wherever V11's feel is (`FEEL`): `hand.use` in `board/src/scene.js`, `HAND` in `board/src/app.js`. The other variants keep the old paths.
+
+**Files.** `board/src/scene.js` (the hand, the fall, the landing, the brick's shape and material, the outline, the shadow, the lean, Undo's replay); the drag and carry code in `board/src/app.js` (the tile carry, the board carry, letting go, refusals, toasts, Undo, the place panel, the stretch handle, Try it's piece); `board/src/sound.js`; `draggable` in `variants/corners11/variant.js`; `variants/corners11/css/touch.css`; `tests/hand.test.mjs`; and the gate (`scripts/gate/lib/core.mjs`, `paths.js`, `probe.js`, `gate.mjs`, `release-gate.mjs`, and the new `last-green.json`; see docs/DRAG-GATE.md).
+
+### By part
+
+| Part | As built |
+|:-|:-|
+| 3.1 Press | The dip and footprint squeeze on a spring (`press`, `feelBlock`). Tiles take a `pressed` class at pointerdown, so iOS shows it. On touch, a miss within 20 px picks the nearest movable brick (`nearBrick`). |
+| 3.2 Hold to lift | On the board too: a still 300 ms hold within 8 px lifts (`holdWait`, `liftBlock`), the brick rising from 120 ms. The card in hand starts from the held tile's 1.06. |
+| 3.3 Lift | (0.22 s, 0.62) to 1.5 on the week and 1.8 on the day; 1.12 in hand with a mouse or pen, 1.20 on touch; the face tipped toward you; the pick on the lift frame (`handStart`). |
+| 3.4 Seam | The card becomes the brick in 140 ms, both pinned at the spot you grabbed; the brick starts as wide as the card (up to 2.2 times) and its swing carries over. Back over a panel, the brick sinks to 0.6 as the card grows back out of it (`seamOut`, `seamIn`, `foldBack`). |
+| 3.5 Carry | The aim point, the floor point, and the brick hanging straight above it (`handAim`, `handStep`). On touch it rides 36 to 64 px above the finger (`touchLift`), coming in over 150 ms at the seam, or over 48 px of travel for a board block. The readable minimum; the face printing the time it would land at; one soft shadow on the tallest top under it (`handShadow`); the chip above the brick, beside it near the top, compact on the phone's desk (`chipHand`). |
+| 3.6 Dangle | The pendulum law with pace by length, droop, the ruler turn, and soft caps (`handStep`). The card in hand and the DOM pieces swing on the same law (`carryStep`, `draggable`). |
+| 3.7 Aim | Hysteresis (60 percent with a mouse, 70 on touch, or 80 ms); 30 minute steps where a quarter hour is under 6 px; the day's end refused with "That runs past the end of the day"; no lurch at noon or 6 pm; re-aimed every frame the camera moves (`carryFrame`). The outline sits on top of what it overlaps (`ghostTop`): a dark socket with white dashes when it fits, red with Apple's no when it doesn't, a check mark on time that's over. |
+| 3.8 Snap and detent | Detents at least 50 ms apart (`detentSoon`); the mouse's 6 px pull after 100 ms; the lock on brightening (`ghostLock`); the sink over a slot that fits, the rise over one that doesn't. |
+| 3.9 Room | New blocks make room too, with a 60 ms rest before the board plans again, so a fast sweep doesn't shuffle it (`roomFor`, `moveTileHand`). |
+| 3.10 to 3.14 | The fall from the carried pose under 280 units/s², 90 to 160 ms (`handFall`, `stepFalls`); the clack on the contact frame of the brick in view; the damped sine squash with the footprint bulge; the dust ring, and flecks on the day board and the phone's desk; the knock, nearest first; the rock only when it came in moving (`touchDown`, `squashFor`, `ringAt`, `flecks`, `knockAround`). |
+| 3.12 Done color | **Not built.** A block landing on time that's over still turns the done color at contact, not 250 ms after. |
+| 3.15 Toast | 150 ms after contact; a new receipt replaces the last drop's (`toastLater`, `toastFeel`). |
+| 3.16 Cancel | Home on a curve with an arc, arriving level and at true size, with the tap. Escape cancels a move as well as a tile; every other key waits until the drop. |
+| 3.17 Refused | It dips toward the block in the way (`blockerOf`), bumps with `Snd.bad` as the outline flashes and that block hops, recoils, shakes, and goes home at 280 ms (`handNo`); the toast says why at 240 ms, for board blocks too (`refuse`). |
+| 3.18 Undo and redo | A moved block flies back and lands soft (`replayMove`); a new block lifts and fades (`evaporate`); a block put back drops in. The play is only a look: if it fails, Undo still undoes. (Found by the gate on Oct 15: the fading copy was made with three's `clone`, which threw on a block's own userData and lost the undo step. The copy is made by hand now, `shellOf`.) |
+| 3.19 Camera | 12 percent around the aim point's ray, held until 250 ms after contact, then out on (0.5 s, 1.0); none on the phone's desk or in Calmer motion (`lean`, `leanStep`, `feelCamera`). |
+| 3.20 Socket and card | The tile left behind keeps its footprint with its contents hidden, no alpha on words; the card in hand on the lift spring with the deeper shadow. |
+| 4.1 to 4.3 | Every tile path on the hand: the tray, Block library, the reset's steps, To-dos, the rack, and bench pieces, which lift as themselves and change shape once over a board (`moveTileHand`, `dropTileHand`, `startDrag`). |
+| 4.4 Stretch | On touch, only from a 44 px handle on the picked block (`#sgrip`, `placeGrip`); with a mouse the zone is 22 px, never more than a quarter of the block (`edgeU`). |
+| 4.5 Whole day | A block let go on a day pill, a month card, or the date card flies to the slot the day chose and lands (`dayFlight`, `handFly`); where no slot is drawn, the card presses (`dayPress`). |
+| 4.6 DOM drags | The meal board, the setup's Try it, and the desk setup on one law: the grabbed spot kept, 1.06, the swing. Drops fly into the zone's box in 160 ms and land with the clack and a squash. The scroll edge as in 4.6 above. |
+| 4.7 Place panel | The copy flies from the hero, read before the commit; the desk holds its insets until it lands (at most 1.5 s), and the toast comes after (`placeIt`, `holdInsets`). |
+| 5 Inputs | Mouse, pen, and touch by pointer type throughout. |
+| 6 Calmer and reduced motion | The one to one carry stays; no swing, size 1, no lean, placed at once with the highlight. Motion that isn't the carry stays at or under 0.25 s. |
+| 7 Sound | `clack(size, speed)` in three variants with jitter and loudness by speed; `tap` variants; `pick` jitter; detents 50 ms apart. |
+| 8 Performance | The aim runs once a frame (`carryFrame`): pointermove only stores it, and pointerup flushes it. The desk still draws only while something moves. |
+| 10 Tests | `tests/hand.test.mjs`: A2, A4, A5, A8, A11, the squash law, the no beat, and finite output, cut from scene.js the way the motion test cuts it. Measured there: the lift reaches 90 percent by 83 ms with a 7.1 percent overshoot and the size peaks at 1.129; a hard stop swings 9.1 degrees, the next swing is 34 percent of it, 0.27 degrees by 1.2 s, 0.12 at steady speed; the fall from 1.5 takes 104 ms; the squash peaks at 11.0 percent at 32 ms and rebounds 2.5. The probe, feel, and film scripts of section 10 were run from outside the repo, not added to `scripts/gate/`. |
+| 13 Decisions | All fifteen as recommended. For decision 2, the three presets are in Settings, Help, Dev, Lift and place (Calmer, Middle, Bolder), kept on the device (`sundayreset.hand`). |
+
+### The 3D list
+
+Built in code: **1** (one clean rounded outline, `rrShape`), **2** (creased normals, 4 bevel segments, the corner at most 0.3 and the bevel at most 0.2 of the width), **4** (the hang rig), **5** (one contact shadow), **6** (the outline as a socket), **7** (touchdown in the screen's plane), **8** (a face you can read in hand), **9** (the underside a step darker, 0.82, as its own material group), **10** (the dust ring as a decal), **11** (the picked glow stays on the board), **12** (the line of light on the bevels, `onBeforeCompile` on Lambert, never the top), **13** (the groove level with the board), and **14** (flecks only where they read). **3** is in part: a re pick and a bench piece stay one object, without the cached widths.
+
+**Blender, written down and not faked:** the stretchable brick master (15) and the shallow recess in its underside (9); the 9 slice soft shadow in two softness levels (5); the dust ring and flecks as an 8 to 12 frame flipbook (10); worn edges (19); a padlock set flush (26); routed grooves with a lip (28); props with real normals and baked occlusion (29); one wood swatch set, and month and year inlays (42); tapered clock hands (43); brick stills for a lab page (41).
+
+### Proof
+
+**The gate.** `npm run gate` (`release-gate.mjs`) on a build of this tree, on ports 4480 and 9480: **GREEN**. Chrome 303 of 303 drops at Mac 1440x900, iPad 820x1180, Duo folded 466x678 and iPhone 390x844, mouse and touch, three of each, on every path that's on each size; WebKit 57 of 57 at Mac size. At 07cfa4d, before this work: GREEN, the same 303 and 57. On the way the gate found two faults of this work's, both fixed: Undo of a placed block lost its step (3.18), and the meal board scrolled under a finger resting on its first row on the folded Duo (4.6). It also showed two paths had gone quiet under other changes the same night (`today-bench`, and `reset-meals` on a sheet): they run again, n/a now means only "not on this size", and every cell the last green run ran has to run again (docs/DRAG-GATE.md).
+
+After the last changes (the shadow made while the desk loads, the hold for a piece in nested lists, the pointer kept), the folded Duo's meal drop with a finger ran 3 of 3 on a fresh build, and the new tries to break it with a sideways list under the lift point (held, jiggled, and carried; and flicked) ran 27 of 27 on the Duo, the iPhone, and the iPad. On 07cfa4d the flick lifts the piece instead of scrolling the list, 0 of 2: the gate catches it.
+
+**Frame times on a phone** (iPhone 390x844, a finger, the reset's Your time onto the week, headless Chrome at 4x CPU throttling on an M4 Pro; the second and third carries of three):
+
+| | 07cfa4d | Now |
+|:-|:-|:-|
+| Frame interval, median and 95th percentile | 16.7 and 16.7 to 16.8 ms | 16.7 and 16.8 ms |
+| Frames over 33 ms in a carry | 1 | 1 |
+| The page's handling of a pointer move, median (95th percentile) | 4.0 to 6.1 ms (9.3 to 11.3) | 0.1 ms or less (0.7 to 1.0) |
+| The desk's draw, median | 5.6 ms | 5.2 to 5.3 ms |
+| Longest frame | 100 ms | 100 ms |
+
+The one long frame left in a carry is letting go: the commit and the redraw run in pointerup (78 to 103 ms at 4x, as before this work). The first carry after a load also pays for the first touch (the sound starting and the first style pass, about 257 ms at 4x in pointerdown, as before) and the first frame with a block in hand; the shadow in hand is now made while the desk loads, so it isn't one of them.
+
+**Clips** (CDP screencast and ffmpeg, in `docs/lift/`): `phone-touch.mp4`, the iPhone with a finger (the tile lifts, swings, and lands on today); `phone-touch-refused.mp4`, the same drop onto a locked block (it says no, why, and goes home); `phone-touch-before.mp4`, the same drop at 07cfa4d. An iPad Pro 1024x1366 with a finger and a Mac 1440x900 with a mouse follow.
+
+### Left, or for Russell
+
+- The done color beat (3.12).
+- Two long frames remain on a phone at 4x: the first seam compiles the brick's bevel material (about 48 ms; warming it at load would take it out of the carry), and letting go runs the commit and the redraw inside pointerup (69 to 83 ms, as before this work).
+- Section 10's scripts in the repo, with A6, A7, A13, A14, and A16 asserted by a script. A9 (refused) and A15 (Undo) were checked frame by frame; the gate's tries cover A10 (Escape) and A13 (Add from the place panel).
+- Section 10's fifteen minutes on a real iPhone, iPad, and Mac.
+- The Socratic list's Open items stay open.
 
 ## Appendix: the numbers in one place (`HAND_TUNE`)
 

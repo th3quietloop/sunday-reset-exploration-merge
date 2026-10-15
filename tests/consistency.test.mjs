@@ -169,9 +169,11 @@ function rig2(board, nowMin) {
     const taskById = (id) => state.tasks.find((t) => t.id === id) || null;
     const quiet = new Proxy(function () {}, { get: (t, k) => (k === 'layout' ? 'week' : quiet), apply: () => undefined });
     const W = quiet, Snd = quiet;
-    const node = () => ({ value: '', hidden: true, style: {}, appendChild(c) { return c; }, append() {}, setAttribute() {}, focus() {}, classList: { add() {}, toggle() {} } });
+    const node = () => ({ value: '', hidden: true, style: {}, dataset: {}, appendChild(c) { return c; }, append() {}, setAttribute() {}, addEventListener() {}, focus() {}, classList: { add() {}, toggle() {} } });
     const $ = () => node(), el = () => node();
     const closeSel = () => {}, kicker = () => {}, title = () => {}, field = () => {}, actions = () => {}, noteMove = () => {};
+    /* (the Planner walk's slot panel: a rule, the setup's lean, the week's days, and the phone's day) */
+    const divider = () => {}, kitLead = () => [], weekOf = () => [], phoneDay = () => false;
     function line(p, text) { lines.push(text); }
     function chips(list, cur, fn) { list.forEach((x) => { picks[x.name] = () => fn(x.id); }); return node(); }
     const libGroups = (list) => [{ name: 'Blocks', list }], library = () => state.palette.filter((x) => !x.hidden);

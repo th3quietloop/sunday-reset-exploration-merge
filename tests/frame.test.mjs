@@ -7,7 +7,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { app, variant, plain } from './v11-rig.mjs';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /* == a page small enough to measure: the toasts, the panel, the reset's own panel, and the body's classes == */
 function page(o) {
@@ -231,16 +236,35 @@ test('a level reached any other way, or moved along, is off the trail', () => {
 
 /* == the panel's fade, only when something is below == */
 test('the panel\'s bottom fade shows only while there is more to scroll to', () => {
-  const side = { scrollHeight: 400, scrollTop: 0, clientHeight: 400, more: null, classList: { toggle(c, on) { side.more = on; } } };
-  const { sideFade } = runInNewContext(`const $ = () => __side; ${app('  function sideFade() {')} ({ sideFade });`, { __side: side });
+  /* (each class kept apart: V11 also marks whether the panel has scrolled, for the phone sheet's header) */
+  const side = { scrollHeight: 400, scrollTop: 0, clientHeight: 400, more: null, scrolled: null, classList: { toggle(c, on) { side[c] = on; } } };
+  const { sideFade } = runInNewContext(`const FEEL = true; const $ = () => __side; ${app('  function sideFade() {')} ({ sideFade });`, { __side: side });
   sideFade();
   assert.equal(side.more, false, 'everything fits: its last button stays bright');
+  assert.equal(side.scrolled, false);
   side.scrollHeight = 900;
   sideFade();
   assert.equal(side.more, true);
   side.scrollTop = 500;
   sideFade();
   assert.equal(side.more, false, 'scrolled to the end');
+  assert.equal(side.scrolled, true, 'the words have gone under the phone sheet\'s header: its hairline shows');
+});
+
+/* the phone's sheet (docs/PHONE-REDESIGN.md, 5.1): no fade at all; its foot, and the footer pinned there, are solid */
+test('on a phone the sheet never fades: it and its footer are solid, down to the bottom edge', () => {
+  const css = readFileSync(join(root, 'variants', 'corners11', 'css', 'sheet.css'), 'utf8');
+  const rule = (sel) => { const i = css.indexOf(sel + ' {'); assert.ok(i >= 0, 'no rule for ' + sel); return css.slice(i, css.indexOf('}', i)); };
+  const sheet = rule('body.feel.phone #side, body.feel.phone-desk #side');
+  assert.match(sheet, /mask-image: none !important/, 'no see-through fade at the sheet\'s foot');
+  assert.match(sheet, /background: var\(--sf-sheet\) !important/);
+  assert.match(sheet, /bottom: 0;/, 'attached to the bottom edge');
+  const tok = css.match(/--sf-sheet: (#[0-9A-Fa-f]+);/);
+  assert.ok(tok && tok[1].length === 7, 'the sheet\'s color is solid (no alpha)');
+  const foot = rule('body.feel.phone #side .c-sfoot, body.feel.phone-desk #side .c-sfoot,\nbody.feel.phone #side .place-foot, body.feel.phone-desk #side .place-foot,\nbody.feel.phone #side .c-gl-foot, body.feel.phone-desk #side .c-gl-foot');
+  assert.match(foot, /background: var\(--sf-sheet\)/, 'the footer is the sheet\'s own solid color');
+  assert.match(foot, /position: sticky; bottom: 0;/, 'pinned at the bottom edge');
+  assert.match(foot, /env\(safe-area-inset-bottom/, 'with the safe area under it');
 });
 
 /* == hidden chrome keeps its room, except the place panel's == */

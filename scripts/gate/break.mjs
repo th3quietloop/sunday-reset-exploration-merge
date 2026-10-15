@@ -47,6 +47,13 @@ const SCEN = {
   /* a finger that swipes along a list of tiles scrolls the list: nothing lifts, nothing lands */
   swipetile: { path: 'reset-yours', touch: true, style: 'flick', expect: 'scroll', mutatePlan: () => alongList },
   swipemeal: { path: 'reset-meals', touch: true, style: 'flick', expect: 'scroll', mutatePlan: () => alongList },
+  /* a sideways list under the lift point, inside the list that scrolls up and down (the meal board's Fill the week
+     row was one, for a day on Oct 15): held, lifted, then jiggled sideways and carried, it lands, the sideways
+     list never moves, and the browser never takes the finger. A quick flick up from it scrolls instead, and
+     nothing lifts (a move along either list is that list's) */
+  sideways: { path: 'reset-meals', touch: true, before: 'sideways', hooks: () => ({ at: { i: 2, fn: (pt) => jiggle(pt) } }) },
+  sidewaystile: { path: 'reset-yours', touch: true, before: 'sideways', hooks: () => ({ at: { i: 2, fn: (pt) => jiggle(pt) } }) },
+  sidewaysflick: { path: 'reset-meals', touch: true, style: 'flick', before: 'sideways', expect: 'scroll' },
   slow: { path: 'reset-todo', style: 'slow' },
   press: { path: 'reset-people', style: 'press' },
   pause: { path: 'move-week', style: 'pause' },
@@ -123,6 +130,25 @@ async function swipeList() {
   await c.touch('touchEnd', []);
   return 'swiped';
 }
+/* a sideways list made around the piece under a point, inside whatever list it's in: the piece keeps its size, a
+   spacer beside it makes the row scroll sideways. Says where the piece is now, and the ways its lists scroll */
+const sidewaysAt = (pt) => `JSON.stringify((() => {
+  const at = document.elementFromPoint(${pt.x}, ${pt.y});
+  const piece = at && at.closest('.c-drag, .tile');
+  if (!piece || !piece.parentElement) return { ok: false, why: 'nothing to lift at the press' };
+  const r = piece.getBoundingClientRect();
+  const wrap = document.createElement('div'); wrap.className = 'gate-sideways';
+  wrap.style.cssText = 'overflow-x: auto; overflow-y: hidden; width: ' + Math.round(r.width) + 'px; max-width: 100%;';
+  const row = document.createElement('div'); row.style.cssText = 'display: flex; flex-wrap: nowrap; gap: 8px; width: max-content;';
+  piece.parentElement.insertBefore(wrap, piece); wrap.appendChild(row); row.appendChild(piece);
+  piece.style.width = Math.round(r.width) + 'px'; piece.style.flex = '0 0 auto';
+  const pad = document.createElement('div'); pad.style.cssText = 'flex: 0 0 ' + Math.round(r.width) + 'px; height: 1px;'; row.appendChild(pad);
+  const q = piece.getBoundingClientRect();
+  if (!(wrap.scrollWidth > wrap.clientWidth + 1)) return { ok: false, why: 'the row made around it does not scroll' };
+  return { ok: true, x: Math.round(q.left + q.width / 2), y: Math.round(q.top + q.height / 2), axis: __mx.axisOf(piece) };
+})())`;
+/* a finger that jiggles sideways 40 px and back, right after the lift */
+async function jiggle({ x, y }) { for (const dx of [14, 28, 40, 28, 14, 0]) { await c.touch('touchMove', [{ x: x + dx, y, id: 1 }]); await sleep(16); } }
 /* the next tap after a cancel, on the meal board's title: it does only its own thing */
 async function tapTitle() {
   const t = JSON.parse(await c.ev(`JSON.stringify((() => { const e = document.querySelector('.c-mat h1, .c-mat h2, .c-mat-head'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: Math.round(r.left + 20), y: Math.round(r.top + r.height / 2) }; })())`));
@@ -154,7 +180,10 @@ async function underToast(size, input, i) {
   /* (blind: the hand ends where the toast was, never re-aimed out from under it; where it lands is judged
      against the outline, not the day aimed at, since the desk leans in under a carried block. The plan is
      asked for a tile only, and the covered spot is the target) */
-  const r = await g.attempt(size, input, 'reset-yours', i, 'blind', {}, { planOpts: { target: 'panel' }, expect: 'land', mutatePlan: (pl) => { pl.to = { x: t.x, y: t.y, min: t.m, row: t.row }; }, tag: 'undercover' });
+  /* (a finger: the outline rides above it, so the finger ends that far below the covered spot, as a person
+     steering the outline under the toast puts it) */
+  const steer = input === 'touch' ? { beforeUp: async () => { const off = +(await c.ev(`window.__mx && __mx.aimLift ? __mx.aimLift() : 0`)) || 0; if (off > 0) { await c.touch('touchMove', [{ x: t.x, y: t.y + off, id: 1 }]); await sleep(160); } } } : {};
+  const r = await g.attempt(size, input, 'reset-yours', i, 'blind', steer, { planOpts: { target: 'panel' }, expect: 'land', mutatePlan: (pl) => { pl.to = { x: t.x, y: t.y, min: t.m, row: t.row }; }, tag: 'undercover' });
   if (r && r.verdict) r.verdict.why = r.verdict.why.concat(pageErrors(e0).length && !r.verdict.why.some((w) => /^errors/.test(w)) ? ['errors: ' + pageErrors(e0).map((e) => e.text.slice(0, 120)).join(' | ')] : []);
   if (r && r.verdict) r.verdict.pass = !r.verdict.why.length;
   return r;
@@ -301,10 +330,25 @@ for (const size of sizes) {
           if (s.expect === 'nothing-setup') { extra.expect = 'post'; extra.mutatePlan = (p) => { p.post = "!document.querySelector('.onb-float') && !document.querySelector('.onb-grip')"; }; }
           if (s.mutatePlan) extra.mutatePlan = s.mutatePlan(size);
           if (s.before === 'swipe') extra.beforeDrag = async () => { extra.swiped = await swipeList(); };
+          if (s.before === 'sideways') extra.beforeDrag = async (p) => { try { extra.side = JSON.parse(await c.ev(sidewaysAt(p.from))); } catch (e) { extra.side = { ok: false, why: String(e).slice(0, 120) }; } if (extra.side.ok) { p.from.x = extra.side.x; p.from.y = extra.side.y; } };
           const zoom0 = s.zoomStays ? await c.ev(`SR.view.zoom`) : null;
           r = await g.attempt(size, input, s.path, i, s.style || 'normal', s.hooks ? (p) => s.hooks(size, p) : {}, extra);
           if (s.after) await s.after();
           if (r && extra.swiped) r.swiped = extra.swiped;
+          /* the sideways list: it was there, it never moved, and the browser never took the finger */
+          if (s.before === 'sideways' && r && r.verdict) {
+            const side = [];
+            if (!extra.side || !extra.side.ok) side.push('no sideways list under the press: ' + ((extra.side && extra.side.why) || 'not made'));
+            else {
+              const left = +(await c.ev(`(() => { const w = document.querySelector('.gate-sideways'); return w ? w.scrollLeft : 0; })()`));
+              if (left > 0) side.push('the sideways list under the finger scrolled ' + left + ' px');
+              if (!s.expect && (r.cancels || []).some((x) => x.k === 'pointercancel')) side.push('the browser took the finger (pointercancel)');
+            }
+            if (side.length) { r.verdict.pass = false; r.verdict.why = r.verdict.why.concat(side); }
+            r.side = extra.side;
+            /* (the piece goes back where it was, and the row made around it goes) */
+            await c.ev(`(async () => { document.querySelectorAll('.gate-sideways').forEach((w) => { const pc = w.querySelector('.c-drag, .tile'); if (pc && w.parentElement) { pc.style.width = ''; pc.style.flex = ''; w.parentElement.insertBefore(pc, w); } w.remove(); }); SR.render(); await new Promise((res) => setTimeout(res, 300)); return 1; })()`);
+          }
           if (r && r.verdict && cur.afterTap) { r.verdict.pass = false; r.verdict.why.push(cur.afterTap); }
           /* Escape put the carried thing down; it never zoomed the desk out as well */
           if (r && r.verdict && s.zoomStays) { const z1 = await c.ev(`SR.view.zoom`); if (z1 !== zoom0) { r.verdict.pass = false; r.verdict.why.push('Escape zoomed out to ' + z1 + ' as well'); await c.ev(`SR.setZoom(${J(zoom0)})`); await sleep(600); } }

@@ -60,6 +60,16 @@ body.c-rsheet .k-chip.c-peek canvas { transform: rotate(-90deg); }
 /* folded (variant.js fitSteps, when the whole bar doesn't fit): only the step you're on says its name, and the
    number stays centered in its dot */
 .c-steps.fold .c-sbtn:not(.on) .c-sname { display: none; }
+/* Larger text on the step bar: a size up in its own type (names 14, dots 28 with 13 in them) instead of the 1.14
+   zoom the other chips take (polish.css). Zoomed, its place across the top grew with it, and at 1440 the bar ran
+   off the right edge; at its own size it stays centered over the week, and fitSteps folds the names to the step
+   you're on when they don't fit (Oct 14, the polish pass) */
+body.big-text .k.k-chip.c-steps { zoom: 1; }
+body.big-text .k .c-sbtn { font-size: 14px; }
+body.big-text .c-sdot { width: 28px; height: 28px; font-size: 13px; }
+body.big-text .c-sdot canvas { width: 14px !important; height: 14px !important; }
+body.big-text .c-sfin .c-sdot { width: 18px; height: 18px; margin: 5px; }
+body.big-text .c-sfin.on .c-sdot { width: 28px; height: 28px; margin: 0; }
 
 /* == the way back to the whole week, once a pinch or + looked closer during the reset == */
 .k.c-fitchip { position: fixed; z-index: 45; top: 80px; right: 16px; display: none; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 22px; font: 600 14px/1 var(--k-font); color: var(--tx, #FFFFFF); cursor: pointer; }
@@ -110,6 +120,29 @@ body.c-resetting .rack.resetting .rack-body > .c-lb { flex: 1 1 100%; width: 100
 .c-lb-field .input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--tx-2, #CDCDCD); }
 .c-lb-hint { margin: 0; font: 400 13px/1.4 var(--k-font); color: var(--tx-3, #AFAFAF); }
 @media (prefers-reduced-motion: reduce) { .c-lb-row:active, .k.c-fitchip:active { transform: none; } }
+/* (the rituals walk) what you said, from whenever you said it: each note with Still true beside it, which
+   carries it to this week; one already carried says so, quietly */
+.c-lb-saidrow { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.c-lb-saidrow p { flex: 1; min-width: 0; margin: 0; }
+.rack .c-lb-still, .c-lb-still { position: relative; flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--sf-hover); color: var(--tx, #FFFFFF); font: 600 14px/1 var(--k-font); cursor: pointer; }
+.c-lb-still::after { content: ''; position: absolute; inset: -4px; }
+.rack .c-lb-still:hover, .c-lb-still:hover { background: var(--sf-press); }
+.rack .c-lb-still:active, .c-lb-still:active { transform: translateY(1px); }
+.c-lb-still:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+.c-lb-carried { flex: none; font: 500 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+/* the tag over the board while Look back shows last week, centered under the step bar, over the week */
+.k.c-weektag { position: fixed; z-index: 44; top: 76px; left: calc(472px + (100vw - 472px) / 2); transform: translateX(-50%); display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 18px; font: 600 14px/1 var(--k-font); color: var(--tx, #FFFFFF); white-space: nowrap; pointer-events: none; }
+.k.c-weektag[hidden] { display: none; }
+@media (min-width: 760px) and (max-width: 1079px) { .k.c-weektag { left: calc(412px + (100vw - 412px) / 2); } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { .k.c-weektag { left: 50%; } }
+@media (max-width: 759px) { .k.c-weektag { top: 10px; left: 50%; } }
+body.c-panel-off .k.c-weektag { left: 50%; }
+body.c-sheet-aside .k.c-weektag, body.c-detail .k.c-weektag, body.drawer-live .k.c-weektag, body.c-away .k.c-weektag { visibility: hidden; }
+/* Look back on a sheet: nothing to drag, so the sheet takes most of the height and the week above is a strip,
+   with the question in view as the step opens */
+@media (max-width: 759px) { body.c-resetting.c-step-back .rack.resetting { height: calc(100vh - 150px) !important; } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { body.c-resetting.c-step-back .rack.resetting { height: max(320px, calc(100vh - 380px)) !important; } }
+@media (max-height: 639px) and (max-width: 979px) { body.c-resetting.c-rsheet.c-step-back .rack.resetting { height: calc(100vh - 96px) !important; } }
 
 /* == round three: a panel opened from a step where the reset is a sheet ==
    On a tablet standing up (600 wide or more) the panel stands on the right, up to 420 wide, narrower on a small

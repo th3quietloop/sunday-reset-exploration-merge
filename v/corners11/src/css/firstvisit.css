@@ -1,0 +1,229 @@
+/* == V11: the first visit (Oct 15, the first-visit walk, docs/walk/first-visit.md) ==
+   The one front door, the setup's answers in one look for picked (white, with dark ink and a dark tick, the app's
+   own rule; gold is the one call to action), the goal the setup hears, their week while it's built and planned,
+   the sample that says it's a sample, and Getting started one tap away. Every size here is one of the eight. */
+
+/* == the front door == */
+/* the button's two lines in the gold button's own dark ink (they were white and pale teal on gold, about 1.5 to 1) */
+.sheet.onb.welcome .go.onb-start b, .sheet.onb.welcome .go.onb-start small { color: var(--sf-ink); }
+.sheet.onb.welcome .go.onb-start small { font: 600 13px var(--font); }
+.sheet.onb.welcome .go.onb-start { min-height: 56px; }
+.sheet.onb.welcome .onb-w-foot { gap: 6px; }
+.onb-parts4 { margin: 2px 0 0; font: 600 13px/1.4 var(--font); color: var(--muted); text-align: center; text-wrap: balance; }
+.sheet.onb.welcome .onb-look { min-height: 44px; font-size: 14px; }
+.onb-homefirst { margin-top: 4px; padding: 10px 14px; border-radius: 14px; background: var(--panel-2); }
+.onb-homefirst > p { margin: 0; font: 500 13px/1.45 var(--font); color: var(--soft); }
+.onb-homefirst .onb-how { padding: 0; background: none; border-radius: 0; margin-top: 4px; }
+.onb-homefirst .onb-how summary { min-height: 44px; font: 700 13px var(--font); color: #FFFFFF; }
+.onb-homefirst .onb-how p { margin: 0 0 6px; font: 500 13px/1.45 var(--font); color: var(--soft); }
+/* Other ways in: rows a thumb can hit, each saying what it does, over the lock line */
+.onb-more11 { align-self: stretch; margin-top: 2px; }
+.onb-more11 summary { justify-content: center; min-height: 44px; font: 700 13px var(--font); color: var(--soft); }
+.onb-wayrows { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
+.onb-way { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-height: 52px; padding: 8px 14px; border: 0; border-radius: 12px; background: var(--panel-2); color: #FFFFFF; text-align: left; cursor: pointer; }
+.onb-way:hover { background: var(--panel-3); }
+.onb-way:active { transform: translateY(1px); }
+.onb-way:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.onb-way b { font: 700 14px var(--font); }
+.onb-way small { font: 500 13px var(--font); color: var(--soft); }
+.sheet.onb.welcome .onb-keep { margin-top: 4px; font-size: 13px; }
+@media (max-width: 600px) {
+  .sheet.onb.welcome .onb-w-foot { padding-top: 14px; }
+  .sheet.onb.welcome .onb-hero { padding: 10px 10px 26px; }
+}
+/* a short phone (the folded Duo, 580 tall): the picture gives up a little height so the button sits in view */
+@media (max-width: 600px) and (max-height: 640px) {
+  .sheet.onb.welcome .onb-week { gap: 4px; }
+  .sheet.onb.welcome .onb-lane.thin { height: 10px; }
+  .sheet.onb.welcome .onb-w-words { margin-top: 12px; gap: 6px; }
+  .sheet.onb.welcome .sheet-h { font-size: 26px; }
+  .sheet.onb.welcome .sheet-line { font-size: 14px; }
+  .sheet.onb.welcome .onb-w-top { margin-bottom: 8px; }
+}
+
+/* == one look for picked, everywhere in the setup: white, with dark ink and a dark tick == */
+.sheet.onb .onb-pick[aria-checked="true"], .sheet.onb .onb-other.said { background: #FFFFFF; color: var(--sf-ink); box-shadow: none; }
+.sheet.onb .onb-pick[aria-checked="true"] .onb-words b, .sheet.onb .onb-other.said .onb-words b { color: var(--sf-ink); }
+.sheet.onb .onb-pick[aria-checked="true"] .onb-words small, .sheet.onb .onb-other.said .onb-words small { color: #4A4A4F; }
+.sheet.onb .onb-pick[aria-checked="true"] > canvas, .sheet.onb .onb-other.said > canvas { filter: brightness(0) invert(0.11); }
+.sheet.onb [aria-checked="true"] > .onb-tick, .sheet.onb .onb-other.said > .onb-tick { background: transparent; box-shadow: inset 0 0 0 2px var(--sf-ink); }
+.sheet.onb [aria-checked="true"] > .onb-tick canvas, .sheet.onb .onb-other.said > .onb-tick canvas { opacity: 1; }
+.sheet.onb .onb-other .onb-tick canvas { opacity: 0; }
+.sheet.onb .onb-pick[aria-checked="true"]:hover, .sheet.onb .onb-other.said:hover { background: #F1F1F3; }
+/* what you said, under a tile on What should it help with (the dot's title, which a phone never shows) */
+.sheet.onb .onb-helps .onb-said { margin-top: 3px; font: 600 12px/1.3 var(--font); color: var(--muted); }
+.sheet.onb .onb-helps [aria-checked="true"] .onb-said { color: #4A4A4F; }
+
+/* == About you == */
+.sheet.onb .onb-name-in { width: 100%; min-height: 52px; font-size: 19px; }
+.onb-me { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; height: 48px; padding: 0 16px 0 7px; border-radius: 999px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); font: 700 16px var(--name); color: #FFFFFF; animation: blockin 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.onb-me i { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--k-gold, #F2CF7A); color: var(--sf-ink); font: 800 16px var(--name); font-style: normal; }
+.onb-me[hidden] { display: none; }
+.sheet.onb .onb-other-ta { width: 100%; min-height: 76px; resize: none; line-height: 1.45; font: 600 16px/1.45 var(--font); }
+.onb-heard { margin: -4px 0 0; font: 600 13px/1.4 var(--font); color: var(--soft); }
+.onb-heard[hidden] { display: none; }
+/* the name boxes are 44 tall, and kids get an Add beside theirs */
+.sheet.onb .onb-people { min-height: 52px; }
+.sheet.onb .onb-people-in { height: 44px; }
+.onb-people-line { display: flex; align-items: stretch; gap: 8px; }
+.onb-people-line > .onb-people { flex: 1; min-width: 0; }
+.onb-people-add.small { flex: none; min-height: 44px; padding: 0 16px; align-self: center; }
+@media (pointer: coarse) { .onb-person { height: 44px; } }
+/* the turned card keeps what they said in the quiet surface with a gold mark; Next is the page's one gold thing */
+.sheet.onb .onb-face-then { background: var(--sf-raised); color: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(242, 207, 122, 0.45); }
+.sheet.onb .onb-face-then .onb-face-k { color: var(--soft); font-size: 13px; }
+.sheet.onb .onb-face-then b { color: #FFFFFF; }
+.sheet.onb .onb-face-then small { color: var(--soft); }
+
+/* == Your week == */
+/* what the bars are for, on a phone too */
+.sheet.onb .onb-days .onb-b.awake small { display: block; font: 800 12px var(--font); color: #3F2A12; }
+/* steppers line up: a set width for the time, in even figures, and Bed under Up on a narrow phone */
+.sheet.onb .row2 .stepper output { min-width: 6.4em; flex: 1 1 auto; }
+@media (max-width: 400px) {
+  .sheet.onb .row2 { grid-template-columns: minmax(0, 1fr) !important; display: grid; gap: 12px; }
+}
+.onb-picks.onb-shapes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.onb-picks.onb-fills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.onb-morehours { background: none !important; padding: 0 !important; }
+.onb-morehours > summary { min-height: 44px; font: 700 14px var(--font); color: #FFFFFF; }
+.onb-morehours[open] > summary { margin-bottom: 6px; }
+.onb-morehours > .field, .onb-morehours > .toggle, .onb-morehours > .row2, .onb-morehours > .field-hint { margin-top: 10px; }
+.onb-weekpic .onb-week { margin-top: 8px; padding: 12px 14px; border-radius: 14px; background: linear-gradient(#E6CFA2, #D9BB86); }
+/* drop off and pick up stack on a narrow window, so a plus never sits against the next box's minus */
+@media (max-width: 420px) { .dcard .row2.onb-care2 { grid-template-columns: minmax(0, 1fr) !important; display: grid; gap: 10px; } }
+.dcard .onb-link { align-self: flex-start; min-height: 44px; }
+/* a calendar file dropped on the step lands on its card */
+.onb-part.drop-on { box-shadow: inset 0 0 0 2px #FFFFFF; background: var(--panel-3); }
+
+/* == Try it == */
+.onb-board.zoomed .onb-lane { animation: blockin 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* See further ahead: the goal it heard, offered where the date is typed */
+.onb-goal-offer { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px rgba(242, 207, 122, 0.4); }
+.onb-goal-offer[hidden] { display: none; }
+.onb-goal-top { display: flex; align-items: flex-start; gap: 12px; }
+.onb-goal-mark { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(242, 207, 122, 0.14); }
+.onb-goal-mark canvas { width: 20px; height: 20px; }
+.onb-goal-words { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.onb-goal-words b { font: 800 16px/1.3 var(--name); color: #FFFFFF; }
+.onb-goal-words p { margin: 0; font: 500 14px/1.45 var(--font); color: var(--soft); }
+.onb-goal-words .onb-lead-s { color: #FFFFFF; font-weight: 600; }
+.onb-goal-next { margin: 0; font: 600 13px/1.45 var(--font); color: var(--soft); }
+.onb-halves { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.onb-half { min-height: 44px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--panel-3); color: #FFFFFF; font: 700 14px var(--font); cursor: pointer; }
+.onb-half:hover { background: rgba(255, 255, 255, 0.16); }
+.onb-half:active { transform: translateY(1px); }
+.onb-half:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.onb-half[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); }
+/* on a short window the question comes before the picture */
+@media (max-height: 640px) {
+  .onb-at-ahead .sheet-body > .onb-soon { order: -3; }
+  .onb-at-ahead .sheet-body > .onb-soon-say { order: -2; }
+  .onb-at-ahead .sheet-body > .onb-goal-offer { order: -1; }
+  .onb-at-ahead .onb-stage { min-height: 0; }
+}
+/* the thing in the year says its name, on two lines when it needs them */
+.sheet.onb .onb-mcard em { align-items: flex-start; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.15; }
+.sheet.onb .onb-mcard em canvas { margin-top: 1px; }
+/* dinner's own words get the room every field gets */
+.onb-at-dinner .sheet-body .field + .field { margin-top: 8px; }
+/* the to-do step's next moves, quiet and a thumb tall */
+.sheet.onb .onb-todo-ta { width: 100%; min-height: 96px; resize: none; font: 600 16px/1.5 var(--font); }
+.onb-next { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet.onb .onb-nextbtn.small { min-height: 44px; padding: 0 16px; }
+.onb-steps { margin: 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 4px; font: 500 14px/1.45 var(--font); color: var(--soft); }
+
+/* == Your plan == */
+.sheet.onb .onb-calbtn.small { min-height: 44px; padding: 0 16px; }
+.sheet.onb .onb-first { color: #FFFFFF; }
+/* their week, as a picture, on the board's wood like the welcome's (its labels take the wood's dark ink, contrast.css):
+   while it's built, a row at a time, and at the top of the plan */
+.onb-built { padding: 12px 14px 10px; border-radius: 14px; background: linear-gradient(#E6CFA2, #D9BB86); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35), inset 0 -3px 0 rgba(80, 52, 10, 0.18); }
+.onb-built .onb-row { animation: blockin 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.onb-built .onb-row:nth-child(2) { animation-delay: 0.06s; } .onb-built .onb-row:nth-child(3) { animation-delay: 0.12s; } .onb-built .onb-row:nth-child(4) { animation-delay: 0.18s; }
+.onb-built .onb-row:nth-child(5) { animation-delay: 0.24s; } .onb-built .onb-row:nth-child(6) { animation-delay: 0.3s; } .onb-built .onb-row:nth-child(7) { animation-delay: 0.36s; }
+.onb-built .onb-lane.thin { height: 16px; }
+.onb-built.onb-built-sm .onb-lane.thin { height: 12px; }
+.onb-built.onb-built-sm .onb-week { gap: 4px; }
+@media (prefers-reduced-motion: reduce) { .onb-built .onb-row, .onb-me, .onb-board.zoomed .onb-lane { animation: none !important; } }
+body.calm .onb-built .onb-row, body.calm .onb-me, body.calm .onb-board.zoomed .onb-lane { animation: none; }
+/* the reason they came, first */
+.onb-lead { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px rgba(242, 207, 122, 0.45); }
+.onb-lead .onb-nextbtn { align-self: flex-start; }
+.onb-stats.onb-stats2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; width: 100%; max-width: none; }
+.onb-stats.onb-stats2 .onb-stat { padding: 12px; }
+.onb-stats.onb-stats2 .onb-stat b { font-size: 22px; }
+.onb-stats.onb-stats2 .onb-stat span { font-size: 13px; }
+/* what's on the board and what to lean on, as plain lines: a card that does nothing reads as one to tap */
+.onb-plainlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.onb-plainlist li { display: flex; align-items: flex-start; gap: 10px; font: 600 14px/1.4 var(--font); color: #FFFFFF; }
+.onb-plainlist li > canvas { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.onb-plainlist .onb-words b { font: 700 14px/1.35 var(--font); }
+.onb-plainlist .onb-words small { font: 500 13px/1.4 var(--font); color: var(--soft); }
+
+/* == the setup's own buttons and close mark: a thumb's 44 on every window == */
+.sheet.onb .onb-x { width: 44px; height: 44px; }
+.sheet.onb > .actions .go, .sheet.onb > .actions .small { min-height: 44px; }
+
+/* == their week behind the card: the desk shows it, so the scrim lets it through == */
+body.onb-behind #scrim { background: rgba(0, 0, 0, 0.18) !important; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+
+/* == the sample says it's a sample == */
+.c-sampleline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.c-sampleline > span { font: 700 14px var(--font); color: #FFFFFF; }
+.c-sampleline .go.c-samplego { min-height: 44px; padding: 0 16px; border-radius: 12px; font: 700 14px var(--font); color: var(--sf-ink); white-space: nowrap; }
+.td-head .c-sampleline { margin-top: 12px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--sf-raised); }
+.phonebar .pb-sample { flex: 1 1 100%; order: 9; padding: 4px 0 0 8px; }
+.phonebar .pb-sample[hidden] { display: none; }
+/* (a phone on its side keeps its bar one row: the button alone) */
+@media (min-width: 540px) and (max-height: 499px) { body.phone-desk .phonebar .pb-sample { flex: none; order: 4; padding: 0; } body.phone-desk .phonebar .pb-sample > span { display: none; } }
+/* the name chip says Sample where the name is hidden (the iPad, the open Duo) */
+.c-me-tag { font: 600 13px var(--k-font, var(--font)); color: #FFFFFF; margin-left: 2px; }
+.c-me-tag[hidden] { display: none; }
+@media (min-width: 1181px) { .c-me-tag { display: none; } }
+.k .c-me[aria-expanded="true"] .c-me-tag { color: var(--sf-ink); }
+
+/* == Getting started, one tap away on the bottom bar while it's unfinished == */
+.k .c-gsbtn { display: inline-flex; align-items: center; gap: 8px; }
+.k .c-gsbtn[hidden] { display: none; }
+.c-gsring { --p: 0; width: 18px; height: 18px; border-radius: 50%; flex: none; background: radial-gradient(closest-side, var(--sf-solid, #232325) 62%, transparent 64%), conic-gradient(var(--k-gold, #F2CF7A) calc(var(--p) * 1%), rgba(255, 255, 255, 0.22) 0); }
+.c-gsn { font: 600 13px var(--k-font, var(--font)); color: var(--tx-2, #CDCDCD); font-variant-numeric: tabular-nums; }
+@media (max-width: 1000px) { .k .c-gsbtn .c-gsname { display: none; } }
+
+/* == a toast from the setup (Make it a goal, Due Feb 23, Break it down, each with Undo) stands at the top, never over
+   the card's Next at its foot == */
+body:has(#sheet.onb:not([hidden])) #toasts { top: max(16px, env(safe-area-inset-top, 0px)); bottom: auto !important; z-index: 210; }
+
+/* the front door as a poster on a short wide window (the open Duo, 951 by 669): the three tiles step aside and the
+   picture gives up a little height, so the lock line and Other ways in stay on the card */
+@media (min-width: 900px) and (min-height: 560px) and (max-height: 780px) {
+  .sheet.onb.welcome .onb-tiles { display: none; }
+  .sheet.onb.welcome .onb-lane.thin { height: 18px; }
+  .sheet.onb.welcome .onb-week { gap: 8px; }
+  .sheet.onb.welcome { padding-top: 22px; padding-bottom: 18px; }
+}
+@media (min-width: 900px) and (min-height: 560px) { .sheet.onb.welcome { max-height: calc(100% - 24px); overflow-y: auto; } }
+
+/* Getting started's close mark has a row of its own, so the list scrolling under it never runs beneath it */
+#side:has(> .moves) > .side-x, #side:has(.moves) > .side-x { float: none; position: relative; top: auto; margin: -10px -10px 2px auto; display: grid; place-items: center; }
+
+/* == Building, on a computer: the card steps down to a caption along the bottom and their week lands on the desk, in
+   view; the lines tick through one at a time, the latest showing, with Back and See my plan beside them == */
+@media (min-width: 900px) and (min-height: 560px) {
+  body.onb-landing #scrim { background: transparent !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  /* (the bar along the bottom steps aside for the caption; nothing on it works until the setup is done) */
+  body.onb-landing .c-br, body.onb-landing .c-bl { visibility: hidden; }
+  .sheet.onb.onb-card.onb-landing { top: auto !important; bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important; left: 50% !important; transform: translateX(-50%) !important; width: min(780px, calc(100% - 32px)); height: auto !important; max-height: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head acts" "body acts"; align-items: center; column-gap: 18px; row-gap: 2px; padding: 14px 16px 14px 24px; overflow: visible; animation: none; }
+  .sheet.onb.onb-card.onb-landing .onb-head { grid-area: head; padding: 0; gap: 0; box-shadow: none !important; }
+  .sheet.onb.onb-card.onb-landing .onb-top { display: none; }
+  .sheet.onb.onb-card.onb-landing .sheet-h { font-size: 16px; line-height: 1.3; color: var(--soft); }
+  .sheet.onb.onb-card.onb-landing .onb-scroll { grid-area: body; overflow: visible; min-height: 0; }
+  .sheet.onb.onb-card.onb-landing .sheet-body { padding: 0; gap: 0; }
+  .sheet.onb.onb-card.onb-landing .onb-built { display: none; }
+  .sheet.onb.onb-card.onb-landing .onb-lines { min-height: 26px; }
+  .sheet.onb.onb-card.onb-landing .onb-line { display: none; font-size: 19px; color: #FFFFFF; }
+  .sheet.onb.onb-card.onb-landing .onb-line.done:not(:has(+ .onb-line.done)) { display: flex; animation: blockin 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .sheet.onb.onb-card.onb-landing > .actions { grid-area: acts; padding: 0 !important; margin: 0; box-shadow: none !important; background: none; }
+  body.calm .sheet.onb.onb-card.onb-landing .onb-line.done { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) { .sheet.onb.onb-card.onb-landing .onb-line.done { animation: none !important; } }

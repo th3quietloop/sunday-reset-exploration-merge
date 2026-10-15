@@ -8,7 +8,7 @@
 //
 //   node scripts/gate/release-gate.mjs [-full] [-n 3] [-sizes mac1,phone] [-paths reset-yours,lib-week]
 //     [-build folder] (a V11 build already made) [-serve 4467] [-cdp 9467] [-lanes 3] [-no-webkit]
-//     [-no-break] [-out folder] [-verbose]
+//     [-no-break] [-out folder] [-verbose] [-baseline file] [-no-baseline]
 // Exit code 1 when anything failed. Results, the summary, and pictures of every failure are in the run's
 // folder (printed at the end; the system's temporary folder unless -out says).
 import { spawn } from 'node:child_process';
@@ -78,10 +78,51 @@ for (const b of br) {
   const s = b.out.split('\nSUMMARY\n')[1] || b.out.slice(-2000);
   md.push('', '## Tries to break it: ' + b.tag, '', '```', s.trim(), '```');
 }
+/* == the last green run ==
+   A cell (a path at a size with an input) that ran in the last green run and doesn't run now fails the gate,
+   whatever this run calls it: a path that comes back n/a hides itself instead of being tested. The cells a green
+   run ran are kept in last-green.json beside this script (-baseline file to use another, -no-baseline to skip);
+   a green run adds to them, and a cell leaves only when someone takes it out of that file by hand. */
+const BASE = typeof args.baseline === 'string' ? args.baseline : join(HERE, 'last-green.json');
+const ranIn = (fs) => {
+  const out = new Set(), why = {};
+  for (const f of fs) {
+    let d; try { d = JSON.parse(readFileSync(f, 'utf8')); } catch (e) { continue; }
+    for (const r of d.results || []) {
+      if (r.input && r.verdict) out.add(r.path + '|' + r.size + '|' + r.input);
+      else if (r.skip) why[r.path + '|' + r.size + (r.input ? '|' + r.input : '')] = r.skip;
+    }
+  }
+  return { out, why };
+};
+const wkFile = join(dir, 'webkit.json');
+const now = { chrome: ranIn(files), webkit: ranIn(wk && existsSync(wkFile) ? [wkFile] : []) };
+const pathIn = (p) => paths === 'all' || paths.split(',').includes(p);
+/* (WebKit runs at Mac size only) */
+const inScope = { chrome: (s, p) => files.length > 0 && sizes.includes(s) && pathIn(p), webkit: (s, p) => !!wk && s === 'mac1' && pathIn(p) };
+let base = null;
+if (!args['no-baseline']) { try { base = JSON.parse(readFileSync(BASE, 'utf8')); } catch (e) { base = null; } }
+const lost = [];
+if (base) {
+  for (const lane of ['chrome', 'webkit']) {
+    for (const cell of base[lane] || []) {
+      const [p, s, i] = cell.split('|');
+      if (!inScope[lane](s, p) || now[lane].out.has(cell)) continue;
+      lost.push((lane === 'webkit' ? 'WebKit, ' : '') + p + ' at ' + s + ' (' + i + '): ' + (now[lane].why[p + '|' + s + '|' + i] || now[lane].why[p + '|' + s] || 'not in this run'));
+    }
+  }
+  if (lost.length) md.push('', '## Ran in the last green run, not now (each counts as a failure)', '', ...lost.map((x) => '- ' + x));
+}
 const text = md.join('\n');
 writeFileSync(join(dir, 'summary.md'), text);
 say(text);
 const brFailed = br.some((b) => b.code !== 0);
-const failed = res.some((r) => r.code !== 0) || (wk && wk.code !== 0) || brFailed || (!files.length && !args['no-matrix']);
+const failed = res.some((r) => r.code !== 0) || (wk && wk.code !== 0) || brFailed || (!files.length && !args['no-matrix']) || lost.length > 0;
+/* a green run keeps what it ran, for the next run to hold to */
+if (!failed && !args['no-baseline']) {
+  const next = { about: 'The cells (path|size|input) the last green drag gate ran. A cell here that does not run fails the gate. Written by release-gate.mjs after a green run; take a cell out by hand only when its path is meant to leave that size.', chrome: [], webkit: [] };
+  for (const lane of ['chrome', 'webkit']) next[lane] = Array.from(new Set(((base && base[lane]) || []).concat([...now[lane].out]))).sort();
+  try { writeFileSync(BASE, JSON.stringify(next, null, 1) + '\n'); } catch (e) { say('could not keep the last green run in ' + BASE + ': ' + e.message); }
+}
 say('\n' + (failed ? 'GATE: RED (see the failures above)' : 'GATE: GREEN') + ' in ' + Math.round((Date.now() - t0) / 60000) + ' min. Everything is in ' + dir);
 process.exit(failed ? 1 : 0);

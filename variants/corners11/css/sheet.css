@@ -1,0 +1,169 @@
+/* == V11: the phone's sheet, its footer, and toasts (docs/PHONE-REDESIGN.md, 5.1, 5.2, 5.7) ==
+   Russell on his iPhone, Oct 14: the to-do's panel "looks like an engineer made it". It floated 8 px over the list,
+   its last 36 px faded to see-through (a heart from Evening with Sam showed under its steppers), its words ran 288
+   wide in a 374 sheet, and a toast stood at the top over the page. On a phone (the list, body.phone, and the phone's
+   own day, body.phone-desk; never during the reset, which has its own sheet) every panel is one sheet: attached to
+   the bottom edge, solid, the whole width, with a grabber and Done in its header, a body that scrolls under it,
+   and a footer that holds the next move at the thumb with the safe area under it. app.js draws the header
+   (sheetHead), the footer (sheetFoot), the scrim, and where a toast stands (phoneToasts, sheetToastSpot). */
+:root {
+  /* the sheet: what the glass looks like over the dimmed list (#201F1F measured), made solid, so nothing shows through */
+  --sf-sheet: #1E1F23;
+  /* a toast: one step lighter than the sheet, so it reads as floating over it (white 13.8 to 1, the quiet grey 8.7) */
+  --sf-toast: #2C2D31;
+}
+
+/* -- the sheet: the bottom edge, the whole width, solid, never a fade -- */
+body.feel.phone #side, body.feel.phone-desk #side {
+  left: 0; right: 0; bottom: 0; top: auto !important; width: auto;
+  max-height: calc(100vh - 12px - env(safe-area-inset-top, 0px)) !important;
+  max-height: calc(100dvh - 12px - env(safe-area-inset-top, 0px)) !important;
+  padding: 0 16px;
+  border-radius: 28px 28px 0 0;
+  background: var(--sf-sheet) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  box-shadow: inset 0 1px 0 var(--sf-edge), 0 -12px 40px -12px rgba(0, 0, 0, 0.55) !important;
+  -webkit-mask-image: none !important; mask-image: none !important;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+body.feel.phone #side::-webkit-scrollbar, body.feel.phone-desk #side::-webkit-scrollbar { display: none; }
+/* the phone's own day keeps the board above its panel, so the panel stays at most about half the screen */
+body.feel.phone-desk #side { max-height: 52vh !important; max-height: 52dvh !important; }
+/* on its side, or the Duo stood as a tent: a sheet at most 576 wide, in the middle, still on the bottom edge */
+@media (min-width: 540px) and (max-height: 499px) {
+  body.feel.phone #side, body.feel.phone-desk #side { left: max(0px, calc((100% - 576px) / 2)); right: max(0px, calc((100% - 576px) / 2)); }
+}
+/* Dev's phone view in a wide window: the sheet is the 390 px column's own */
+@media (min-width: 601px) {
+  body.feel.dev-phone.phone #side, body.feel.dev-phone.phone-desk #side { left: calc(50% - 195px); right: calc(50% - 195px); }
+}
+
+/* -- the header: the grabber, Back, More, and Done; it stays while the body scrolls under it -- */
+#side .c-shead { display: none; }
+body.feel.phone #side .c-shead, body.feel.phone-desk #side .c-shead {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: 2px;
+  height: 56px; margin: 0 -16px; padding: 12px 6px 0 4px;
+  background: var(--sf-sheet);
+  touch-action: none;
+}
+body.feel.phone #side.scrolled .c-shead, body.feel.phone-desk #side.scrolled .c-shead { box-shadow: 0 1px 0 var(--sf-edge); }
+#side .c-grab { position: absolute; top: 8px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: rgba(255, 255, 255, 0.4); pointer-events: none; }
+#side .c-sback { display: flex; min-width: 0; flex: 0 1 auto; max-width: 62%; }
+#side .c-sback:empty, #side .c-smore:empty { display: none; }
+#side .c-sgap { flex: 1 1 auto; }
+#side .c-smore { display: flex; }
+#side .c-sback-btn { display: inline-flex; align-items: center; gap: 2px; min-width: 0; min-height: 44px; padding: 0 8px 0 4px; border: 0; border-radius: 12px; background: transparent; color: var(--tx); font: 500 16px/1.2 var(--k-font); cursor: pointer; }
+#side .c-sback-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#side .c-sback-btn canvas { width: 18px; height: 18px; flex: none; }
+#side .c-sback-btn:hover { background: var(--sf-hover); }
+#side .c-sback-btn:active { transform: translateY(1px); }
+#side .c-sback-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+/* Done: the sheet's corner on a phone (its x on the desk) */
+#side .c-sx-done { display: none; }
+body.feel.phone #side .c-shead > .side-x, body.feel.phone-desk #side .c-shead > .side-x {
+  position: static; float: none; flex: none;
+  width: auto; height: 44px; margin: 0; padding: 0 10px;
+  border-radius: 12px; background: transparent !important; color: var(--tx);
+  font: 600 16px var(--k-font); display: inline-flex; align-items: center;
+}
+body.feel.phone #side .c-shead > .side-x canvas, body.feel.phone-desk #side .c-shead > .side-x canvas { display: none; }
+body.feel.phone #side .c-shead > .side-x .c-sx-done, body.feel.phone-desk #side .c-shead > .side-x .c-sx-done { display: inline; }
+body.feel.phone #side .c-shead > .side-x:hover, body.feel.phone-desk #side .c-shead > .side-x:hover { background: var(--sf-hover) !important; }
+body.feel.phone #side .c-shead > .side-x:active, body.feel.phone-desk #side .c-shead > .side-x:active { transform: translateY(1px); }
+body.feel.phone #side .c-shead > .side-x:focus-visible, body.feel.phone-desk #side .c-shead > .side-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+
+/* -- the body: the whole width, the safe area under it when there's no footer -- */
+body.feel.phone #side .side-in, body.feel.phone-desk #side .side-in { padding: 4px 0 max(22px, calc(env(safe-area-inset-bottom, 0px) + 16px)); }
+body.feel.phone #side .side-in:has(.c-sfoot, .place-foot, .c-gl-foot), body.feel.phone-desk #side .side-in:has(.c-sfoot, .place-foot, .c-gl-foot) { padding-bottom: 0; }
+/* the title had room kept for the x beside it; Done is in the header now */
+body.feel.phone #side .side-title, body.feel.phone-desk #side .side-title { padding-right: 0; }
+/* a kicker over a title or a block's preview says what the title says: on a phone the title speaks for itself */
+body.feel.phone #side .side-kicker:has(+ .side-title, + .bprev, + .c-tdp-hero, + .c-gl-hero, + .c-sess-hero),
+body.feel.phone-desk #side .side-kicker:has(+ .side-title, + .bprev, + .c-tdp-hero, + .c-gl-hero, + .c-sess-hero) { display: none; }
+/* any other kicker is a plain line in sentence case, never shouting capitals */
+body.feel.phone #side .side-kicker, body.feel.phone-desk #side .side-kicker { position: static; margin: 0; padding: 0; background: none; font: 600 13px/1.3 var(--k-font); letter-spacing: 0; text-transform: none; color: var(--tx-2); }
+
+/* -- the footer: one line, then the buttons; pinned at the bottom with the safe area under it -- */
+.c-sfoot { display: flex; flex-direction: column; gap: 10px; }
+.c-sf-line { margin: 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+.c-sf-line b { color: var(--tx); font-weight: 600; }
+/* a gold button that can't be used yet says why, in words, not in grey alone */
+.c-sf-line.why { color: var(--tx); font-weight: 600; }
+.c-sf-change { position: relative; display: inline; min-height: 0; padding: 0; margin: 0; border: 0; background: none; color: var(--tx); font: 600 14px/1.4 var(--k-font); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; cursor: pointer; }
+/* (a 44 px target around a word on a line) */
+.c-sf-change::after { content: ''; position: absolute; inset: -14px -8px; }
+.c-sf-change:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 3px; border-radius: 4px; }
+.c-sf-btns { display: flex; gap: 8px; }
+.c-sf-btns > button { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 0 16px; border: 0; border-radius: 16px; font: 600 16px/1.2 var(--k-font); justify-content: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+/* a quiet button beside the gold one takes only the room its words need */
+.c-sf-btns > .c-sf-q:not(.c-sf-half):not(:only-child) { flex: 0 1 auto; }
+/* three equal parts (Yes, Some of it, No) keep their words whole in a 386 wide sheet */
+.c-sf-btns:has(> .c-sf-half:nth-child(3)) > button { padding: 0 8px; }
+.c-sf-btns > .c-sf-q { background: var(--sf-hover); color: var(--tx); box-shadow: none; }
+.c-sf-btns > .c-sf-q:hover:not(:disabled) { background: var(--sf-press); }
+.c-sf-btns > .c-sf-g { background: var(--k-gold); color: var(--sf-ink); box-shadow: none; }
+.c-sf-btns > .c-sf-g:hover:not(:disabled) { background: var(--gold-hi); }
+/* a gold button that can't be used yet is the surface with quiet words, never faded gold */
+.c-sf-btns > .c-sf-g:disabled { background: var(--sf-raised); color: var(--tx-3); cursor: default; opacity: 1; }
+.c-sf-btns > button:active:not(:disabled) { transform: translateY(1px); }
+.c-sf-btns > button:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+/* on a phone: pinned to the sheet's bottom edge, solid, the safe area under it, a hairline while there's more above */
+body.feel.phone #side .c-sfoot, body.feel.phone-desk #side .c-sfoot,
+body.feel.phone #side .place-foot, body.feel.phone-desk #side .place-foot,
+body.feel.phone #side .c-gl-foot, body.feel.phone-desk #side .c-gl-foot {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 0 -16px; padding: 12px 16px max(16px, calc(env(safe-area-inset-bottom, 0px) + 8px));
+  background: var(--sf-sheet); box-shadow: none;
+}
+body.feel.phone #side.more .c-sfoot, body.feel.phone-desk #side.more .c-sfoot,
+body.feel.phone #side.more .place-foot, body.feel.phone-desk #side.more .place-foot,
+body.feel.phone #side.more .c-gl-foot, body.feel.phone-desk #side.more .c-gl-foot { box-shadow: 0 -1px 0 var(--sf-edge); }
+/* (the footers' old fade up into the panel: the sheet is solid, so a hairline says there's more) */
+body.feel.phone #side .place-foot::before, body.feel.phone-desk #side .place-foot::before,
+body.feel.phone #side .c-gl-foot::before, body.feel.phone-desk #side .c-gl-foot::before { display: none; }
+/* Give it a time's and New goal's main buttons, the footer's size */
+body.feel.phone #side .place-foot .go.wide, body.feel.phone-desk #side .place-foot .go.wide { min-height: 52px; border-radius: 16px; font-size: 16px; }
+body.feel.phone #side .c-gl-foot .go, body.feel.phone-desk #side .c-gl-foot .go,
+body.feel.phone #side .c-gl-foot .small, body.feel.phone-desk #side .c-gl-foot .small { min-height: 52px; border-radius: 16px; font-size: 16px; }
+/* on the desk (the iPad, the open Duo, a Mac): the same footer, pinned at the panel's foot */
+body.feel:not(.phone):not(.phone-desk) #side .c-sfoot { position: sticky; bottom: -16px; z-index: 2; margin: 0 -22px -16px; padding: 12px 22px 16px; }
+body.feel:not(.phone):not(.phone-desk) #side.more .c-sfoot { background: var(--sf-solid); box-shadow: inset 0 1px 0 var(--sf-edge); }
+body.feel:not(.phone):not(.phone-desk) #side.more:has(.c-sfoot) { -webkit-mask-image: none; mask-image: none; }
+
+/* -- the list behind dims while a sheet is open; a tap there closes it -- */
+.c-sscrim { display: none; position: absolute; inset: 0; z-index: 69; background: rgba(0, 0, 0, 0.32); }
+body.feel.phone:has(#side:not([hidden])) .c-sscrim { display: block; animation: c-sheet-dim 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes c-sheet-dim { from { opacity: 0; } }
+body.calm .c-sscrim { animation-duration: 0.12s !important; }
+@media (prefers-reduced-motion: reduce) { body.feel.phone:has(#side:not([hidden])) .c-sscrim { animation-duration: 0.12s; } }
+
+/* -- toasts on a phone: solid, one at a time, words to the left, Undo on the right (5.7) -- */
+body.feel.phone .toast, body.feel.phone-desk .toast {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 14px 16px;
+  border-radius: 16px; background: var(--sf-toast) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  box-shadow: inset 0 0 0 1px var(--sf-edge), 0 12px 32px -10px rgba(0, 0, 0, 0.6) !important;
+  font: 500 16px/1.3 var(--k-font); text-align: left; text-wrap: pretty;
+}
+body.feel.phone .toast.act, body.feel.phone-desk .toast.act { padding: 4px 4px 4px 16px; }
+/* something done or placed: a green check before the words, so it isn't said by color alone */
+body.feel.phone .toast.good::before, body.feel.phone-desk .toast.good::before {
+  content: ''; flex: none; width: 20px; height: 20px; margin-left: -2px; background: var(--good, #8FD3B1);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+body.feel.phone .toast .toast-act, body.feel.phone-desk .toast .toast-act { flex: none; margin-left: auto; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: #FFFFFF; font: 600 16px var(--k-font); }
+body.feel.phone .toast .toast-act:hover, body.feel.phone-desk .toast .toast-act:hover { background: var(--sf-press); }
+/* over an open sheet: just above its footer, or under its header when the touch was where it would land */
+html body.feel.c-toasts-sheet:has(#side:not([hidden])) #toasts {
+  top: auto !important; bottom: var(--toast-sheet-b, 96px) !important;
+  left: max(12px, calc((100% - 576px) / 2)) !important; right: max(12px, calc((100% - 576px) / 2)) !important;
+  transform: none; width: auto; z-index: 75;
+}
+html body.feel.c-toasts-sheet.c-toasts-sheet-top:has(#side:not([hidden])) #toasts { top: var(--toast-sheet-t, 76px) !important; bottom: auto !important; }
+@media (min-width: 601px) {
+  html body.feel.dev-phone.c-toasts-sheet:has(#side:not([hidden])) #toasts { left: calc(50% - 183px) !important; right: calc(50% - 183px) !important; }
+}

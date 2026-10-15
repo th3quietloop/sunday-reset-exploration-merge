@@ -38,13 +38,19 @@ test('GET says ready only when there is a key, and nothing is kept', async () =>
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ready: true });
   assert.equal(r.headers.get('cache-control'), 'no-store');
+  // (Oct 14) a site without the key answers the readiness check plainly, 200 and not ready: the page asks on every
+  // load, and a 503 there was a red line in the browser's console each time. Errors are for the asks (POST)
   r = await makeHandler({ env: {} })(get());
-  assert.equal(r.status, 503);
+  assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ready: false });
+  assert.equal(r.headers.get('cache-control'), 'no-store');
+  r = await makeHandler({ env: {} })(new Request('https://' + HOST + '/api/smart', { method: 'HEAD', headers: { host: HOST } }));
+  assert.equal(r.status, 200);
   // Vercel calls the default export's fetch
   assert.equal(typeof smart.fetch, 'function');
   r = await smart.fetch(get());
-  assert.equal(r.status, process.env.ANTHROPIC_API_KEY ? 200 : 503);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ready: !!process.env.ANTHROPIC_API_KEY });
 });
 
 test('a POST with no key is not_ready, and nothing goes to Claude', async () => {
@@ -290,6 +296,12 @@ test('the server cleans words the way the board writes them', () => {
   assert.ok(long.length <= 60 && !/\s(and|the|in)$/.test(long), long);
   assert.equal(cleanName('About 300 hours is common', 160, true), 'About 300 hours is common.');
   assert.equal(cleanName('', 160, true), '');
+  // (Oct 14) a dash and then a filler word left ",." behind: the stop stays, the pause goes
+  assert.equal(cleanName('Book it ' + EM + ' really.'), 'Book it');
+  assert.equal(cleanName('About 300 hours ' + EM + ' really.', 160, true), 'About 300 hours.');
+  assert.equal(cleanName('Plan it ' + EM + ' just. Then go', 160, true), 'Plan it. Then go.');
+  assert.equal(cleanName('Done. -- next step'), 'Done. next step');
+  for (const t of ['Wash up ' + EM + ' just!', 'Rest -- simply.', 'Sort it, ' + EN + ' actually?']) assert.ok(!/[,;:][.!?]|[.!?][,;:]/.test(cleanName(t, 160, true)), t);
   assert.equal(cleanSteps([{ name: 'Wash the car', minutes: 60 }]).length, 2, 'a long first step splits');
   assert.equal(cleanSteps([{ name: 'Wash the car', minutes: 60 }])[0].dur, 10);
   assert.equal(cleanSteps('nope'), null);
@@ -327,6 +339,11 @@ test('the page uses nothing from the server until it passes the checks', () => {
     assert.equal(aiParts(bad), null, JSON.stringify(bad));
   }
   assert.equal(aiWords('simply   rest.', 60), 'Rest');
+  // (Oct 14) the page's own cleaner keeps the stop too, so a dash and a filler word never leave ",."
+  assert.equal(aiWords('Book it ' + EM + ' really.', 60), 'Book it');
+  assert.equal(aiWords('About 300 hours ' + EM + ' really.', 160, true), 'About 300 hours.');
+  assert.equal(aiWords('Plan it ' + EM + ' just. Then go', 160, true), 'Plan it. Then go.');
+  assert.equal(plain(aiParts({ parts: [{ name: 'Torts', min: 60 }], note: 'About 60 hours ' + EM + ' actually.' })).note, 'About 60 hours.');
 });
 
 /* the whole client, with a page made of stand ins: storage, fetch, the kit's sheet, and timers */
@@ -347,7 +364,8 @@ function page(opts = {}) {
     localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); }, removeItem: (k) => { store.delete(k); } },
     fetch: async (url, init = {}) => {
       calls.push({ url, init });
-      if (!init.method || init.method === 'GET') return opts.ready === false ? new Response('{"ready":false}', { status: 503 }) : new Response('{"ready":true}', { status: 200 });
+      /* a site with no key says not ready with a 200 (Oct 14); a server from before that said it with a 503 */
+      if (!init.method || init.method === 'GET') return opts.ready === false ? new Response('{"ready":false}', { status: 200 }) : opts.ready === 'old' ? new Response('{"ready":false}', { status: 503 }) : new Response('{"ready":true}', { status: 200 });
       return opts.answer ? opts.answer(JSON.parse(init.body), init) : new Response('{}', { status: 500 });
     },
     setTimeout: opts.setTimeout || setTimeout, clearTimeout, AbortController, Response,
@@ -385,6 +403,12 @@ test('the client asks the server once a page load, and offers nothing until it a
   await tick(); await tick();
   assert.equal(q.ai.ready(), false);
   assert.equal(await q.ai.enable(() => assert.fail('never runs')), false, 'nothing to turn on');
+  assert.ok(!q.events.includes('sr-ai'), 'nothing to tell the screens');
+  // a server from before Oct 14 said not ready with a 503: still not ready, and still nothing offered
+  const o = page({ ready: 'old' });
+  await tick(); await tick();
+  assert.equal(o.ai.ready(), false);
+  assert.equal(await o.ai.enable(() => assert.fail('never runs')), false);
 });
 
 test('nothing is sent until it is turned on here, and then only the words of one to-do', async () => {

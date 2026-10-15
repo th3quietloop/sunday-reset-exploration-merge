@@ -3,6 +3,15 @@
 (function (root) {
   'use strict';
   let ctx = null, master = null, on = true, noiseBuf = null, lastDetent = 0, haptic = false, lastBuzz = 0;
+  /* V11, lift and place (docs/LIFT-AND-PLACE.md 7): so the hundredth drop doesn't sound like the first ninety
+     nine, a clack and a tap come in three versions that never repeat back to back, a little higher or lower each
+     time, and as loud as the block came down hard; a detent ticks at most every 50 ms. Only a version whose page
+     carries the class feel (V11); every other version sounds as it always did */
+  const feel = () => !!(root.document && root.document.body && root.document.body.classList.contains('feel'));
+  let lastClack = -1, lastTap = -1;
+  const jitter = (k) => 1 + (Math.random() * 2 - 1) * k;
+  const nextOf = (last) => { let v = Math.floor(Math.random() * 3); if (v === last) v = (v + 1 + Math.floor(Math.random() * 2)) % 3; return v; };
+  const VARIANT = [1, 1.05, 0.93];
 
   function init() {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
@@ -46,16 +55,24 @@
     /* the detent's tick under the finger, for touch screens */
     setHaptic(v) { haptic = !!v; },
     get on() { return on; },
-    pick() { if (!ok()) return; tone(520, 'triangle', 0.08, 0.002, 0.06); noise(0.04, 2400, 0.05, 0, 'bandpass', 3); },
-    clack(size) {
+    pick() { if (!ok()) return; const j = feel() ? jitter(0.04) : 1; tone(520 * j, 'triangle', 0.08, 0.002, 0.06); noise(0.04, 2400 * j, 0.05, 0, 'bandpass', 3); },
+    /* speed (V11): how fast it came down, in desk units a second (30 is a full drop); loud: a softer one (Undo's) */
+    clack(size, speed, loud) {
       if (!ok()) return;
       const k = Math.max(0.55, Math.min(1.6, 1 / Math.sqrt(Math.max(0.25, size || 1))));
-      tone(300 * k, 'triangle', 0.16, 0.002, 0.09, 0, 0.8); noise(0.05, 1800 * k, 0.12, 0, 'bandpass', 2.5); tone(610 * k, 'sine', 0.05, 0.002, 0.05, 0.03);
+      if (!feel()) { tone(300 * k, 'triangle', 0.16, 0.002, 0.09, 0, 0.8); noise(0.05, 1800 * k, 0.12, 0, 'bandpass', 2.5); tone(610 * k, 'sine', 0.05, 0.002, 0.05, 0.03); return; }
+      const v = lastClack = nextOf(lastClack), j = jitter(0.04), g = Math.max(0.7, Math.min(1, Number.isFinite(speed) ? 0.7 + 0.3 * Math.min(1, speed / 30) : 1)) * (loud || 1);
+      tone(300 * k * j, 'triangle', 0.16 * g, 0.002, 0.09, 0, 0.8); noise(0.05, 1800 * k * j * VARIANT[v], 0.12 * g, 0, 'bandpass', 2.5); tone(610 * k * j * VARIANT[(v + 1) % 3], 'sine', 0.05 * g, 0.002, 0.05, 0.03);
     },
     stretch() { if (!ok()) return; tone(180, 'sawtooth', 0.025, 0.05, 0.5, 0, 1.6); noise(0.3, 700, 0.02, 0, 'bandpass', 3); },
     slide() { if (!ok()) return; noise(0.12, 900, 0.035, 0, 'lowpass', 0.7); },
     /* a soft knock of wood, for blocks settling into place */
-    tap() { if (!ok()) return; noise(0.018, 2200, 0.03, 0, 'bandpass', 4); tone(420, 'sine', 0.035, 0.001, 0.05); },
+    tap() {
+      if (!ok()) return;
+      if (!feel()) { noise(0.018, 2200, 0.03, 0, 'bandpass', 4); tone(420, 'sine', 0.035, 0.001, 0.05); return; }
+      const v = lastTap = nextOf(lastTap), j = jitter(0.04);
+      noise(0.018, 2200 * j * VARIANT[v], 0.03, 0, 'bandpass', 4); tone(420 * j * VARIANT[(v + 2) % 3], 'sine', 0.035, 0.001, 0.05);
+    },
     tick(loud) { if (!ok()) return; noise(0.02, loud ? 2800 : 3600, loud ? 0.06 : 0.03, 0, 'bandpass', 5); },
     /* a soft ratchet click for each 15 minutes a block moves, like winding a clock.
        Rate limited so a fast drag purrs instead of rattling. A spot that won't fit clicks lower. */
@@ -64,7 +81,7 @@
       if (haptic && navigator.vibrate) { const n = Date.now(); if (n - lastBuzz > 60) { lastBuzz = n; try { navigator.vibrate(6); } catch (e) { /* fine */ } } }
       if (!ok()) return;
       const t = ctx.currentTime;
-      if (t - lastDetent < 0.028) return;
+      if (t - lastDetent < (feel() ? 0.05 : 0.028)) return;
       lastDetent = t;
       const k = 0.94 + Math.random() * 0.12, f = fits === false ? 0.62 : 1;
       noise(0.012, 5200 * k * f, 0.028, 0, 'bandpass', 9);

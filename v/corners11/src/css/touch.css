@@ -43,3 +43,35 @@ body.calm #toasts, body.calm.carrying #toasts { transition: none; }
   .c-su-row.on:has(.c-su-rackslot) { grid-template-columns: minmax(0, 1fr); }
   .c-su-row.on .c-su-rackslot { --slot: clamp(22px, calc((100cqw - 56px) / 9 - 6px), 46px); }
 }
+
+/* == V11, lift and place (docs/LIFT-AND-PLACE.md) ==
+   The press shows from a class set at pointerdown (.pressed), not :active, so iOS shows it too: down 1 px,
+   0.985, in 60 ms. A tile held in a list that scrolls rises instead (.pressing, above) */
+body.feel .tile.pressed:not(.add):not(.pressing):not(.held) { transform: translateY(1px) scale(0.985); transition: transform 0.06s ease-out, box-shadow 0.06s ease-out; }
+/* The tile left behind while it's carried is a socket: its words step out of sight (never faded with alpha)
+   and its place shows as a sunken outline in a real color, until the card comes home and fills it */
+body.feel .tile.socket, body.feel .tile.socket:hover, body.feel .tile.socket:active { transform: none; background: #2A2723; box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.55); outline: 2px dashed #8C877E; outline-offset: -5px; transition: none; }
+body.feel .tile.socket > * { visibility: hidden; }
+/* The card in hand comes up on the lift's spring (0.22 s, 0.62: a small overshoot), with a deeper shadow */
+body.feel .dragtile { transition: scale 0.36s linear(0, 0.127 5.6%, 0.388 11.1%, 0.656 16.7%, 0.866 22.2%, 1 27.8%, 1.066 33.3%, 1.084 38.9%, 1.073 44.4%, 1.051 50%, 1.029 55.6%, 1.011 61.1%, 1 66.7%, 0.995 72.2%, 0.993 77.8%, 0.994 83.3%, 0.996 88.9%, 0.998 94.4%, 1); }
+body.feel .dragtile .tile { box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+/* The note about what's in hand rides above the block, and above the card in hand too; near the top edge it
+   sits beside the block. On a phone's desk it's one compact line instead of none */
+body.feel #chip { z-index: 61; }
+body.feel #chip.beside { transform: translate(-50%, -50%); }
+body.feel.phone-desk.carrying #chip:not([hidden]) { display: block !important; max-width: min(300px, calc(100vw - 32px)); padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.feel.phone-desk.carrying #chip small { display: inline; margin: 0 0 0 6px; white-space: nowrap; }
+/* A finger stretches a picked block from its handle: 44 px, half past the block's end */
+#sgrip { position: absolute; z-index: 45; width: 44px; height: 44px; margin: -22px 0 0 -22px; padding: 0; border: 0; background: transparent; cursor: ew-resize; touch-action: none; -webkit-touch-callout: none; user-select: none; }
+#sgrip[hidden] { display: none; }
+#sgrip::before { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 30px; margin: -15px 0 0 -7px; border-radius: 7px; background: #FFFFFF; box-shadow: 0 0 0 2px #1E1A14, 0 3px 8px rgba(0, 0, 0, 0.35); }
+#sgrip::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 14px; margin: -7px 0 0 -1px; border-radius: 1px; background: #1E1A14; box-shadow: -4px 0 0 #1E1A14, 4px 0 0 #1E1A14; }
+/* (Calmer motion and the system's reduced motion: the card comes up at once; the press still shows) */
+body.calm .dragtile, body.calm .tile.pressed { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { body.feel .dragtile, body.feel .tile.pressed { transition: none !important; } }
+/* The meal board's piece and the setup's letters in hand: the same lift (to 1.06 on the lift's spring) and the
+   same deeper shadow as a card; the setup's Try it piece shrinks toward its slot as it nears the day (140 ms) */
+body.feel .c-ghost-block { transition: scale 0.36s linear(0, 0.127 5.6%, 0.388 11.1%, 0.656 16.7%, 0.866 22.2%, 1 27.8%, 1.066 33.3%, 1.084 38.9%, 1.073 44.4%, 1.051 50%, 1.029 55.6%, 1.011 61.1%, 1 66.7%, 0.995 72.2%, 0.993 77.8%, 0.994 83.3%, 0.996 88.9%, 0.998 94.4%, 1); box-shadow: 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+body.feel .onb-float.onb-feel { transition: scale 0.14s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+body.calm .c-ghost-block, body.calm .onb-float.onb-feel { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { body.feel .c-ghost-block, body.feel .onb-float.onb-feel { transition: none !important; } }

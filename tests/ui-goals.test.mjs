@@ -139,10 +139,34 @@ test('a fix that says it fits does fit, and each fix changes only what it names'
     const dayBefore = M.addDays(later.patch.date, -1);
     assert.ok(M.goalProgress(st, Object.assign({}, g, { date: dayBefore }), TODAY, 600).behindMin >= 15, 'the later date is the first one that fits');
   }
-  const fewer = fixes.find((f) => f.id === 'fewer');
-  assert.ok(fewer, 'with some room, fewer hours is offered');
+  // trimming the hours is offered only when it keeps most of them: mornings with a family hold far less than 400 hours
+  assert.ok(stand.capacityMin / stand.leftMin < 0.6);
+  assert.ok(!fixes.some((f) => f.id === 'fewer'), 'trimming most of an exam away isn’t a fix');
+  for (const f of fixes) assert.match(f.name, /^(Add|Make|Use|Move|Trim) /, 'each fix is a verb: ' + f.name);
+  // someone on their own, any time of day, holds about three quarters of it: trimming is offered, and fits
+  const solo = samBoard(), h = barExam(solo, { days: [0, 1, 2, 3, 4, 5, 6], wd: 120, we: 180, when: 'any', chunk: 60 }, { start: TODAY });
+  const rs = goalRig(solo, TODAY, 600), s2 = rs.goalStand(h);
+  assert.ok(s2.behindMin >= 15 && s2.capacityMin / s2.leftMin >= 0.6);
+  const fewer = plain(rs.goalFixes(h, s2)).find((f) => f.id === 'fewer');
+  assert.ok(fewer, 'with most of it held, trimming the hours is offered');
+  assert.equal(fewer.name, 'Trim the hours');
   assert.ok(fewer.patch.parts.every((p) => p.min % 30 === 0), 'trimmed to half hours');
-  assert.equal(fewer.patch.parts.length, g.parts.length, 'every part stays');
+  assert.equal(fewer.patch.parts.length, h.parts.length, 'every part stays');
+  assert.ok(M.goalProgress(solo, Object.assign({}, h, fewer.patch), TODAY, 600).behindMin < 15, 'and it fits');
+});
+
+test('a big exam a few weeks out finds a later date that holds it, even months away', () => {
+  const st = samBoard();
+  const ex = M.goalForExam('CFA Level I', D);
+  const g = M.newGoal({ name: 'CFA Level I', kind: 'exam', cat: 'work', date: M.addDays(TODAY, 28), start: TODAY, today: TODAY, parts: ex.parts, mix: true, rhythm: { days: [0, 1, 2, 3, 4, 5, 6], wd: 60, we: 60, when: 'any', chunk: 60 } });
+  st.goals.push(g);
+  const r = goalRig(st, TODAY, 600), stand = r.goalStand(g);
+  const later = plain(r.goalFixes(g, stand)).find((f) => f.id === 'date');
+  assert.ok(later, 'a later date is offered');
+  assert.ok(M.diffDays(TODAY, later.patch.date) > 182, 'past half a year: ' + later.patch.date);
+  assert.match(later.name, /^Move the date to /);
+  assert.ok(M.goalProgress(st, Object.assign({}, g, { date: later.patch.date }), TODAY, 600).behindMin < 15);
+  assert.ok(!plain(r.goalFixes(g, stand)).some((f) => f.id === 'fewer'), '300 h trimmed to a few weeks of an hour a day isn’t offered');
 });
 
 test('a backup’s goals are checked like the rest of the board before it can replace it', () => {

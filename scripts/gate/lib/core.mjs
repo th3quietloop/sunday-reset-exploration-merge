@@ -138,8 +138,24 @@ export function makeGate({ c, url, opts = {}, shots }) {
       await sleep(st.reaim == null ? 260 : st.reaim);
       const q = to.slot ? `JSON.stringify(__mx.slot(${J(to.slot[0])}, ${J(to.slot[1])}, ${to.slot[2]}))` : `JSON.stringify((r => ({ x: r.cx, y: r.cy }))(__mx.rect(document.querySelector(${J(to.sel)}))))`;
       try { const np = JSON.parse(await c.ev(q)); if (np && Number.isFinite(np.x)) fin = [np.x, np.y]; } catch (e) { /* keep the first aim */ }
+      /* V11, lift and place: a finger carries the block above itself (the touch offset), so a person steering
+         its outline onto the slot puts the finger that far below the slot. A stretch (keepY) follows the finger */
+      if (input === 'touch' && to.slot && !to.keepY) { const off = +(await c.ev(`window.__mx && __mx.aimLift ? __mx.aimLift() : 0`)); if (off > 0 && Number.isFinite(off)) fin = [fin[0], fin[1] + off]; }
     }
     await run(pathPoints(to.climb ? [to.x, to.y] : p1, fin, Math.max(2, st.steps - n1), { wobble: (st.wobble || 0) / 2 }));
+    /* V11, lift and place: the block comes up off the fingertip as it arrives over the desk (the touch offset
+       comes in over 150 ms), so a person whose block went up a row steers it back down onto the slot: look at
+       the outline again, and put the finger that far below the slot */
+    if (input === 'touch' && to.slot && !to.keepY && !st.blind) {
+      for (let k = 0; k < 3; k++) {
+        await sleep(90);
+        let want = null;
+        try { const np = JSON.parse(await c.ev(`JSON.stringify(__mx.slot(${J(to.slot[0])}, ${J(to.slot[1])}, ${to.slot[2]}))`)); const off = +(await c.ev(`window.__mx && __mx.aimLift ? __mx.aimLift() : 0`)); if (np && Number.isFinite(np.x) && Number.isFinite(off)) want = [np.x, np.y + Math.max(0, off)]; } catch (e) { /* keep */ }
+        if (!want || Math.hypot(want[0] - fin[0], want[1] - fin[1]) < 2) break;
+        await run(pathPoints(fin, want, 4, {}));
+        fin = want;
+      }
+    }
     await sleep(st.settle);
     await look('release');
     if (hooks.beforeUp) await hooks.beforeUp({ fin });
@@ -270,7 +286,7 @@ export function makeGate({ c, url, opts = {}, shots }) {
        should happen is a scroll, not a drop */
     if (input === 'touch' && st.swipe && p.from && p.from.axis && !extra.expect) {
       const dx = p.to.x - p.from.x, dy = p.to.y - p.from.y;
-      const across = p.from.axis === 'x' ? -dy > Math.abs(dx) : Math.abs(dx) > Math.abs(dy);
+      const across = p.from.axis === 'x' ? -dy > Math.abs(dx) : p.from.axis === 'y' ? Math.abs(dx) > Math.abs(dy) : false;
       if (!across) extra = Object.assign({}, extra, { expect: 'scroll' });
     }
     /* (a swipe along a list that doesn't scroll at this size is no swipe along a list) */
@@ -330,7 +346,8 @@ export function makeGate({ c, url, opts = {}, shots }) {
     /* a swipe the page saw take longer than the app's press to lift (a busy machine slows the input it's
        sent) wasn't a swipe: it's not judged */
     r.ptr = await c.ev(`JSON.stringify(__mx.ptr || null)`).then((s) => { try { return JSON.parse(s); } catch (e) { return null; } });
-    const slow = (r.expectOverride || p.expect) === 'scroll' && r.ptr && r.ptr.down && r.ptr.move8 && r.ptr.move8 - r.ptr.down > 260 ? 'the swipe took ' + (r.ptr.move8 - r.ptr.down) + ' ms to move (a busy machine): not a swipe' : null;
+    const took = r.ptr && r.ptr.down && r.ptr.move8 ? Math.max(r.ptr.move8 - r.ptr.down, r.ptr.move8T && r.ptr.downT ? r.ptr.move8T - r.ptr.downT : 0) : 0;
+    const slow = (r.expectOverride || p.expect) === 'scroll' && took > 260 ? 'the swipe took ' + Math.round(took) + ' ms to move (a busy machine): not a swipe' : null;
     if ((!r.verdict.pass && !slow) || extra.shot) {
       const f = join(SHOTS, `${size}-${input}-${pathId}-${i}-${style}${extra.tag ? '-' + extra.tag : ''}.png`);
       try { await c.shot(f); r.shot = f; } catch (e) { /* fine */ }

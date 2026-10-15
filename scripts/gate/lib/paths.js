@@ -12,7 +12,8 @@
   const M = () => SR.M;
   /* the way the list around a piece scrolls ('y' or 'x'), or null, read the way the app reads it (app.js
      scrollAxis): a finger that swipes along it scrolls, one that presses or moves across it lifts */
-  const axisOf = (el) => { for (let p = el && el.parentElement; p && p !== document.body; p = p.parentElement) { const cs = getComputedStyle(p); if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1) return 'y'; if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1) return 'x'; } return null; };
+  /* ('xy' when a list that scrolls one way sits in one that scrolls the other: then only the hold lifts) */
+  const axisOf = (el) => { let x = false, y = false; for (let p = el && el.parentElement; p && p !== document.body; p = p.parentElement) { const cs = getComputedStyle(p); if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1) y = true; if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1) x = true; } return x && y ? 'xy' : x ? 'x' : y ? 'y' : null; };
   mx.axisOf = axisOf;
 
   /* == the board every run starts from: the made up family, nothing saved, the clock held == */
@@ -28,6 +29,15 @@
       if (close) { close.click(); await wait(300); }
     }
     if (!o.real && (!(SR.view.preview && SR.view.preview.id === 'sample') || o.fresh)) { await SR.devBoard('sample'); await wait(900); }
+    /* (since Oct 15 the welcome has no close mark, and closing it is Look at a sample week, which saves a board:
+       under a made up board it's put away as closing the sheet does, with nothing saved) */
+    const sheet = document.getElementById('sheet');
+    if (!o.real && SR.view.preview && sheet && !sheet.hidden && SR.view.got && SR.view.got.setup && SR.view.got.setup.at === 'welcome') {
+      SR.view.got.setup = null; sheet.hidden = true; sheet.className = 'panel sheet';
+      const scrim = document.getElementById('scrim'), dr = document.getElementById('drawer');
+      if (scrim && (!dr || dr.hidden)) scrim.hidden = true;
+      SR.render(); await wait(300);
+    }
     if (SR.view.reset) { SR.leaveReset(); await wait(300); }
     if (window.Kit && Kit.v7 && Kit.v7.closeMat) { try { Kit.v7.closeMat(); } catch (e) { /* fine */ } }
     if (o.at != null && !o.real && window.__reset && __reset.at) __reset.at(o.at);
@@ -184,7 +194,8 @@
       const r = await openStep('dinners');
       if (r.skip) return r;
       if (!$('.c-mat')) {
-        const b = btn(/Open the meal board/);
+        /* (on a sheet, since Oct 15, the step's one way in says Plan meals) */
+        const b = btn(/Open the meal board/) || $$('.c-mealgo').find(shown);
         if (!b) return { skip: 'no Open the meal board button' };
         b.click(); await wait(1400);
       }
@@ -244,11 +255,13 @@
   };
   mx.benchPieces = benchPieces;
   const openBench = async (which) => {
-    /* Block library or To-dos, from the corner bar */
+    /* Block library or To-dos, from the corner bar. Since Oct 15, To-dos in Now opens the To-dos panel at Next 7
+       days, and that list's Lay out (the first one) puts its stack on the bench beside the day */
     const re = which === 'lib' ? /^Block library/ : /^To-dos/;
     const on = which === 'lib' ? () => World.benchOn && benchPieces().some((p) => p.drag && p.drag.kind === 'block') : () => World.benchOn && benchPieces().some((p) => p.drag && (p.drag.kind === 'task' || p.drag.kind === 'step'));
     for (let k = 0; k < 3 && !on(); k++) {
-      const b = btn(re);
+      const lay = which === 'lib' ? null : $$('.c-tdlay').find(shown) || btn(/^Lay out$/);
+      const b = lay || btn(re);
       if (!b) return { skip: 'no ' + (which === 'lib' ? 'Block library' : 'To-dos') + ' button' };
       b.click(); await wait(1300); mx.stepDesk(120, 0.05);
     }
@@ -263,7 +276,8 @@
     kind: 'bench-board',
     async setup(o) {
       await mx.clearFor({});
-      if (SR.view.phone) return { skip: 'a phone shows its list here, with no bench' };
+      /* (na: this path isn't on this size. Any other setup skip is a path that broke, and the gate fails it) */
+      if (SR.view.phone) return { skip: 'a phone shows its list here, with no bench', na: true };
       if (mode === 'today') { if (SR.view.mode !== 'today') { SR.setMode('today'); await wait(900); } }
       else {
         if (SR.view.mode !== 'planner') { SR.setMode('planner'); await wait(700); }
@@ -334,11 +348,11 @@
     async setup(o) {
       await mx.clearFor({ phone: mode === 'phone' });
       /* a phone shows its own list; its desk is one day (the phone paths) */
-      if (mode !== 'phone' && SR.view.phone) return { skip: 'a phone shows its list here; its desk is one day (phone-move)' };
+      if (mode !== 'phone' && SR.view.phone) return { skip: 'a phone shows its list here; its desk is one day (phone-move)', na: true };
       if (mode === 'today') { if (SR.view.mode !== 'today') { SR.setMode('today'); await wait(900); } }
       else if (mode === 'phone') {
         if (!SR.view.phoneDesk) { SR.openPhoneDesk(); await wait(1200); }
-        if (!SR.phoneDay()) return { skip: 'no phone desk at this size' };
+        if (!SR.phoneDay()) return { skip: 'no phone desk at this size', na: true };
         /* tomorrow has room; the phone's day starts on today */
         if (SR.view.focus === SR.today) { SR.shift(1); await wait(900); }
       } else {
@@ -361,6 +375,23 @@
       if (!bs) return { skip: 'the placed block is not on screen' };
       own.row = where === 'week' ? mx.week().indexOf(own.date) : null;
       if (act === 'stretch') {
+        /* V11, lift and place: a finger stretches a picked block from its handle (#sgrip: 44 px, half past
+           the block's end), so a finger first picks the block, the way a tap does, then takes the handle.
+           o.edge is then measured from the block's end on the handle (minus is inside) */
+        if (o.input === 'touch' && SR.selectBlock && World.blockEnd) {
+          /* (a finger picks the block with a tap: the page hears a finger, as it would from that tap) */
+          document.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', isPrimary: true, bubbles: true }));
+          SR.selectBlock(own.date, 'add:' + own.id);
+          SR.render(); await wait(350); mx.stepDesk(20, 0.05); World.render(); await wait(120);
+          const grip = document.getElementById('sgrip');
+          if (!grip || grip.hidden) return { skip: 'no stretch handle on the picked block', own };
+          const gr = mx.rect(grip);
+          const off = o.edge === 'fixed' ? -6 : typeof o.edge === 'number' ? o.edge : 0;
+          const gx = Math.round(gr.cx + off), gy = gr.cy;
+          const endMin = own.start + own.dur + 45, e = mx.slot(where, own.row, endMin - 4);
+          if (where === 'day' && Math.abs(e.y - mx.slot(where, own.row, own.start).y) > 20) return { skip: 'the stretch would cross into the next lane' };
+          return { from: { x: gx, y: gy, text: 'Workout stretch handle', nearR: true, hitKind: 'handle', edgePx: gr.w, top: mx.at(gx, gy) }, to: { x: e.x + (gx - gr.cx), y: gy, min: endMin, slot: [where, own.row, endMin - 4], keepY: true }, own, expect: 'stretch' };
+        }
         /* the right edge: the middle of the part that stretches (found by asking the board along the
            block's top), pulled 45 minutes later (the pointer goes to the new end). o.edge: 'fixed' grabs
            a set 6 px inside the edge instead, the way a person aims at an edge they can't see */

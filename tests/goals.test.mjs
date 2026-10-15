@@ -13,7 +13,8 @@ const D = globalThis.Data;
 const NOV1 = '2026-11-01', EXAM = '2027-02-24';
 const copy = (v) => JSON.parse(JSON.stringify(v));
 const weekend = (d) => [0, 6].includes(M.weekday(d));
-const capOf = (d) => (weekend(d) ? 180 : 120);
+/* an exam's last three days are lighter, at half the day's time: Sunday the 21st, Monday, and Tuesday */
+const capOf = (d) => (weekend(d) ? 180 : 120) / (d >= '2027-02-21' && d < EXAM ? 2 : 1);
 /* someone on their own who works 9 to 5: 7 to 9 am is open on weekdays, and so is most of a weekend day */
 const board = () => D.buildState({ name: 'Sam', kids: [], wake: { wd: 360, we: 420 }, bed: { wd: 1380, we: 1410 }, work: { days: [1, 2, 3, 4, 5], start: 540, end: 1020 } }, NOV1);
 function withGoal(st, extra) {
@@ -58,15 +59,15 @@ test('the bar exam: what the rhythm can hold by the date, and how far behind 400
   assert.equal(p.doneMin, 0);
   assert.equal(p.leftMin, 400 * 60);
   assert.equal(p.daysLeft, 115);
-  assert.equal(p.capacityMin, allCaps, '2 hours each weekday and 3 each weekend day, all of it open');
-  assert.equal(allCaps, 263 * 60);
+  assert.equal(p.capacityMin, allCaps, '2 hours each weekday and 3 each weekend day, all of it open, the last three days at half');
+  assert.equal(allCaps, 259.5 * 60);
   assert.equal(p.behindMin, 400 * 60 - allCaps);
   assert.equal(p.onTrack, false);
   assert.equal(p.partsLeft, 9);
   assert.equal(p.nextSession, null);
   const r = M.planGoal(st, g.id, NOV1, 600);
   assert.equal(r.shortMin, 400 * 60 - allCaps);
-  assert.equal(r.message, 'Behind by 137 h. Add a day, make days a little longer, or move the date.');
+  assert.equal(r.message, 'Behind by 140.5 h. Make days a little longer or move the date.', 'every day is in the rhythm already, so adding one isn’t offered');
   for (const d of M.range(NOV1, 14)) assert.equal(onDay(st, g, d), capOf(d), d + ': behind, so every day is full, and no more');
   assert.equal(M.range(NOV1, 14).filter((d) => onDay(st, g, d)).length, 14, 'two weeks ahead, no further');
   assert.ok(!sessions(st, g).some((x) => x.date >= '2026-11-15'));
@@ -93,10 +94,12 @@ test('with room to spare, the hours left spread evenly by each day’s cap, neve
     assert.deepEqual(x.add.src.type, 'goal');
     assert.equal(x.add.cat, 'work');
   }
-  // parts in order: the current part until its minutes are used
-  const order = sessions(st, g).map((x) => g.parts.findIndex((q) => q.id === x.add.src.part));
-  assert.deepEqual(order, order.slice().sort((a, b) => a - b));
-  assert.equal(sessions(st, g)[0].add.name, 'Civil Procedure');
+  // an exam's parts take turns: a subject a session, never the same one twice running, every part in the first week
+  const list = sessions(st, g);
+  assert.equal(list[0].add.name, 'Civil Procedure', 'the first part starts');
+  for (let i = 1; i < list.length; i++) assert.notEqual(list[i].add.src.part, list[i - 1].add.src.part, 'session ' + i + ' is another part');
+  const firstWeek = new Set(list.filter((x) => x.date < '2026-11-08').map((x) => x.add.src.part));
+  assert.equal(firstWeek.size, 7, 'all seven subjects left get time in the first week');
   // every minute left has a place before the date
   M.planGoal(st, g.id, NOV1, 600, { horizon: 200 });
   assert.equal(ahead(st, g, NOV1, 600), 245 * 60);
@@ -114,7 +117,7 @@ test('a goal set up early starts on its own start date', () => {
   assert.equal(M.goalProgress(st, g, '2026-10-14', 600).capacityMin, allCaps, 'the room it counts starts November 1');
   const r = M.planGoal(st, g.id, '2026-10-14', 600);
   assert.equal(r.placed, 0);
-  assert.equal(r.message, 'Behind by 137 h. Add a day, make days a little longer, or move the date.');
+  assert.equal(r.message, 'Behind by 140.5 h. Make days a little longer or move the date.');
   const easy = board(), e = withGoal(easy, { today: '2026-10-14', start: NOV1, parts: [{ name: 'Torts', min: 600 }] });
   assert.equal(M.planGoal(easy, e.id, '2026-10-14', 600).message, 'It starts Nov 1.');
   M.planGoal(easy, e.id, '2026-10-14', 600, { horizon: 30 });
@@ -206,7 +209,10 @@ test('behind when the cap can’t hold it, and it says so', () => {
   const s = sessions(st, g).find((x) => x.date === '2026-11-05');
   const r = M.skipGoalSession(st, '2026-11-05', s.add.id, NOV1, 600, 'all');
   assert.equal(M.goalProgress(st, g, NOV1, 600).behindMin, before + s.add.dur);
-  assert.match(r.message, /^Behind by 13\d(\.5)? h\. Add a day, make days a little longer, or move the date\.$/);
+  assert.match(r.message, /^Behind by 14\d(\.5)? h\. Make days a little longer or move the date\.$/);
+  // a rhythm that leaves days out offers one of them
+  const some = board(), w = withGoal(some, { rhythm: { days: [1, 2, 3, 4, 5], wd: 120, we: 0, when: 'any', chunk: 60 } });
+  assert.match(M.planGoal(some, w.id, NOV1, 600).message, /^Behind by \d+(\.5)? h\. Add a day, make days a little longer, or move the date\.$/);
   assert.equal(onDay(st, g, '2026-11-05'), 120 - s.add.dur, 'the skipped hour isn’t put back on the same day');
 });
 
@@ -246,18 +252,25 @@ test('check in: yesterday’s sessions, then yes, some of it, or no', () => {
   M.planGoal(st, g.id, NOV1, 600);
   const MON = '2026-11-02', TUE = '2026-11-03', WED = '2026-11-04', THU = '2026-11-05';
   const ask = M.goalCheckIn(st, TUE);
-  assert.equal(ask.length, 1);
   assert.equal(ask[0].goal, g.id);
-  assert.equal(ask[0].date, MON);
+  assert.equal(ask[0].date, MON, 'yesterday first');
   assert.equal(ask[0].min, onDay(st, g, MON));
   assert.ok(ask[0].sessions.length >= 1 && ask[0].sessions.every((x) => x.add && x.part));
-  // yes: nothing changes but the answer
-  const before = JSON.stringify(st.dates);
+  assert.deepEqual(ask.map((x) => x.date), [MON, NOV1], 'then the day before it, never asked');
+  // yes: the day's sessions are marked done, and nothing moves
+  const where = () => JSON.stringify(sessions(st, g).map((x) => [x.date, x.add.start, x.add.dur, !!x.add.skipped]));
+  const before = where();
+  const checked = 155 * 60, p0 = M.goalProgress(st, g, TUE, 420);
+  assert.equal(p0.doneMin, checked, 'only the parts checked off: no session is done until someone says so');
+  assert.equal(p0.unconfirmedMin, onDay(st, g, NOV1) + onDay(st, g, MON), 'Sunday’s and Monday’s time went by with no word');
   const yes = M.answerCheckIn(st, g.id, MON, 'yes', { today: TUE, nowMin: 420 });
   assert.equal(yes.ok, true);
-  assert.equal(JSON.stringify(st.dates), before);
+  assert.equal(where(), before);
+  assert.ok(sessions(st, g).filter((x) => x.date === MON).every((x) => x.add.done === true));
+  assert.equal(M.goalProgress(st, g, TUE, 420).doneMin, checked + onDay(st, g, MON), 'Monday’s time is done now');
+  assert.equal(M.goalProgress(st, g, TUE, 420).unconfirmedMin, onDay(st, g, NOV1));
   assert.equal(g.answers[MON], 'yes');
-  assert.deepEqual(M.goalCheckIn(st, TUE), [], 'asked once');
+  assert.deepEqual(M.goalCheckIn(st, TUE).map((x) => x.date), [NOV1], 'asked once: Monday isn’t asked again');
   // no: the day’s sessions are skipped and the time spreads forward
   const tue = onDay(st, g, TUE), leftTue = M.goalProgress(st, g, WED, 420).leftMin;
   const no = M.answerCheckIn(st, g.id, TUE, 'no', { today: WED, nowMin: 420 });
@@ -411,7 +424,7 @@ test('goal sessions, skipped ones, spread steps, and Meal prep keep every day wh
   assert.doesNotThrow(() => { M.dueSoon(st, NOV1, 14, 600); M.capacity(st, NOV1, 7, NOV1, 600); M.upcoming(st, NOV1, 30); M.lookAhead(st, NOV1, 35, NOV1); M.clashesIn(st, NOV1, 14); M.dayCard(st, '2026-11-02'); M.momentFor(st, '2026-11-02', 600); M.remindersFor(st, '2026-11-02'); });
   assert.ok(!M.placements(st).has(g.id), 'goal sessions aren’t to-dos');
   const rem = M.remindersFor(st, '2026-11-02').filter((r) => r.kind === 'block');
-  assert.ok(rem.some((r) => r.title === 'Civil Procedure'), 'a session reminds like any block you placed');
+  assert.ok(rem.some((r) => g.parts.some((p) => p.name === r.title)), 'a session reminds like any block you placed');
   const skipped = sessions(st, g).find((x) => x.add.skipped);
   assert.ok(!M.remindersFor(st, skipped.date).some((r) => r.key.includes(skipped.add.id)), 'a skipped one doesn’t');
   assert.equal(M.calendarDay(st, '2026-11-08').blocks.find((b) => b.src && b.src.type === 'prep').makes.length, 0, 'a Meal prep block shows what it makes');

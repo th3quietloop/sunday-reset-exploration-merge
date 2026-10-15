@@ -12,6 +12,7 @@
   const LIST = [
     { id: 'firstrun', group: 'First visit', name: 'Brand new', line: 'Someone opening it for the first time: their name on the letter rack, then the sample week.' },
     { id: 'sample', group: 'Weeks', name: 'Sample family', line: 'What someone new sees behind the welcome.' },
+    { id: 'batchcook', group: 'Weeks', name: 'Batch cook week', line: 'Two batch cooks with leftovers on lunches, a Meal prep block, three things in the cart, milk on the list, and vegetarian.' },
     { id: 'busy', group: 'People', name: 'Busy person', line: 'Long work days, an early workout, errands in every gap, and a pile of to dos.' },
     { id: 'creative', group: 'People', name: 'Creative person', line: 'Three short work days and the rest given to studio time, sketching, and reading.' },
     { id: 'light', group: 'Weeks', name: 'Light week', line: 'One person, four short work days, and lots of open time.' },
@@ -20,6 +21,7 @@
     { id: 'late', group: 'Weeks', name: 'Late shifts', line: 'Work 3 to 11:30 pm, up at 10 am, bed at 2 am. The board runs from 9 am to 3 am.' },
     { id: 'early', group: 'Weeks', name: 'Early riser', line: 'Up at 4 am, work 5 am to 1:30 pm, bed at 8:30 pm. The board starts at 3 am.' },
     { id: 'alternate', group: 'Weeks', name: 'Weeks that alternate', line: 'Taylor has Jamie every other week.' },
+    { id: 'skipped', group: 'Time on the board', name: 'Resets with a Sunday skipped', line: 'Four Sundays: three resets, keep and change notes on two of them, then a Sunday missed. Look back finds the notes; the meal board can bring a week back.' },
     { id: 'weeks2', group: 'Time on the board', name: 'Two weeks in', line: 'Two weeks behind today, the same way as six months: a first few resets and dinners.', back: 14 },
     { id: 'months3', group: 'Time on the board', name: 'Three months in', line: '13 weeks behind today, the same way. Opens on the year around them.', zoom: 'year', back: 91 },
     { id: 'months6', group: 'Time on the board', name: 'Six months in', line: '26 weeks behind today: resets, dinners, done to dos, two saved kinds of day, and two blocks of their own. Opens on the year around them.', zoom: 'year', back: 182, heavy: true },
@@ -89,6 +91,50 @@
     const ME = ['me', 'kim'];
 
     if (id === 'sample') return D.sampleState(today);
+
+    /* the rituals walk: a family that eats vegetarian and batch cooks: the week's prep plan put on (two batch cooks, the
+       lunches they cover, fresh nights, and the Meal prep block), three things already in the cart, and milk */
+    if (id === 'batchcook') {
+      const st = D.sampleState(today);
+      const has = (ids) => ids.filter((x) => st.pantry.some((y) => y.id === x));
+      st.recipes = [
+        { id: 'bean-chili', name: 'Bean chili', items: has(['beans', 'peppers', 'onion']), dur: 45 },
+        { id: 'veg-curry', name: 'Sweet potato curry', items: has(['sweetpotato', 'spinach', 'onion', 'rice']), dur: 40 },
+        { id: 'veg-stirfry', name: 'Veggie stir fry', items: has(['broccoli', 'peppers', 'rice']), dur: 25 },
+        { id: 'pasta-bake', name: 'Pasta bake', items: has(['pasta', 'spinach', 'onion']), dur: 45 },
+        { id: 'quinoa-bowls', name: 'Quinoa bowls', items: has(['quinoa', 'beans', 'peppers', 'spinach']), dur: 30 },
+        { id: 'egg-tacos', name: 'Egg tacos', items: has(['eggs', 'tortillas', 'peppers']), dur: 20 }
+      ];
+      st.mealbook = { own: [], hide: [], diet: 'vegetarian', out: ['chicken', 'turkey', 'beef', 'pork', 'fish', 'shellfish'], words: [] };
+      M.range(ws, 7).forEach((d) => { delete st.dinners[d]; if (st.meals) delete st.meals[d]; });
+      const plan = M.prepPlan(st, ws, { today }, D);
+      M.applyPrepPlan(st, plan, { block: true });
+      /* (the Meal prep block takes a seeded id, so the same day builds the same board) */
+      M.range(ws, 7).forEach((d) => ((st.dates[d] && st.dates[d].adds) || []).forEach((a) => { if (a.src && a.src.type === 'prep') a.id = uid('a'); }));
+      const g = M.groceryProgress(st, M.range(ws, 7));
+      st.shopping = Object.assign({}, st.shopping, { [ws]: g.list.slice(0, 3).reduce((o, x) => Object.assign(o, { [x.id]: 1 }), { extra: [{ id: 'gmilk', name: 'Milk' }] }) });
+      return st;
+    }
+
+    /* the rituals walk: four Sundays, three resets and one skipped. The two before last say what to keep and what to
+       change, so Look back's notes come from before the Sunday that was missed; the weeks hold meals to bring back */
+    if (id === 'skipped') {
+      const st = base({ name: 'Jordan', partner: 'Riley', kids: ['Avery'], cares: [{ kids: ['Avery'], days: [1, 2, 3, 4, 5], drop: 495, pick: 1005 }] });
+      st.created = M.addDays(ws, -35);
+      const four = M.addDays(ws, -28), three = M.addDays(ws, -21), two = M.addDays(ws, -14), last = M.addDays(ws, -7);
+      st.weeks[four] = { reset: { step: D.STEPS.length - 1, done: true } };
+      st.weeks[three] = { reset: { step: D.STEPS.length - 1, done: true, keep: 'Pizza Friday with Avery', change: 'Less screen time after dinner', saidOn: three } };
+      st.weeks[two] = { reset: { step: D.STEPS.length - 1, done: true, keep: 'Date night on Friday', change: 'Less takeout midweek', saidOn: two } };
+      const R = st.recipes;
+      st.meals = st.meals || {};
+      for (let d = 0; d < 7; d++) {
+        st.dinners[M.addDays(three, d)] = { name: R[d % R.length].name, recipe: R[d % R.length].id, cook: d % 2 ? 'kim' : 'me', items: R[d % R.length].items.slice() };
+        if (d > 0) st.meals[M.addDays(three, d)] = { lunch: { name: d % 2 ? 'Turkey sandwiches' : 'Leftovers', how: d % 2 ? undefined : 'leftovers' } };
+        if (d < 5) st.dinners[M.addDays(two, d)] = { name: R[(d + 3) % R.length].name, recipe: R[(d + 3) % R.length].id, cook: d % 2 ? 'me' : 'kim', items: R[(d + 3) % R.length].items.slice() };
+      }
+      st.dinners[M.addDays(last, 2)] = { name: 'Pizza place', recipe: null, cook: 'order', items: [] };
+      return st;
+    }
     /* brand new: the sample week with no name yet, for the first visit's letter rack */
     if (id === 'firstrun') { const st = D.sampleState(today); st.profile = Object.assign({}, st.profile, { name: '' }); return st; }
 

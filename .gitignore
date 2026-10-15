@@ -4,3 +4,7 @@ dist
 .DS_Store
 .env
 .env.*
+
+# Overnight before and after screenshots (Oct 15): kept on this Mac, too heavy for the repo
+docs/walk/*-after/
+docs/mocks/phone-redesign/built/

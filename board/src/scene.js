@@ -55,11 +55,18 @@
   function sway(s, to, w, zeta, dt, push) {
     const n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
     for (let i = 0; i < n; i++) { s.v += (-w * w * (s.x - to) - 2 * zeta * w * s.v + (push || 0)) * h; s.x += s.v * h; }
+    /* (V11, lift and place: a spring that went to a number that isn't one heals to where it was going) */
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.v)) { s.x = Number.isFinite(to) ? to : 0; s.v = 0; }
   }
+  /* a spring written the way the motion spec writes one (docs/LIFT-AND-PLACE.md): (response in seconds,
+     damping ratio), mass 1. resp(0.22) is its pace for sway() */
+  const resp = (r) => (2 * Math.PI) / Math.max(0.01, r);
+  /* a soft cap: as x nears c it eases in instead of stopping dead */
+  const softCap = (x, c) => c * Math.tanh(x / c);
   /* what the desk tells the app when a block touches down, comes home, or the week clicks into place, so a
      sound can play at that moment and not before (set by the app with World.onFeel) */
   let feelHook = null;
-  const feelSay = (kind, a) => { if (feelHook) try { feelHook(kind, a); } catch (e) { /* fine */ } };
+  const feelSay = (kind, a, b) => { if (feelHook) try { feelHook(kind, a, b); } catch (e) { /* fine */ } };
 
   /* == helpers == */
   const matCache = {};
@@ -99,15 +106,58 @@
     return tries.reduce((a, t) => (contrast(bg, t) > contrast(bg, a) ? t : a), tries[0]);
   }
 
-  function rrShape(w, d, r) {
+  /* A rounded rectangle, as explicit points (V11, lift and place: three keeps a zero length edge where an arc
+     meets its line and the bevel tore a notch into the front wall there; points with no near duplicates and
+     no closing point equal to the first close cleanly). seg: points along each corner */
+  function rrShape(w, d, r, seg) {
     r = Math.max(0.001, Math.min(r, w / 2 - 0.0005, d / 2 - 0.0005));
-    const s = new T.Shape(), x = -w / 2, y = -d / 2;
-    s.moveTo(x + r, y);
-    s.lineTo(x + w - r, y); s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0, false);
-    s.lineTo(x + w, y + d - r); s.absarc(x + w - r, y + d - r, r, 0, Math.PI / 2, false);
-    s.lineTo(x + r, y + d); s.absarc(x + r, y + d - r, r, Math.PI / 2, Math.PI, false);
-    s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
-    return s;
+    if (!FEEL) {
+      const s = new T.Shape(), x = -w / 2, y = -d / 2;
+      s.moveTo(x + r, y);
+      s.lineTo(x + w - r, y); s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0, false);
+      s.lineTo(x + w, y + d - r); s.absarc(x + w - r, y + d - r, r, 0, Math.PI / 2, false);
+      s.lineTo(x + r, y + d); s.absarc(x + r, y + d - r, r, Math.PI / 2, Math.PI, false);
+      s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
+      return s;
+    }
+    const n = seg || 8, x = -w / 2, y = -d / 2, pts = [];
+    const arc = (cx, cy, a0) => { for (let i = 0; i <= n; i++) { const a = a0 + (i / n) * (Math.PI / 2); pts.push(new T.Vector2(cx + Math.cos(a) * r, cy + Math.sin(a) * r)); } };
+    arc(x + w - r, y + r, -Math.PI / 2);
+    arc(x + w - r, y + d - r, 0);
+    arc(x + r, y + d - r, Math.PI / 2);
+    arc(x + r, y + r, Math.PI);
+    const clean = [];
+    for (const p of pts) { const q = clean[clean.length - 1]; if (!q || Math.abs(q.x - p.x) > 1e-6 || Math.abs(q.y - p.y) > 1e-6) clean.push(p); }
+    while (clean.length > 3 && Math.abs(clean[0].x - clean[clean.length - 1].x) <= 1e-6 && Math.abs(clean[0].y - clean[clean.length - 1].y) <= 1e-6) clean.pop();
+    return new T.Shape(clean);
+  }
+  /* V11, lift and place: a brick's rounded ends and bevels shade smoothly (flat normals banded them, worst on a
+     brick that swings), while its top and bottom stay flat (the top carries print: it stays the color it was
+     made). Each side or bevel corner takes the average of the faces it touches within crease degrees */
+  function creaseNormals(g, crease) {
+    const pos = g.attributes.position, n = pos.count, cosC = Math.cos((crease || 50) * Math.PI / 180);
+    const fn = new Float32Array(n), key = (i) => Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4);
+    const face = [], a = new T.Vector3(), b = new T.Vector3(), c = new T.Vector3(), e1 = new T.Vector3(), e2 = new T.Vector3();
+    for (let i = 0; i < n; i += 3) {
+      a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+      const nn = e1.subVectors(c, b).cross(e2.subVectors(a, b)).normalize().clone();
+      face.push(nn); fn[i] = fn[i + 1] = fn[i + 2] = face.length - 1;
+    }
+    const cap = (f) => Math.abs(f.y) > 0.9995;
+    const at = new Map();
+    for (let i = 0; i < n; i++) { const f = face[fn[i]]; if (cap(f)) continue; const k = key(i); if (!at.has(k)) at.set(k, []); at.get(k).push(f); }
+    const nor = new Float32Array(n * 3), sum = new T.Vector3();
+    for (let i = 0; i < n; i++) {
+      const f = face[fn[i]];
+      if (cap(f) || !Number.isFinite(f.x)) { nor[i * 3] = f.x || 0; nor[i * 3 + 1] = Number.isFinite(f.y) ? f.y : 1; nor[i * 3 + 2] = f.z || 0; continue; }
+      sum.set(0, 0, 0);
+      for (const o of at.get(key(i)) || [f]) if (o.dot(f) >= cosC) sum.add(o);
+      if (sum.lengthSq() < 1e-12) sum.copy(f);
+      sum.normalize();
+      nor[i * 3] = sum.x; nor[i * 3 + 1] = sum.y; nor[i * 3 + 2] = sum.z;
+    }
+    g.setAttribute('normal', new T.BufferAttribute(nor, 3));
+    return g;
   }
   function slab(shape, height, bevel, y0) {
     const g = new T.ExtrudeGeometry(shape, { depth: Math.max(0.001, height - 2 * bevel), bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 8 });
@@ -119,11 +169,16 @@
   function blockGeo(w, d, h) {
     const key = w.toFixed(3) + ':' + d.toFixed(3) + ':' + h;
     if (geoCache.has(key)) return geoCache.get(key);
-    const b = Math.min(0.06, w / 2 - 0.012, h / 2 - 0.005);
-    const shape = rrShape(Math.max(0.02, w - 2 * b), d - 2 * b, 0.12);
-    const g = new T.ExtrudeGeometry(shape, { depth: Math.max(0.002, h - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 6 });
+    /* V11, lift and place: the bevel is at most a fifth of the width and the corner at most three tenths of
+       the face, so a short brick stays a brick instead of a pill; four bevel steps and creased normals so
+       the bevel catches the light as one curve (the bottom is darkened in the brick's shader, brickMats) */
+    const b = FEEL ? Math.max(0.004, Math.min(0.06, w * 0.2, h / 2 - 0.005)) : Math.min(0.06, w / 2 - 0.012, h / 2 - 0.005);
+    const fw = Math.max(0.02, w - 2 * b), fd = d - 2 * b;
+    const shape = FEEL ? rrShape(fw, fd, Math.min(0.12, 0.3 * Math.min(fw, fd)), 6) : rrShape(fw, fd, 0.12);
+    const g = new T.ExtrudeGeometry(shape, { depth: Math.max(0.002, h - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: FEEL ? 4 : 3, curveSegments: 6 });
     g.rotateX(-Math.PI / 2);
     g.translate(0, b, 0);
+    if (FEEL) creaseNormals(g, 50);
     if (geoCache.size > 600) pruneGeo();
     geoCache.set(key, g);
     return g;
@@ -447,6 +502,32 @@
   }
   /* free time keeps an invisible body so it can still be tapped and dropped on */
   const freeMat = new T.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+  /* V11, lift and place: a brick's material: one matte Lambert with a line of light along the bevel only (where
+     the surface faces up between about 0.3 and 0.9: never the top, never the walls), view independent, so it
+     stays matte; and the bottom a step darker (0.82), seen as it swings in your hand, in the same shader, so a
+     brick is still one draw. The top's color is exactly the Lambert of the color it was made, so print on it
+     keeps its contrast */
+  const brickCache = new Map();
+  function bevelLight(m) {
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', [
+        '{',
+        '  float ny = dot(normalize(normal), normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));',
+        '  float band = smoothstep(0.28, 0.42, ny) * (1.0 - smoothstep(0.78, 0.9, ny));',
+        '  outgoingLight += diffuseColor.rgb * 0.09 * band;',
+        '  outgoingLight *= mix(1.0, 0.82, step(ny, -0.5));',
+        '}',
+        '#include <opaque_fragment>'
+      ].join('\n'));
+    };
+    m.customProgramCacheKey = () => 'sr-bevel-light';
+    return m;
+  }
+  function brickMats(color) {
+    let v = brickCache.get(color);
+    if (!v) { v = bevelLight(new T.MeshLambertMaterial({ color })); brickCache.set(color, v); }
+    return v;
+  }
   const gripTexCache = {};
   function gripTex(ink) {
     if (gripTexCache[ink]) return gripTexCache[ink];
@@ -538,7 +619,7 @@
       return;
     }
     u.body.geometry = blockGeo(Math.round(w * 200) / 200, dU, h);
-    u.body.material = lam(lk.base); u.body.castShadow = true;
+    u.body.material = FEEL ? brickMats(lk.base) : lam(lk.base); u.body.castShadow = !u.inHandRig;
     const face = u.face;
     face.scale.set(Math.max(0.02, w - 0.1), 1, dU - 0.1);
     face.position.y = h + 0.004;
@@ -848,6 +929,11 @@
     return canvasTex(cv);
   }
   const trackMat = new T.MeshLambertMaterial({ map: grooveTex() });
+  /* V11, lift and place: a groove sits level with the board (its strip stood 0.015 proud of it), so a brick
+     seats into it, and what lies on the board over it (the landing outline, the shadow in hand) is never
+     under it; drawn a hair in front of the board's top so the two never fight */
+  const GROOVE_Y = FEEL ? BOARD_Y - 0.009 : BOARD_Y + 0.005;
+  if (FEEL) { trackMat.polygonOffset = true; trackMat.polygonOffsetFactor = -1; trackMat.polygonOffsetUnits = -2; }
   const benchMat = new T.MeshLambertMaterial({ map: woodTex('#D2A468') });
 
   const week = { group: null, base: null, header: null, ruler: null, rows: [], blocks: new Map(), gapMarks: [], focus: 3 };
@@ -862,7 +948,7 @@
       const row = new T.Group();
       row.position.z = rowZ(i);
       const track = mesh(new T.BoxGeometry(railUnits() + 0.1, 0.02, TRACK_D), trackMat, false, true);
-      track.position.set(X0 + railUnits() / 2, BOARD_Y + 0.005, 0);
+      track.position.set(X0 + railUnits() / 2, GROOVE_Y, 0);
       const tab = mesh(slab(rrShape(TAB_W, TAB_D, 0.16), 0.12, 0.03, BOARD_Y), mat('#EFE2C8', { roughness: 0.8 }));
       tab.position.x = TAB_X;
       const tabFace = new T.Mesh(new T.PlaneGeometry(TAB_W - 0.06, TAB_D - 0.06), printMat({ transparent: true, alphaTest: 0.02 }));
@@ -1565,7 +1651,7 @@
     LANES.forEach((l, i) => {
       const len = (l.to - l.from) / 60 * DU;
       const track = mesh(new T.BoxGeometry(len + 0.1, 0.02, DB_D + 0.18), trackMat, false, true);
-      track.position.set(LX0 + len / 2, BOARD_Y + 0.005, laneZ(i));
+      track.position.set(LX0 + len / 2, GROOVE_Y, laneZ(i));
       const face = new T.Mesh(new T.PlaneGeometry(2.14, DB_D - 0.06), printMat({ map: laneLabelTexture(l), transparent: true, alphaTest: 0.02 }));
       face.rotation.x = -Math.PI / 2; face.position.set(LX0 - 1.35, BOARD_Y + 0.004, laneZ(i)); face.receiveShadow = true;
       face.visible = laneShape !== 'tall';
@@ -1699,7 +1785,9 @@
     });
   }
   const dayGhostTex = new Map();
+  /* a fourth argument (V11, lift and place): { past }, the time is over, so the outline shows a check */
   function showDayGhost(start, durMin, valid) {
+    const go = arguments[3], kind = go && go.past ? 'past' : '';
     const segs = [];
     if (start != null) for (let li = 0; li < LANES.length; li++) {
       const L = LANES[li], a = Math.max(start, L.from), b = Math.min(start + durMin, L.to);
@@ -1709,7 +1797,7 @@
       const g = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ transparent: true, depthWrite: false }));
       g.rotation.x = -Math.PI / 2;
       /* V11: an outline stays hidden until it has a slot (ghostAim shows it) */
-      if (FEEL) g.visible = false;
+      if (FEEL) { g.visible = false; ghostLive(g); }
       dayb.group.add(g);
       dayb.ghosts.push(g);
     }
@@ -1719,12 +1807,13 @@
       else { g.visible = !!sg; if (!sg) return; }
       const w = (sg.b - sg.a) / 60 * DU;
       ghostD = DB_D;
-      const key = w.toFixed(2) + valid;
-      if (!dayGhostTex.has(key)) dayGhostTex.set(key, ghostTexture(w, valid));
+      const key = w.toFixed(2) + valid + kind;
+      if (!dayGhostTex.has(key)) dayGhostTex.set(key, ghostTexture(w, valid, kind));
       /* V11: the material is marked changed only when its picture changes, not on every move */
       if (!FEEL || g.material.map !== dayGhostTex.get(key)) { g.material.map = dayGhostTex.get(key); g.material.needsUpdate = true; }
-      /* feel: a part that stays in its lane glides; one that moved to another lane starts there */
-      if (FEEL) { if (g.userData.lane !== sg.li) g.userData.on = false; g.userData.lane = sg.li; ghostAim(g, dayX(sg.li, sg.a) + w / 2, BOARD_Y + 0.03, laneZ(sg.li), w - GAP, DB_D); return; }
+      /* feel: a part that stays in its lane glides; one that moved to another lane starts there. V11, lift and
+         place: on top of whatever it overlaps, drawn over the bricks */
+      if (FEEL) { g.userData.ok = !!valid; if (g.userData.lane !== sg.li) g.userData.on = false; g.userData.lane = sg.li; const x0 = dayX(sg.li, sg.a); ghostAim(g, x0 + w / 2, BOARD_Y + (hand.use ? ghostTop(dayb.blocks, (u) => u.lane === sg.li, x0, x0 + w) + 0.01 : 0.03), laneZ(sg.li), w - GAP, DB_D); return; }
       g.scale.set(w - GAP, DB_D, 1);
       g.position.set(dayX(sg.li, sg.a) + w / 2, BOARD_Y + 0.03, laneZ(sg.li));
     });
@@ -3198,7 +3287,19 @@
     maybeSolve();
   }
   function setBenchOpen(on) { benchOn = !!on; applyMode(); maybeSolve(); }
+  /* V11, lift and place: the room around the board can be held while a copy flies from a panel to its slot,
+     so the board doesn't reframe under it (a panel closing gives the desk more room); let go, the last room
+     asked for is used */
+  let insetsHeld = false, insetsPending = null, insetsHeldAt = 0;
+  function holdInsets(on) {
+    if (!FEEL) return;
+    insetsHeld = !!on; insetsHeldAt = on ? nowMs() : 0;
+    if (!on && insetsPending) { const v = insetsPending; insetsPending = null; setInsets(v); }
+  }
   function setInsets(v) {
+    /* (held, it waits; never longer than a second and a half) */
+    if (FEEL && insetsHeld && nowMs() - insetsHeldAt < 1500) { insetsPending = Object.assign({}, insetsPending || {}, v); return; }
+    if (FEEL && insetsHeld) { insetsHeld = false; if (insetsPending) { v = Object.assign({}, insetsPending, v); insetsPending = null; } }
     insets = Object.assign({}, insets, v);
     /* V11: the kinds of day are laid out by the room the camera has, so a new room lays them out again */
     if (FEEL && kinds.on && kinds.lastSp) setKinds(kinds.lastSp);
@@ -3272,21 +3373,56 @@
   /* lean in toward a point on the desk (null to settle back); k is how strongly */
   function lean(p, k) {
     /* (V11: a point that isn't a number is no point to lean toward: the camera settles instead) */
-    if (!p || (FEEL && (!Number.isFinite(p.x) || !Number.isFinite(p.z)))) { user.leanTo = 0; user.leaning = false; return; }
+    if (!p || (FEEL && (!Number.isFinite(p.x) || !Number.isFinite(p.z)))) {
+      /* V11, lift and place: letting go keeps the lean a moment, and a block falling from the hand into its
+         slot holds it until 250 ms after it lands (stepFalls), so the landing never plays on a board that's
+         shrinking away */
+      if (FEEL && !p && user.leaning && drag.hand && drag.hand.use) { if (!user.leanOffAt) user.leanOffAt = Date.now() + 60; if (!drag.hand.on) drag.hand.aimOn = false; return; }
+      user.leanTo = 0; user.leaning = false; user.leanOffAt = 0; return;
+    }
     /* feel: with calmer motion the camera doesn't lean at all, rather than jump */
     if (FEEL && reduced) { user.leanTo = 0; return; }
     /* V11: a piece carried off the bench keeps the week and the bench side by side, so no lean in */
     if (FEEL && benchCam.carry) { user.leanTo = 0; return; }
     user.leanAt.set(p.x, 0, p.z);
     user.leanTo = k == null ? 1 : k;
-    user.leaning = true;
+    user.leaning = true; user.leanOffAt = 0;
   }
   /* feel: how far in the lean goes while it lasts (1 all the way, 0 none); near the screen's edge the app
      eases it back, so a day at the far side of the week is never out of reach */
   function leanAmount(k) { if (!FEEL || !user.leaning || reduced) return; user.leanTo = Math.max(0, Math.min(1, k)); }
-  /* feel: the lean zooms in about a fifth, around the point you picked up, so that point stays where it
-     is on screen while the rest of the desk grows (the least sweep of motion, the least to feel queasy at) */
-  const LEAN_Z = FEEL ? 0.18 : 0.1;
+  /* feel: the lean zooms in around the point you're working on, so that point stays where it is on screen
+     while the rest of the desk grows (the least sweep of motion, the least to feel queasy at). V11, lift and
+     place: 12 percent, around the aim point's ray (leanStep) */
+  const LEAN_Z = FEEL ? 0.12 : 0.1;
+  /* V11, lift and place: the lean is a zoom about the aim point's ray, worked out a step at a time: each frame
+     it scales the view about the point where that ray meets the camera's look plane (as the camera was last
+     drawn), so every point on the ray, the floor point under a still hand included, stays where it is on
+     screen. A center that moves with the hand never makes the view jump, since each step is only the change.
+     Easing out, it scales about one fixed center back to nothing (no pan left over). Returns the zoom. */
+  const leanE = new T.Vector3(), leanP = new T.Vector3();
+  function leanStep(look) {
+    if (!user.leanL) { user.leanL = new T.Vector3(); user.leanZ = 1; user.leanF = null; }
+    const Z = 1 + LEAN_Z * Math.max(0, user.lean), Zp = user.leanZ || 1;
+    if (Z <= 1.00001 && Zp <= 1.00001) { user.leanL.set(0, 0, 0); user.leanZ = 1; user.leanF = null; return 1; }
+    if (!user.leaning) {
+      if (!user.leanF) user.leanF = Zp - 1 > 1e-4 ? look.clone().addScaledVector(user.leanL, Zp / (Zp - 1)) : look.clone();
+      if (Z > 1.00001) user.leanL.copy(user.leanF).sub(look).multiplyScalar(1 - 1 / Z); else { user.leanL.set(0, 0, 0); user.leanF = null; }
+    } else {
+      user.leanF = null;
+      const r = Z / Zp;
+      if (Math.abs(r - 1) > 1e-9) {
+        let P = null;
+        if (hand.aimOn) P = rayAt(hand.aim.x, hand.aim.y, look.y, leanP);
+        if (!P) P = leanP.set(user.leanAt.x, look.y, user.leanAt.z);
+        leanE.copy(look).add(user.leanL).sub(P).multiplyScalar(1 / r).add(P);
+        user.leanL.copy(leanE).sub(look);
+      }
+    }
+    if (!finite3(user.leanL)) { user.leanL.set(0, 0, 0); user.leanF = null; }
+    user.leanZ = Z;
+    return Z;
+  }
   /* feel: the camera rides springs too: it eases off, eases in, and a new aim mid move keeps its speed */
   const camV = { look: new T.Vector3(), elev: 0, dist: 0, offX: 0, offY: 0, zoom: 0, pan: new T.Vector3(), lean: 0, away: 0 };
   function feelCamera(dt) {
@@ -3312,7 +3448,12 @@
       one('zoom', user.zoomTo, 15, user);
       springV(user.pan, camV.pan, user.panTo, 15, dt);
     }
-    one('lean', user.leanTo, 9, user);
+    /* V11, lift and place: the lean comes in on (0.35 s, 1.0) and goes out on (0.5 s, 1.0), a moment after
+       letting go (lean(null)), or 250 ms after a block from the hand lands; none on the phone's desk */
+    if (user.leanOffAt && Date.now() >= user.leanOffAt) { user.leanTo = 0; user.leaning = false; user.leanOffAt = 0; }
+    if (phoneDay) user.leanTo = 0;
+    if (user.leanOffAt) moving = true;
+    one('lean', user.leanTo, user.leanTo > user.lean ? (2 * Math.PI) / 0.35 : (2 * Math.PI) / 0.5, user);
     one('away', user.awayTo, 8, user);
     const busy = cam.look.distanceToSquared(camTo.look) > 1e-6 || camV.look.lengthSq() > 1e-5 || Math.abs(camTo.dist - cam.dist) > 0.002 || Math.abs(camV.dist) > 0.01
       || Math.abs(camTo.elev - cam.elev) > 1e-4 || Math.abs(camV.elev) > 1e-3 || Math.abs(camTo.offX - cam.offX) + Math.abs(camTo.offY - cam.offY) > 0.05 || Math.abs(camV.offX) + Math.abs(camV.offY) > 0.5
@@ -3352,12 +3493,14 @@
       bz = benchCam.z;
       look.add(benchCam.pan).lerp(new T.Vector3(benchCam.at.x, look.y, benchCam.at.z), 1 - 1 / bz);
     }
-    if (user.lean > 0.001) look.lerp(new T.Vector3(user.leanAt.x, look.y, user.leanAt.z), FEEL ? 1 - 1 / (1 + LEAN_Z * user.lean) : 0.14 * user.lean);
-    const dist = cam.dist / (user.zoom * bz * (1 + LEAN_Z * user.lean));
+    let leanZ = 1 + LEAN_Z * user.lean;
+    if (FEEL) { leanZ = leanStep(look); look.add(user.leanL); }
+    else if (user.lean > 0.001) look.lerp(new T.Vector3(user.leanAt.x, look.y, user.leanAt.z), 0.14 * user.lean);
+    const dist = cam.dist / (user.zoom * bz * leanZ);
     const dir = new T.Vector3(0, Math.sin(cam.elev), Math.cos(cam.elev));
     camera.position.copy(look).addScaledVector(dir, dist).add(par.clone().multiplyScalar(dist / 40));
     camera.lookAt(look);
-    if (FEEL && benchCam.keep) keepBenchHand();
+    if (FEEL && benchCam.keep) { if (hand.on) benchCam.keep = null; else keepBenchHand(); }
   }
 
   /* == per frame == */
@@ -3447,8 +3590,12 @@
       if (!finite3(drag.vel)) { drag.vel.set(0, 0, 0); noteRepair('the speed of the block in hand'); }
       if (!Number.isFinite(drag.roll.x) || !Number.isFinite(drag.roll.v)) drag.roll = { x: 0, v: 0 };
       if (!Number.isFinite(drag.pitch.x) || !Number.isFinite(drag.pitch.v)) drag.pitch = { x: 0, v: 0 };
-      if (!finite3(o.position) || !finite3(o.scale) || !finite3(o.rotation)) { o.position.copy(drag.target); o.scale.set(1, 1, 1); o.rotation.set(-0.06, 0, 0); o.userData.appear = null; noteRepair('the block in hand'); }
+      /* (V11, lift and place: a block hanging in the hand heals in the hand: its springs back to rest, level) */
+      const H = drag.hand, rigged = !!(H && H.on && o.parent === H.hang);
+      if (rigged && (!finite3(o.position) || !finite3(o.scale) || !finite3(o.rotation) || !finite3(H.rig.position) || !finite3(H.hang.rotation))) { handHeal(); noteRepair('the block in hand'); }
+      else if (!rigged && (!finite3(o.position) || !finite3(o.scale) || !finite3(o.rotation))) { o.position.copy(drag.target); o.scale.set(1, 1, 1); o.rotation.set(-0.06, 0, 0); o.userData.appear = null; noteRepair('the block in hand'); }
     }
+    if (typeof falls !== 'undefined') falls.forEach((f) => { if (!finite3(f.o.position) || !finite3(f.o.scale) || !finite3(f.fromPos) || !finite3(f.toPos) || !Number.isFinite(f.dur) || !Number.isFinite(f.y0)) { f.fromPos.copy(finite3(f.toPos) ? f.toPos : f.o.position.set(0, 0, 0)); f.y0 = 0; f.dur = 0.09; f.t = f.dur; noteRepair('a block falling from the hand'); } });
     if (drag.last && (!finite3(drag.last.pos) || !finite3(drag.last.vel))) drag.last = null;
     homes.forEach((h) => { if (!finite3(h.from) || !finite3(h.to) || !finite3(h.m.position)) { if (finite3(h.to)) h.from.copy(h.to); else { h.from.set(0, 0, 0); h.to.set(0, 0, 0); } h.t = h.dur; noteRepair('a block on its way home'); } });
     if (!finite3(user.leanAt) || !Number.isFinite(user.lean) || !Number.isFinite(user.leanTo)) { user.leanAt.set(0, 0, 0); user.lean = 0; user.leanTo = 0; camV.lean = 0; user.leaning = false; noteRepair('the lean'); }
@@ -3464,9 +3611,31 @@
   /* == feel: how a block moves ==
      One place for all of it: its lift (pointed at, picked), a dip while it's pressed, a fall and a landing
      when it's set down, and a small knock when another lands beside it. Everything rides on springs. */
-  let pressObj = null;
-  /* the block under a finger or the mouse button dips, so it's plainly in hand before it moves */
-  function press(obj) { pressObj = FEEL && obj ? obj : null; }
+  let pressObj = null, pressHold = false;
+  /* the block under a finger or the mouse button dips, so it's plainly in hand before it moves. hold (V11, lift
+     and place): a finger held still on it, which lifts it at 300 ms: from 120 ms it rises a little and grows,
+     so the hold shows it's working (with calmer motion its picked glow fades in instead) */
+  function press(obj, hold) {
+    if (obj !== pressObj && obj) obj.userData.holdT = 0;
+    pressObj = FEEL && obj ? obj : null;
+    pressHold = !!(pressObj && hold);
+  }
+  /* V11, lift and place: the numbers a landing moves by (docs/LIFT-AND-PLACE.md 3.12 to 3.16): the squash, a
+     damped sine with one small rebound that bulges the footprint (what reads from above); the ring of dust;
+     the neighbours' hop and sideways nudge; the rock; the calmer highlight */
+  const LAND = { sqW: 35, sqTau: 0.06, sqDur: 0.26, bulge: 0.5, peaks: [[0.5, 0.08], [1, 0.1], [2, 0.11]], ring: 0.28, ringOp: 0.42,
+    hop: { week: 0.032, day: 0.05 }, nudge: { week: 0.045, day: 0.07 }, rockW: 26, rockZeta: 0.3, rockMax: 2.5, rockSpeed: 0.72, rockSwing: 2, flash: 0.24 };
+  /* the board a block is on is the one in view (the day in the day view, the week otherwise) */
+  const inView = (m) => (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block');
+  /* how deep a landing squashes, by its length (hours) and how fast it came down (units a second) */
+  function squashFor(size, speed) {
+    const P = LAND.peaks, h = Number.isFinite(size) && size > 0 ? size : 1;
+    let peak = P[P.length - 1][1];
+    if (h <= P[0][0]) peak = P[0][1];
+    else for (let i = 1; i < P.length; i++) if (h <= P[i][0]) { const k = (h - P[i - 1][0]) / (P[i][0] - P[i - 1][0]); peak = P[i - 1][1] + (P[i][1] - P[i - 1][1]) * k; break; }
+    const sp = Number.isFinite(speed) ? speed : 30;
+    return (peak / 0.53) * Math.max(0.6, Math.min(1, sp / 30));
+  }
   function feelBlock(m, dt, liftTo, showGrip, sel) {
     const u = m.userData;
     /* V11: a block set down before its first frame (adoptPosition and land give it a speed first) still
@@ -3476,11 +3645,13 @@
     if (!Number.isFinite(u.pressK)) u.pressK = 0;
     if (!Number.isFinite(u.gripK)) u.gripK = 0;
     if (!Number.isFinite(u.haloK)) u.haloK = 0;
+    if (!Number.isFinite(u.pressV)) u.pressV = 0;
+    if (!Number.isFinite(u.holdT)) u.holdT = 0;
     /* a block placed from a panel waits, unseen, for the copy flying to it (land() lets it go) */
     if (u.held) {
       u.heldT = (u.heldT || 0) + dt;
       if (u.heldT < 1.4) { m.visible = false; return; }
-      u.held = false; m.visible = true;
+      u.held = false; u.handFall = null; m.visible = true;
     }
     if (u.grow != null) {
       u.grow = Math.min(1, u.grow + dt * (reduced ? 20 : u.growFast ? 7 : 3.4));
@@ -3488,23 +3659,37 @@
       if (u.grow >= 1) { u.grow = null; u.growFast = false; u.newTile = false; m.scale.y = 1; }
       moving = true;
     }
+    /* V11, lift and place: a finger held still on a block: from 120 ms it rises 0.12 and grows 3 percent by
+       300 ms, when it lifts (with calmer motion, its glow fades in from 120 ms instead) */
+    const holding = pressObj === m && pressHold;
+    if (holding) { u.holdT += dt; moving = true; } else u.holdT = 0;
+    const hk = holding ? Math.max(0, Math.min(1, (u.holdT - 0.12) / 0.18)) : 0, holdK = reduced ? 0 : hk * hk * (3 - 2 * hk);
     /* the drag dots fade in, and the picked glow spreads out from under the block */
-    const gTo = showGrip ? 1 : 0, hTo = sel ? 1 : 0, pTo = pressObj === m ? 1 : 0;
+    const gTo = showGrip ? 1 : 0, hTo = sel || (reduced && holding && u.holdT >= 0.12) ? 1 : 0, pTo = pressObj === m && !reduced ? 1 : 0;
     if (u.gripK !== gTo) { u.gripK = reduced ? gTo : u.gripK + (gTo - u.gripK) * (1 - Math.exp(-dt * 18)); if (Math.abs(gTo - u.gripK) < 0.01) u.gripK = gTo; moving = true; }
     u.grip.visible = u.gripK > 0.01;
     if (u.grip.visible) u.grip.material.opacity = u.gripK;
-    if (u.haloK !== hTo) { u.haloK = reduced ? hTo : u.haloK + (hTo - u.haloK) * (1 - Math.exp(-dt * (hTo ? 14 : 24))); if (Math.abs(hTo - u.haloK) < 0.01) u.haloK = hTo; moving = true; }
-    u.halo.visible = u.haloK > 0.01;
-    if (u.halo.visible && u.haloS) { const s = 0.5 + 0.5 * u.haloK; u.halo.scale.set(u.haloS.x * s, 1, u.haloS.z * s); }
-    if (u.pressK !== pTo) { u.pressK = reduced ? pTo : u.pressK + (pTo - u.pressK) * (1 - Math.exp(-dt * (pTo ? 45 : 20))); if (Math.abs(pTo - u.pressK) < 0.01) u.pressK = pTo; moving = true; }
-    /* the knock from a block landing beside it: a small hop, nearest first */
-    let hop = 0;
+    if (u.haloK !== hTo) { u.haloK = reduced && !holding ? hTo : u.haloK + (hTo - u.haloK) * (1 - Math.exp(-dt * (hTo ? 14 : 24))); if (Math.abs(hTo - u.haloK) < 0.01) u.haloK = hTo; moving = true; }
+    /* (calmer motion's landing: a highlight that fades in and out on the slot, 240 ms) */
+    let flash = 0;
+    if (u.flashT != null) { u.flashT += dt; const k = u.flashT / LAND.flash; moving = true; if (k >= 1) u.flashT = null; else flash = Math.sin(Math.PI * k); }
+    u.halo.visible = u.haloK > 0.01 || flash > 0.01;
+    if (u.halo.visible && u.haloS) { const s = 0.5 + 0.5 * Math.max(u.haloK, flash); u.halo.scale.set(u.haloS.x * s, 1, u.haloS.z * s); }
+    /* the press: in on (0.07 s, 1.0), out on (0.12 s, 1.0); calmer motion has none */
+    if (u.pressK !== pTo || Math.abs(u.pressV) > 0.01) {
+      if (FEEL && !reduced) { const r = spring(u.pressK, u.pressV, pTo, (2 * Math.PI) / (pTo ? 0.07 : 0.12), dt); u.pressK = r[0]; u.pressV = r[1]; if (Math.abs(pTo - u.pressK) < 0.004 && Math.abs(u.pressV) < 0.02) { u.pressK = pTo; u.pressV = 0; } }
+      else { u.pressK = reduced ? pTo : u.pressK + (pTo - u.pressK) * (1 - Math.exp(-dt * (pTo ? 45 : 20))); if (Math.abs(pTo - u.pressK) < 0.01) u.pressK = pTo; u.pressV = 0; }
+      moving = true;
+    }
+    /* the knock from a block landing beside it: a small hop and a nudge away from it, nearest first */
+    let hop = 0, kx = 0;
     if (u.knock) {
       const kn = u.knock, k = ((kn.t += dt) - kn.delay) / 0.15;
       moving = true;
-      if (k >= 1) u.knock = null; else if (k > 0) hop = kn.amp * Math.sin(Math.PI * k);
+      if (k >= 1) u.knock = null; else if (k > 0) { hop = kn.amp * Math.sin(Math.PI * k); kx = (kn.dx || 0) * Math.sin(Math.PI * k); }
     }
-    tmpV.set(u.target.x, u.target.y + liftTo + hop - u.pressK * 0.025, u.target.z);
+    const dip = FEEL ? u.pressK * (u.kind === 'dblock' ? 0.05 : 0.04) : u.pressK * 0.025;
+    tmpV.set(u.target.x + kx, u.target.y + liftTo + hop - dip + 0.12 * holdK, u.target.z);
     if (u.fall) {
       /* set down: it slides the last bit into its slot as it falls, speeding up, and touches */
       const f = u.fall;
@@ -3517,7 +3702,7 @@
       m.position.z = f.z0 + (tmpV.z - f.z0) * side;
       u.vel.set(0, 0, 0);
       if (k < 1) m.position.y = tmpV.y + f.y0 * (1 - k * k);
-      else { m.position.y = tmpV.y; u.fall = null; f.vx = (tmpV.x - f.x0) / f.dur; touchDown(m, f); }
+      else { m.position.y = tmpV.y; u.fall = null; f.vx = (tmpV.x - f.x0) / f.dur; f.speed = 2 * f.y0 / f.dur; touchDown(m, f); }
     } else if (reduced) { m.position.copy(tmpV); u.vel.set(0, 0, 0); }
     else {
       springV(m.position, u.vel, tmpV, 18, dt);
@@ -3525,32 +3710,60 @@
       else { m.position.copy(tmpV); u.vel.set(0, 0, 0); }
     }
     u.lift = Math.max(0, m.position.y - u.target.y);
-    /* the landing: a squash that's over in a sixth of a second, and a rock if it came in moving */
+    /* the landing: V11, lift and place, a damped sine (it peaks about 32 ms in, rebounds once at 120, and is
+       still by 260): height 1 - A e(t), footprint 1 + 0.5 A e(t); before, a squash over in a sixth of a second */
     let sy = 1, sxz = 1;
     if (u.sq) {
-      const q = u.sq, k = (q.t += dt) / (q.dur || 0.16);
+      const q = u.sq;
       moving = true;
-      if (k >= 1) u.sq = null;
-      else if (k > 0) { const g = Math.sin(Math.PI * k) * (1 - k); sy = 1 - q.amp * g; sxz = 1 + q.amp * 0.22 * g; }
+      if (q.hand) {
+        const t = (q.t += dt);
+        if (t >= LAND.sqDur) u.sq = null;
+        else if (t > 0) { const e = Math.sin(LAND.sqW * t) * Math.exp(-t / LAND.sqTau); sy = 1 - q.amp * e; sxz = 1 + LAND.bulge * q.amp * e; }
+      } else {
+        const k = (q.t += dt) / (q.dur || 0.16);
+        if (k >= 1) u.sq = null;
+        else if (k > 0) { const g = Math.sin(Math.PI * k) * (1 - k); sy = 1 - q.amp * g; sxz = 1 + q.amp * 0.22 * g; }
+      }
     }
     if (u.rock) {
-      sway(u.rock, 0, 26, 0.3, dt);
+      sway(u.rock, 0, LAND.rockW, LAND.rockZeta, dt);
       moving = true;
-      if (Math.abs(u.rock.x) < 0.0008 && Math.abs(u.rock.v) < 0.01) { u.rock = null; m.rotation.z = 0; } else m.rotation.z = u.rock.x;
+      if (Math.abs(u.rock.x) < 0.0008 && Math.abs(u.rock.v) < 0.01) { u.rock = null; m.rotation.z = 0; } else m.rotation.z = Math.max(-LAND.rockMax, Math.min(LAND.rockMax, u.rock.x * 180 / Math.PI)) * Math.PI / 180;
     }
-    if (u.grow == null) { const p = 1 - u.pressK * 0.06; m.scale.set(sxz, sy * p, sxz); }
+    /* the press squeezes: height 0.94 and, V11, the footprint 0.97 too (what reads from above); a hold grows it */
+    if (u.grow == null) {
+      const p = 1 - u.pressK * 0.06, pf = FEEL ? (1 - u.pressK * 0.03) * (1 + 0.03 * holdK) : 1;
+      m.scale.set(sxz * pf, sy * p, sxz * pf);
+    }
+    /* V11, lift and place: the picked glow stays on the board while the block lifts (it rode up with it) */
+    if (FEEL && u.halo.visible) u.halo.position.y = (0.012 - Math.max(0, m.position.y - u.target.y)) / Math.max(0.05, m.scale.y);
   }
   /* The moment a block touches the board: it squashes a little, rocks with the speed it came in with,
      sawdust skids out from under it, and the blocks beside it in its row take a small knock. The sound is
      said now, at the touch, not when it was let go. */
   function touchDown(m, f) {
     const u = m.userData, fx = f.fx;
-    u.sq = { t: 0, amp: fx ? fx.amp : 0.07 };
+    /* V11, lift and place: the squash by its length and how fast it came down; a ring of dust and the
+       neighbours' knock only on the board in view (its copy on the other board settles quietly) */
+    if (FEEL && fx && fx.kind !== 'tap') u.sq = { t: 0, amp: squashFor(fx.size, fx.speed || f.speed), hand: true };
+    else u.sq = { t: 0, amp: fx ? fx.amp : 0.07 };
     if (!fx) { if (f.tap) feelSay('tap'); return; }
-    const sp = Math.max(-1, Math.min(1, (f.vx || 0) / 12));
-    if (Math.abs(sp) > 0.06) u.rock = { x: 0, v: -sp * 1.4 };
-    dust(m, fx.played ? 3 : 7);
-    if (!fx.played) { fx.played = true; feelSay(fx.kind || 'land', fx.size); knockAround(m); }
+    const vx = f.vx || 0, swung = (fx.swing || 0) * 180 / Math.PI;
+    if (FEEL) {
+      /* a rock only when it came in moving (0.72 units a second) or still swinging (2 degrees); a careful
+         drop doesn't rock, the squash's rebound is its settle */
+      if (Math.abs(vx) > LAND.rockSpeed || swung > LAND.rockSwing) {
+        const maxV = (LAND.rockMax * Math.PI / 180) * LAND.rockW, sgn = vx ? Math.sign(vx) : 1;
+        u.rock = { x: 0, v: -sgn * Math.min(maxV, Math.max(Math.abs(vx) / 12, swung / 20) * 1.4) };
+      }
+    } else {
+      const sp = Math.max(-1, Math.min(1, vx / 12));
+      if (Math.abs(sp) > 0.06) u.rock = { x: 0, v: -sp * 1.4 };
+    }
+    const seen = !FEEL || inView(m);
+    if (seen) { if (FEEL) { ringAt(m); flecks(m); } else dust(m, fx.played ? 3 : 7); }
+    if (!fx.played && seen) { fx.played = true; feelSay(fx.kind || 'land', fx.size, fx.speed || f.speed); knockAround(m); }
   }
   /* the blocks either side of one that landed hop a little, the nearest first and most */
   function knockAround(m) {
@@ -3565,7 +3778,8 @@
       const gap = oL >= R ? oL - R : L >= oR ? L - oR : 0;
       if (gap > reach) return;
       const near = 1 - gap / reach;
-      v.knock = { t: 0, delay: 0.012 + gap * (day ? 0.014 : 0.03), amp: (day ? 0.05 : 0.032) * near * near };
+      /* V11, lift and place: and a nudge away from the landing, which is what shows from above */
+      v.knock = { t: 0, delay: 0.012 + gap * (day ? 0.014 : 0.03), amp: (day ? LAND.hop.day : LAND.hop.week) * near * near, dx: FEEL ? Math.sign(v.target.x - u.target.x || 1) * (day ? LAND.nudge.day : LAND.nudge.week) * near * near : 0 };
     });
   }
   /* sawdust: a few grains skid out along the board from under both long edges */
@@ -3586,33 +3800,106 @@
     world.add(m);
     puffs.push(m);
   }
+  /* V11, lift and place: the landing's dust, flat on the board. A ring of light wood dust spreads from under
+     the block (0.9 to 1.45 times its footprint and half a unit, 280 ms, its turn seeded by the block), drawn
+     under the bricks, never over print, dimming at night; and on the day board (and the phone's desk) a few
+     flat chips skid out from under a block of an hour or more. Both come from small pools. */
+  const rings = [], ringPool = [], chipPool = [];
+  let ringTex = null, chipMat = null;
+  const seedOf = (k) => { let h = 2166136261; for (const c of String(k || '')) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return ((h >>> 0) % 1000) / 1000; };
+  function ringAt(m) {
+    if (reduced || typeof document === 'undefined' || !m.parent) return;
+    if (!ringTex) {
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+      const g = cv.getContext('2d'), gr = g.createRadialGradient(128, 128, 60, 128, 128, 128);
+      gr.addColorStop(0, 'rgba(255, 238, 206, 0)'); gr.addColorStop(0.5, 'rgba(255, 238, 206, 0.9)'); gr.addColorStop(0.72, 'rgba(244, 222, 184, 0.55)'); gr.addColorStop(1, 'rgba(244, 222, 184, 0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+      ringTex = new T.CanvasTexture(cv);
+      if (T.SRGBColorSpace) ringTex.colorSpace = T.SRGBColorSpace;
+    }
+    const u = m.userData, wp = m.getWorldPosition(new T.Vector3()), ws = m.parent.getWorldScale(new T.Vector3());
+    const r = ringPool.pop() || new T.Mesh(haloGeo, new T.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false }));
+    r.renderOrder = 0;
+    r.position.set(wp.x, wp.y + 0.006, wp.z);
+    r.rotation.set(0, seedOf(u.bkey || u.key) * Math.PI * 2, 0);
+    r.userData = { t: 0, w: ((u.w || 1) + 0.5) * ws.x, d: ((u.dU || BLOCK_D) + 0.5) * ws.z, chip: false };
+    r.visible = true;
+    world.add(r);
+    rings.push(r);
+  }
+  function flecks(m) {
+    if (reduced || typeof document === 'undefined' || !m.parent) return;
+    const u = m.userData, b = u.orig || u.block || {};
+    const onDay = u.kind === 'dblock';
+    if (!onDay || !((b.sourceDur || b.dur || 0) >= 60)) return;
+    if (!chipMat) chipMat = new T.MeshLambertMaterial({ color: '#E9CFA4' });
+    const wp = m.getWorldPosition(new T.Vector3()), ws = m.parent.getWorldScale(new T.Vector3());
+    const half = (u.dU || BLOCK_D) * 0.5 * ws.z, wide = (u.w || 1) * ws.x, s0 = seedOf(u.bkey);
+    for (let i = 0; i < 4; i++) {
+      const c = chipPool.pop() || new T.Mesh(haloGeo, chipMat);
+      const side = i % 2 ? 1 : -1, k = (s0 * 7.3 + i * 0.37) % 1;
+      c.position.set(wp.x + (k - 0.5) * wide * 0.8, wp.y + 0.008, wp.z + side * (half + 0.02));
+      c.rotation.set(0, k * Math.PI, 0);
+      c.scale.set(0.06, 1, 0.045);
+      c.userData = { t: 0, life: 0.3 + 0.18 * ((k * 3.1) % 1), vx: (k - 0.5) * 0.8, vz: side * (0.9 + 0.6 * k), chip: true };
+      c.visible = true;
+      world.add(c);
+      rings.push(c);
+    }
+  }
+  function stepRings(dt) {
+    const lk = typeof lightK === 'function' ? lightK() : 1;
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const r = rings[i], u = r.userData;
+      moving = true;
+      if (u.chip) {
+        const k = (u.t += dt) / u.life;
+        if (k >= 1) { rings.splice(i, 1); world.remove(r); r.visible = false; chipPool.push(r); continue; }
+        r.position.x += u.vx * dt * (1 - k); r.position.z += u.vz * dt * (1 - k);
+        const s = 1 - k * k; r.scale.set(0.06 * s, 1, 0.045 * s);
+        continue;
+      }
+      const k = (u.t += dt) / LAND.ring;
+      if (k >= 1) { rings.splice(i, 1); world.remove(r); r.visible = false; ringPool.push(r); continue; }
+      const e = 1 - Math.pow(1 - k, 3), s = 0.9 + 0.55 * e;
+      r.scale.set(u.w * s, 1, u.d * s);
+      r.material.opacity = LAND.ringOp * (1 - k) * (1 - k);
+      r.material.color.setRGB(lk, lk, lk);
+    }
+  }
   /* A block was set down: dragged there, placed from a panel, or put there for you. One that's on its way
      down lands when it touches; one that appeared some other way drops in from a hand's height. However
      many pieces it shows as, it makes one sound. size: how big a clack (null for none). */
   function land(date, bkey, size) {
     const ms = blockMeshes(date, bkey).filter((m) => m.parent && (m.visible || m.userData.held));
     const fx = { size, amp: 0.16, played: false, kind: 'land' };
+    /* V11, lift and place: a block falling from the hand into its slot lands when it touches, and its sound
+       comes with it (stepFalls) */
+    const fromHand = ms.find((m) => m.userData.handFall);
+    if (FEEL && fromHand) { fromHand.userData.handFall.fx = fx; return; }
     if (!ms.length || reduced) {
-      ms.forEach((m) => { m.userData.held = false; m.visible = true; });
+      ms.forEach((m) => { m.userData.held = false; m.visible = true; if (FEEL && reduced && inView(m)) m.userData.flashT = 0; });
       feelSay('land', size);
       return;
     }
+    /* (V11: only the board in view makes the sound and takes the knock; a block it doesn't show still sounds) */
+    if (FEEL && !ms.some(inView)) feelSay('land', size);
     ms.forEach((m, i) => {
       const u = m.userData;
       if (!u.vel) u.vel = new T.Vector3();
       /* (V11: a block that lands starts from numbers that are numbers, whatever it carried before) */
       if (!blockFinite(m)) { restBlock(m); noteRepair('a block as it landed', u.key || u.bkey); }
-      const held = u.held;
+      const held = u.held, own = !FEEL || inView(m);
       if (held) { u.held = false; m.visible = true; }
-      if (u.fall) { u.fall.fx = fx; return; }
+      if (u.fall) { u.fall.fx = own ? fx : null; return; }
       if (held || u.grow != null) {
         u.grow = null; u.newTile = false; u.wave = null; tileMotions.delete(m);
         m.scale.set(1, 1, 1); m.rotation.set(0, 0, 0);
         m.position.copy(u.target); m.position.y += 0.9; u.vel.set(0, 0, 0);
-        u.fall = { t: 0, delay: i * 0.03, dur: 0.15, y0: 0.9, fx };
+        u.fall = { t: 0, delay: i * 0.03, dur: 0.15, y0: 0.9, fx: own ? fx : null };
         return;
       }
-      touchDown(m, { fx, vx: 0 });
+      touchDown(m, { fx: own ? fx : null, vx: 0 });
     });
   }
   /* a block placed from a panel stays out of sight until the copy flying to it arrives */
@@ -3662,15 +3949,29 @@
   }
   /* blocks on their way back to where they came from, after a drop that didn't fit */
   const homes = [];
+  const homeQ = new T.Quaternion();
   function stepHomes(dt) {
     for (let i = homes.length - 1; i >= 0; i--) {
       const h = homes[i], k = Math.min(1, (h.t += dt) / h.dur), e = 1 - Math.pow(1 - k, 3);
       moving = true;
-      h.m.position.lerpVectors(h.from, h.to, e);
+      if (h.fold) {
+        /* (V11, lift and place: a tile's block folding back into its card sinks to 0.6 where it is) */
+        const s = 1 - 0.4 * (k * k);
+        h.m.scale.copy(h.s0).multiplyScalar(s);
+        h.m.position.y = h.from.y - 0.25 * k;
+        if (k >= 1) { homes.splice(i, 1); dropBlock(h.m); if (h.done) h.done(); }
+        continue;
+      }
+      if (h.curve) {
+        /* (V11, lift and place: along a curve in the board's plane, bowed toward you, with a small arc) */
+        const a = 1 - e, c = h.curve;
+        h.m.position.set(a * a * h.from.x + 2 * a * e * c.x + e * e * h.to.x, h.from.y + (h.to.y - h.from.y) * e, a * a * h.from.z + 2 * a * e * c.z + e * e * h.to.z);
+      } else h.m.position.lerpVectors(h.from, h.to, e);
       h.m.position.y += Math.sin(Math.PI * e) * h.arc;
-      h.m.rotation.z = h.rz * (1 - e); h.m.rotation.x = h.rx * (1 - e);
+      if (h.q0) { h.m.quaternion.slerpQuaternions(h.q0, homeQ.identity(), e); if (h.s1) h.m.scale.lerpVectors(h.s0, h.s1, e); }
+      else { h.m.rotation.z = h.rz * (1 - e); h.m.rotation.x = h.rx * (1 - e); }
       if (h.sink) { const s = 1 - e; h.m.scale.set(1 - e * 0.2, Math.max(0.001, s * s), 1 - e * 0.2); }
-      if (k >= 1) { homes.splice(i, 1); dropBlock(h.m); if (h.done) h.done(); }
+      if (k >= 1) { homes.splice(i, 1); if (!h.keep) dropBlock(h.m); if (h.done) h.done(); }
     }
   }
   /* the landing outline fades in and glides from slot to slot */
@@ -3681,7 +3982,7 @@
     const was = g.visible && u.on;
     if (!u.to) { u.to = new T.Vector3(); u.v = new T.Vector3(); u.op = 0; }
     u.to.set(x, y, z); u.sx = sx; u.sz = sz; u.on = true;
-    if (!was || reduced) { g.position.set(x, y, z); g.scale.set(sx, sz, 1); u.v.set(0, 0, 0); }
+    if (!was || reduced) { g.position.set(x, y, z); g.scale.set(sx, sz, 1); u.v.set(0, 0, 0); u.snap = true; }
     if (reduced) u.op = 1;
     g.material.opacity = u.op;
     g.visible = true;
@@ -3690,6 +3991,34 @@
     const u = g.userData;
     if (!g.visible || !u.to) return;
     const to = u.on ? 1 : 0;
+    if (hand.use) {
+      /* V11, lift and place: it fades in over 90 ms the first time, glides from slot to slot on (0.12 s, 0.9),
+         brightens once when the hand locks on, flashes red when a drop bumps what's in the way, and dims at
+         night with the light. Calmer motion: it jumps, and the brightening and the flash stay (they're light) */
+      u.op = u.on ? Math.min(1, u.op + dt / 0.09) : u.op - dt / 0.08;
+      if (reduced && u.on) u.op = 1;
+      if (!u.on && u.op <= 0.02) { g.visible = false; u.op = 0; if (u.add) u.add.visible = false; return; }
+      const lk = lightK();
+      g.material.color.setRGB(lk, lk, lk);
+      g.material.opacity = Math.max(0, Math.min(1, u.op));
+      if (!u.gs) u.gs = { x: { x: g.position.x, v: 0 }, y: { x: g.position.y, v: 0 }, z: { x: g.position.z, v: 0 }, w: { x: g.scale.x, v: 0 }, d: { x: g.scale.y, v: 0 } };
+      const s = u.gs, w = resp(0.12);
+      if (reduced || u.snap) { s.x.x = u.to.x; s.y.x = u.to.y; s.z.x = u.to.z; s.w.x = u.sx; s.d.x = u.sz; s.x.v = s.y.v = s.z.v = s.w.v = s.d.v = 0; u.snap = false; }
+      else { sway(s.x, u.to.x, w, 0.9, dt, 0); sway(s.y, u.to.y, w, 0.9, dt, 0); sway(s.z, u.to.z, w, 0.9, dt, 0); sway(s.w, u.sx, w, 0.9, dt, 0); sway(s.d, u.sz, w, 0.9, dt, 0); }
+      g.position.set(s.x.x, s.y.x, s.z.x); g.scale.set(Math.max(0.01, s.w.x), Math.max(0.01, s.d.x), 1);
+      /* the brightening (0.22 to 0.34 to 0.26 over 160 ms) and the red flash (0 to 0.9 to 0 over 220 ms) */
+      let add = 0, red = false;
+      if (u.lock) { const k = (u.lock.t += dt) / 0.16; if (k >= 1) { u.lock = null; add = 0.04; } else add = k < 0.4 ? 0.12 * (k / 0.4) : 0.12 - 0.08 * ((k - 0.4) / 0.6); }
+      else if (u.ok && hand.locked) add = 0.04;
+      if (u.flash) { const k = (u.flash.t += dt) / 0.22; if (k >= 1) u.flash = null; else { add = 0.9 * Math.sin(Math.PI * k); red = true; } }
+      if (u.add) {
+        u.add.visible = add > 0.005;
+        if (u.add.visible) { u.add.material.color.set(red ? '#C8372A' : '#28160A'); u.add.material.opacity = add * u.op; }
+      }
+      if (u.lock || u.flash || Math.abs(to - u.op) > 0.01 || Math.abs(s.x.v) + Math.abs(s.y.v) + Math.abs(s.z.v) + Math.abs(s.w.v) + Math.abs(s.d.v) > 1e-3 || g.position.distanceToSquared(u.to) > 1e-6 || Math.abs(u.sx - g.scale.x) > 0.001) moving = true;
+      if (u.ok !== false && hand.on) { g.getWorldPosition(hand.slot); hand.slotOn = true; }
+      return;
+    }
     u.op += (to - u.op) * (1 - Math.exp(-dt * (u.on ? 24 : 32)));
     if (!u.on && u.op < 0.03) { g.visible = false; u.op = 0; return; }
     g.material.opacity = u.op;
@@ -3756,6 +4085,8 @@
         u.lift += (to - u.lift) * (1 - Math.exp(-dt * 14));
       }
       c.position.y = (u.baseY || 0) + u.lift;
+      /* (V11, lift and place: a card that took a block presses once) */
+      if (u.press) { const k = (u.press.t += dt) / 0.2; moving = true; if (!u.press.s0) u.press.s0 = c.scale.clone(); if (k >= 1) { c.scale.copy(u.press.s0); u.press = null; } else c.scale.copy(u.press.s0).multiplyScalar(1 + 0.04 * (1 - k) * (1 - k)); }
     });
     if (layout === 'month') hoverCard(month.cards);
     if (layout === 'year') hoverCard(year.cards);
@@ -3769,8 +4100,12 @@
       m.scale.setScalar(u.s * Math.max(0, 1 - u.t / u.life));
       if (u.t >= u.life) { world.remove(m); puffs.splice(i, 1); }
     }
-    if (pops.length || puffs.length || drag.obj || homes.length) moving = true;
-    if (drag.obj && FEEL && !reduced) {
+    /* (V11, lift and place: a block in the hand keeps the desk drawing only while it, the camera, or the
+       outline still move: a still hand over a settled desk costs nothing, and the next move wakes it) */
+    const rigged = hand.on && drag.obj && drag.obj.parent === hand.hang;
+    if (pops.length || puffs.length || (drag.obj && !rigged) || homes.length || falls.length || rings.length) moving = true;
+    if (rigged) { /* the hand: placed after the camera moves (handStep, below) */ }
+    else if (drag.obj && FEEL && !reduced) {
       /* feel: the block in your hand rides a spring toward where it's aimed, and sways from how it speeds
          up and slows down, like a tile held by its top edge: it trails as you start, swings past level as
          you stop, and settles */
@@ -3798,7 +4133,7 @@
       drag.tilt *= Math.exp(-dt * 6);
     }
     if (FEEL) {
-      stepBlob();
+      if (!hand.use) stepBlob();
       stepHomes(dt);
       if (drag.ghost) stepGhost(drag.ghost, dt);
       dayb.ghosts.forEach((g) => stepGhost(g, dt));
@@ -3807,10 +4142,14 @@
         const now = nowMs();
         for (let i = feelQueue.length - 1; i >= 0; i--) if (now >= feelQueue[i].at) { const q = feelQueue.splice(i, 1)[0]; feelSay(q.kind, q.a); }
       }
+      stepRings(dt);
       /* V11: nothing on the desk keeps a number that isn't one into the frame it's drawn in */
       watchBlocks();
     }
     stepCamera(dt);
+    /* V11, lift and place: the hand, the fall, and the shadow, after the camera, so the block in hand never
+       lags the view (it hangs over the floor point the aim point's ray finds now) */
+    if (FEEL && hand.use) { handStep(dt); stepFalls(dt); stepHandShadow(dt); if (vapors.length) stepVapors(dt); }
     /* a small light's pool follows its thing while the desk rearranges */
     if (moving) { poolClock += dt; if (poolClock > 0.35) { poolClock = 0; lampPower(); } }
     else if (poolClock) { poolClock = 0; lampPower(); touch(120); }
@@ -3960,17 +4299,35 @@
   const inHand = (b) => { const h = drag.match; return !!(h && b && ((h.add && b.add === h.add) || (h.base && b.base === h.base))); };
   const ghostTexCache = new Map();
   let ghostD = BLOCK_D;
-  function ghostTexture(wU, valid) {
-    const key = wU.toFixed(2) + valid + ghostD;
+  /* kind (V11, lift and place): 'past', a time that's over (it goes in as done, so the outline shows a check) */
+  function ghostTexture(wU, valid, kind) {
+    const look = FEEL ? (valid ? (kind === 'past' ? 'past' : 'ok') : 'no') : String(valid);
+    const key = wU.toFixed(2) + look + ghostD;
     if (ghostTexCache.has(key)) return ghostTexCache.get(key);
     const PX = 140, W = Math.max(16, Math.round(wU * PX)), H = Math.round(ghostD * PX);
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     const lw = 6;
-    g.fillStyle = valid ? 'rgba(255, 250, 238, 0.28)' : 'rgba(190, 60, 45, 0.2)';
-    rr(g, lw, lw, W - 2 * lw, H - 2 * lw, 16); g.fill();
-    g.strokeStyle = valid ? 'rgba(255, 255, 255, 0.95)' : 'rgba(190, 55, 45, 0.95)';
-    g.lineWidth = lw; g.setLineDash([18, 12]); g.lineCap = 'round'; g.stroke();
+    if (!FEEL) {
+      g.fillStyle = valid ? 'rgba(255, 250, 238, 0.28)' : 'rgba(190, 60, 45, 0.2)';
+      rr(g, lw, lw, W - 2 * lw, H - 2 * lw, 16); g.fill();
+      g.strokeStyle = valid ? 'rgba(255, 255, 255, 0.95)' : 'rgba(190, 55, 45, 0.95)';
+      g.lineWidth = lw; g.setLineDash([18, 12]); g.lineCap = 'round'; g.stroke();
+    } else {
+      /* V11, lift and place: a socket a little darker than what it's on, white dashes over a dark under stroke
+         (so it reads over light open time and dark blocks alike), red with Apple's no (a circle with a slash)
+         where it can't land, and a check where the time is over, since it goes in as done */
+      g.fillStyle = look === 'no' ? 'rgba(150, 40, 30, 0.34)' : 'rgba(40, 22, 6, 0.22)';
+      rr(g, lw, lw, W - 2 * lw, H - 2 * lw, 16); g.fill();
+      g.lineCap = 'round'; g.setLineDash([18, 12]);
+      g.strokeStyle = 'rgba(40, 22, 6, 0.55)'; g.lineWidth = lw + 5; g.stroke();
+      g.strokeStyle = look === 'no' ? 'rgba(255, 214, 204, 0.98)' : 'rgba(255, 255, 255, 0.97)'; g.lineWidth = lw; g.stroke();
+      g.setLineDash([]);
+      const s = Math.min(H * 0.46, W * 0.62);
+      const mark = (draw) => { g.save(); g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(40, 22, 6, 0.6)'; g.lineWidth = Math.max(5, s * 0.17) + 5; draw(); g.stroke(); g.strokeStyle = '#FFFFFF'; g.lineWidth = Math.max(5, s * 0.17); draw(); g.stroke(); g.restore(); };
+      if (s >= 22 && look === 'no') mark(() => { g.beginPath(); g.arc(W / 2, H / 2, s / 2, 0, Math.PI * 2); g.moveTo(W / 2 - s * 0.35, H / 2 + s * 0.35); g.lineTo(W / 2 + s * 0.35, H / 2 - s * 0.35); });
+      if (s >= 22 && look === 'past') mark(() => { g.beginPath(); g.moveTo(W / 2 - s * 0.36, H / 2 + s * 0.02); g.lineTo(W / 2 - s * 0.1, H / 2 + s * 0.28); g.lineTo(W / 2 + s * 0.38, H / 2 - s * 0.26); });
+    }
     const t = canvasTex(cv);
     /* the landing spot changes width as a block is stretched; a few dozen of these are plenty */
     if (ghostTexCache.size > 48) { ghostTexCache.forEach((x) => x.dispose()); ghostTexCache.clear(); dayGhostTex.clear(); }
@@ -3981,9 +4338,13 @@
      came from (feel: it lifts from there, and goes back there if it doesn't land) */
   function startDrag(b, fromObj, big, opts) {
     opts = opts || {};
+    /* V11, lift and place: one object from pick up to landing. A block traded for a bigger or smaller one mid
+       carry (between the day and the week, a bench piece over a row) is the same block in hand, changing shape
+       once (handReshape), never ended and started again */
+    if (FEEL && hand.on && drag.obj && !fromObj) return handReshape(b, big, opts);
     /* feel: a block traded for a bigger or smaller one mid drag (crossing between the day and the week)
        carries on from where the last one was, at its speed */
-    let keep = !FEEL ? null : drag.obj ? { pos: drag.obj.position.clone(), vel: drag.vel.clone(), origin: drag.origin, surface: drag.surface } : drag.last && nowMs() - drag.last.at < 200 ? drag.last : null;
+    let keep = !FEEL || hand.use ? null : drag.obj ? { pos: drag.obj.position.clone(), vel: drag.vel.clone(), origin: drag.origin, surface: drag.surface } : drag.last && nowMs() - drag.last.at < 200 ? drag.last : null;
     /* (V11: a place or a speed that isn't a number is never carried into the next block in hand) */
     if (keep && (!finite3(keep.pos) || !finite3(keep.vel))) keep = null;
     endDrag();
@@ -3991,9 +4352,27 @@
     const m = makeBlock(b);
     const dayBrick = big || (fromObj && fromObj.userData.kind === 'dblock');
     const wU = (dayBrick ? DU : 1) * b.dur / 60;
-    dressBlock(m, b, wU, dayBrick ? DB_D : BLOCK_D, dayBrick ? { hMul: DB_HMUL } : {});
+    /* (a piece off the bench lifts as itself, a keycap, until it's over a row) */
+    const piece = FEEL && hand.use && opts.origin && !fromObj && opts.origin.userData.kind === 'bench' && opts.origin.userData.block;
+    if (piece) { const pu = opts.origin.userData; m.userData.kind = 'block'; dressBlock(m, pu.block, pu.wU, pu.dU, { hMul: pu.hMul }); }
+    else dressBlock(m, b, wU, dayBrick ? DB_D : BLOCK_D, dayBrick ? { hMul: DB_HMUL } : {});
     m.userData.dragging = true;
     const origin = opts.origin || (keep && keep.origin) || null;
+    /* V11, lift and place: the block hangs from where you pinched it (the hand, below) */
+    if (FEEL && hand.use) {
+      if (fromObj) {
+        const hide = fromObj.userData.kind === 'dblock' ? Array.from(dayb.blocks.values()).filter((x) => x.userData.date === fromObj.userData.date && x.userData.bkey === fromObj.userData.bkey) : [fromObj];
+        hide.forEach((x) => { x.visible = false; });
+        drag.hidden = hide;
+      }
+      drag.obj = m;
+      drag.vel = new T.Vector3(); drag.roll = { x: 0, v: 0 }; drag.pitch = { x: 0, v: 0 };
+      drag.origin = origin;
+      drag.surface = null;
+      drag.match = b.add ? { add: b.add } : b.tpl ? { base: b.base } : null;
+      handStart(m, b, !!dayBrick, fromObj || null, origin, opts.hand || {}, piece);
+      return m;
+    }
     if (fromObj) {
       m.position.copy(world.worldToLocal(fromObj.getWorldPosition(new T.Vector3())));
       const hide = fromObj.userData.kind === 'dblock' ? Array.from(dayb.blocks.values()).filter((x) => x.userData.date === fromObj.userData.date && x.userData.bkey === fromObj.userData.bkey) : [fromObj];
@@ -4028,6 +4407,8 @@
     if (!drag.obj) return;
     /* (V11: the block in hand is never aimed at a point that isn't a number; it stays where it was aimed) */
     if (FEEL && !(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z))) return;
+    /* (V11, lift and place: a block in the hand hangs over where you aim, every frame: handAim says where) */
+    if (FEEL && drag.hand && drag.hand.on) return;
     drag.target.set(x, y, z);
     if (FEEL && o) {
       if (o.hand && Number.isFinite(o.hand.x) && Number.isFinite(o.hand.z)) { drag.target.x += (o.hand.x - x) * 0.3; drag.target.z += (o.hand.z - z) * 0.3; }
@@ -4035,22 +4416,26 @@
     }
     drag.tilt = FEEL && reduced ? 0 : Math.max(-0.22, Math.min(0.22, (tilt || 0) * -0.035));
   }
+  /* a fifth argument (V11, lift and place): { past }, the time is over, so the outline shows a check */
   function showGhost(row, start, durMin, valid) {
+    const o = arguments[4];
     if (!drag.ghost) {
       drag.ghost = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ transparent: true, depthWrite: false }));
       drag.ghost.rotation.x = -Math.PI / 2;
       /* V11: hidden until it has a slot (ghostAim shows it) */
-      if (FEEL) drag.ghost.visible = false;
+      if (FEEL) { drag.ghost.visible = false; ghostLive(drag.ghost); }
       week.group.add(drag.ghost);
     }
     const gh = drag.ghost;
     if (row == null) { if (FEEL) gh.userData.on = false; else gh.visible = false; return; }
     const w = durMin / 60;
     ghostD = BLOCK_D;
-    const gt = ghostTexture(w, valid);
+    const gt = ghostTexture(w, valid, o && o.past ? 'past' : '');
     /* V11: marked changed only when its picture changes */
     if (!FEEL || gh.material.map !== gt) { gh.material.map = gt; gh.material.needsUpdate = true; }
-    if (FEEL) { ghostAim(gh, xOf(start) + w / 2, BOARD_Y + 0.026, rowZ(row), w - GAP, BLOCK_D); return; }
+    /* V11, lift and place: on top of whatever the slot overlaps (open time, a block it pushes, one in the
+       way), drawn over the bricks, so it's never under them */
+    if (FEEL) { gh.userData.ok = !!valid; ghostAim(gh, xOf(start) + w / 2, BOARD_Y + ghostTop(week.blocks, (u) => u.row === row, xOf(start), xOf(start) + w) + 0.01, rowZ(row), w - GAP, BLOCK_D); return; }
     gh.visible = true;
     gh.scale.set(w - GAP, BLOCK_D, 1);
     gh.position.set(xOf(start) + w / 2, BOARD_Y + 0.026, rowZ(row));
@@ -4076,25 +4461,42 @@
       if (opts.then) opts.then();
       return;
     }
+    /* V11, lift and place: a drop that can't land says no before it goes home (handNo): it dips toward the
+       slot, bumps, shakes no, and then flies home from there */
+    if (opts.no && hand.on && drag.obj && !reduced && !hand.no) { handNo(opts); return; }
     const hidden = drag.hidden, o = drag.obj, origin = drag.origin;
+    const rigged = !!(o && hand.on && o.parent === hand.hang);
+    const rectNow = rigged && opts.fold ? handRect() : null;
     drag.hidden = null; drag.obj = null; drag.origin = null;
     showGhost(null);
     if (dayb.ghosts.length) showDayGhost(null);
     if (blob) blob.visible = false;
+    /* (the block leaves the hand where it is: its place, its turn, and its size in the world) */
+    if (rigged) { world.attach(o); handEnd(o); }
+    else if (hand.on) handEnd(null);
     /* a block shown again after a flight home sits in its slot at once (it moved there unseen) */
     const reveal = (settle) => (hidden || []).forEach((x) => {
-      if (x.userData.shrink != null || x.userData.back) return;
+      if (x.userData.shrink != null || x.userData.back || x.userData.held) return;
       x.visible = true;
-      if (settle && !reduced) { x.position.copy(x.userData.target); if (x.userData.vel) x.userData.vel.set(0, 0, 0); x.userData.sq = { t: 0, amp: 0.07 }; }
+      if (settle && !reduced) { x.position.copy(x.userData.target); if (x.userData.vel) x.userData.vel.set(0, 0, 0); x.userData.sq = { t: 0, amp: FEEL ? HAND_TUNE.homeSquash : 0.07, hand: true }; }
     });
     if (!o) { reveal(false); letGo(); if (opts.then) opts.then(); return; }
     if (weekSpent && weekSpent.parent === o) o.remove(weekSpent);
     if (spentMesh && spentMesh.parent === o) o.remove(spentMesh);
+    /* V11, lift and place: a tile from a panel that leaves the desk folds back into its card where it is:
+       the block sinks to 0.6 under the card and goes (the card grows back out of its box, app.js) */
+    if (opts.fold && opts.start) { try { opts.start(rectNow); } catch (e) { /* fine */ } }
+    if (opts.fold && !reduced) {
+      homes.push({ m: o, from: o.position.clone(), to: o.position.clone(), t: 0, dur: HAND_TUNE.seamMs / 1000, arc: 0, fold: true, s0: o.scale.clone(), q0: o.quaternion.clone(), done: () => { reveal(false); letGo(); if (opts.then) opts.then(); } });
+      return;
+    }
     if (reduced || !(opts.home || opts.absorb)) {
-      drag.last = { pos: o.position.clone(), vel: drag.vel.clone(), at: nowMs(), origin, surface: drag.surface };
+      if (!hand.use) drag.last = { pos: o.position.clone(), vel: drag.vel.clone(), at: nowMs(), origin, surface: drag.surface };
       dropBlock(o);
       reveal(false);
       letGo();
+      /* (calmer motion: home at once, with its tap) */
+      if (reduced && opts.home && (hidden && hidden.length || origin)) feelSay('home');
       if (opts.then) opts.then();
       return;
     }
@@ -4103,9 +4505,16 @@
     if (back) {
       /* home is the slot it belongs in, wherever it was nudged to while you aimed */
       const to = world.worldToLocal(back.parent && back.userData.target ? back.parent.localToWorld(back.userData.target.clone()) : back.getWorldPosition(new T.Vector3()));
-      homes.push({ m: o, from, to, t: 0, dur: 0.26, arc: Math.min(0.6, 0.2 + from.distanceTo(to) * 0.03), rz: o.rotation.z, rx: o.rotation.x, done: () => {
+      /* V11, lift and place: a curve in the board's plane (its middle bowed toward you) with a small arc, timed
+         by how far it goes on screen, arriving level and at its true size */
+      const px = hand.use ? screenDist(from, to) : 0;
+      const dur = hand.use ? Math.max(HAND_TUNE.homeMin, Math.min(HAND_TUNE.homeMax, 0.2 + 0.00018 * px)) : 0.26;
+      const bs = back.parent ? back.parent.getWorldScale(new T.Vector3()) : new T.Vector3(1, 1, 1);
+      const bu = back.userData, ou = o.userData;
+      const s1 = hand.use && ou.w > 0 && ou.h > 0 && ou.dU > 0 && bu.w > 0 ? new T.Vector3((bu.w * bs.x) / ou.w, ((bu.h || H_HARD) * bs.y) / ou.h, ((bu.dU || BLOCK_D) * bs.z) / ou.dU) : null;
+      homes.push({ m: o, from, to, t: 0, dur, arc: Math.min(0.6, 0.2 + from.distanceTo(to) * 0.03), rz: o.rotation.z, rx: o.rotation.x, curve: hand.use ? homeCurve(from, to) : null, s0: o.scale.clone(), s1, q0: o.quaternion.clone(), done: () => {
         if (hidden && hidden.length) reveal(true);
-        else if (back.userData.shrink == null) { back.visible = true; if (!reduced) back.userData.sq = { t: 0, amp: 0.07 }; }
+        else if (back.userData.shrink == null) { back.visible = true; if (!reduced) back.userData.sq = { t: 0, amp: FEEL ? HAND_TUNE.homeSquash : 0.07, hand: true }; }
         letGo();
         feelSay('home');
         if (opts.then) opts.then();
@@ -4117,6 +4526,730 @@
       reveal(false);
     }
   }
+  /* == the hand ==
+     V11, lift and place (docs/LIFT-AND-PLACE.md). A block in hand hangs from where you pinched it. Every move
+     the app gives the desk the pointer (handAim); the aim point is the pointer for a mouse, trackpad, or pen,
+     and a point above the fingertip for touch. Every frame, after the camera moves, the desk finds the floor
+     point where the aim point's ray meets the surface under it, hangs the block straight above that point
+     (the pinch over its top face, at the spot you grabbed along it), lifts it on a spring, swings it like a
+     pendulum from the pinch as the hand speeds up and slows down, and lays one soft shadow under it. Let go
+     over a slot, it falls into the slot under desk scale gravity, from exactly where it hung, and lands
+     (adoptPosition). HAND_TUNE holds every number; HAND_PRESETS are the three to pick from in Dev. */
+  const HAND_TUNE = {
+    lift: { week: 1.5, day: 1.8, mini: 0.8, desk: 1.6 }, liftResp: 0.22, liftZeta: 0.62,
+    size: { mouse: 1.12, touch: 1.2 }, tilt: 0.08, hang: { week: 0.55, day: 0.75 },
+    minLen: { mouse: 44, touch: 60 }, minDepthTouch: 40, maxScale: 2.2, keycapPx: 90,
+    touchClear: 22, touchMin: 36, touchMax: 64, touchRampMs: 150, touchTravel: 48,
+    seamMs: 140, seamResp: 0.14,
+    hz0: 1.33, hzK: 0.37, touchHz: 0.93, zeta: 0.36, g: 40000, follow: 45, aMax: 30000,
+    speedLean: 0.002, speedLeanMax: 3, pitchK: 0.7, droop: 3, capRoll: 14, capPitch: 9, capYaw: 7,
+    yawK: 0.006, yawHz: 2.0, yawZeta: 0.45,
+    sink: 0.15, rise: 0.08, sinkResp: 0.16, sinkZeta: 0.8,
+    pullPx: 6, pullAfter: 100, pullSpeed: 150, pullResp: 0.12, pullZeta: 0.9, lockAfter: 100,
+    lean: 0.12, leanIn: 0.35, leanOut: 0.5, leanHold: 250,
+    fallG: 280, fallMin: 0.09, fallMax: 0.16,
+    squash: [0.08, 0.10, 0.11], sqW: 35, sqTau: 0.06, sqDur: 0.26, bulge: 0.5,
+    ring: 0.28, ringOp: 0.42,
+    hop: { week: 0.032, day: 0.05 }, nudge: { week: 0.045, day: 0.07 },
+    rockW: 26, rockZeta: 0.3, rockMax: 2.5, rockSpeed: 0.72, rockSwing: 2,
+    homeMin: 0.22, homeMax: 0.42, homeCurve: 0.15, homeSquash: 0.04,
+    noDip: 0.25, noRecoil: 0.2, noShake: 3.5, noHome: 280
+  };
+  const HAND_PRESETS = {
+    calmer: { lift: { week: 1.1, day: 1.3, mini: 0.6, desk: 1.2 }, size: { mouse: 1.06, touch: 1.12 }, g: 60000, zeta: 0.45, capRoll: 9, capPitch: 6, capYaw: 4, speedLeanMax: 2 },
+    middle: {},
+    bolder: { lift: { week: 1.8, day: 2.1, mini: 1.0, desk: 1.9 }, size: { mouse: 1.18, touch: 1.26 }, g: 30000, zeta: 0.32, capRoll: 16, capPitch: 11, capYaw: 8, speedLeanMax: 4 }
+  };
+  const HAND_BASE = JSON.parse(JSON.stringify(HAND_TUNE));
+  root.HAND_TUNE = HAND_TUNE;
+  let handPresetName = 'middle';
+  function handPreset(name) {
+    if (!HAND_PRESETS[name]) return handPresetName;
+    const base = JSON.parse(JSON.stringify(HAND_BASE));
+    Object.assign(HAND_TUNE, base, JSON.parse(JSON.stringify(HAND_PRESETS[name])));
+    handPresetName = name;
+    return name;
+  }
+  const hand = drag.hand = {
+    use: FEEL, on: false, rig: null, hang: null, obj: null, b: null, big: false, piece: null, from: 'card',
+    over: 'week', touch: false, u: 0.5, v: 0.5, trueWU: 1, dU: BLOCK_D, hMul: 1, dur: 60,
+    raw: { x: 0, y: 0 }, aim: { x: 0, y: 0 }, press: { x: 0, y: 0 }, aimOn: false,
+    off: 0, offTo: 44, offK: 0, offRamp: null, offAt: 0,
+    aimTop: 0, aimY: BOARD_Y, base: { x: BOARD_Y, v: 0 }, baseTo: BOARD_Y,
+    floor: new T.Vector3(), has: false, pxX: 40, pxZ: 20,
+    lift: { x: 0, v: 0 }, ext: { x: 0, v: 0 }, s: { x: 1, v: 0 }, seamS: 0, seam: false,
+    rx: { x: 1, v: 0 }, ry: { x: 1, v: 0 }, rz: { x: 1, v: 0 },
+    roll: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, yaw: { x: 0, v: 0 },
+    trk: { x: 0, y: 0, vx: 0, vy: 0, primed: false },
+    pull: { x: { x: 0, v: 0 }, z: { x: 0, v: 0 } }, slow: 0,
+    ok: null, okAt: 0, slotKey: '', lockAt: 0, locked: false,
+    slot: new T.Vector3(), slotOn: false,
+    pop: null, no: null, sub: '', face: '', wU: 1, dressAt: 0, keyAt: 0
+  };
+  /* the canvas's box on screen, measured at most every half a second (or after fit) */
+  let canvasBox = null, canvasBoxAt = 0;
+  function canvasRect() {
+    const t = nowMs();
+    if (!canvasBox || t - canvasBoxAt > 500) { canvasBox = renderer.domElement.getBoundingClientRect(); canvasBoxAt = t; }
+    return canvasBox;
+  }
+  const hNdc = new T.Vector2(), hRay = new T.Raycaster(), hPlane = new T.Plane(new T.Vector3(0, 1, 0), 0);
+  const hTmp = new T.Vector3(), hTmp2 = new T.Vector3(), hTmp3 = new T.Vector3(), hProj = new T.Vector3(), hWas = new T.Vector3();
+  /* the point where a screen point's ray meets the level plane at height y (in the world) */
+  function rayAt(px, py, y, out) {
+    const r = canvasRect();
+    if (!r.width || !r.height) return null;
+    hNdc.set(((px - r.left) / r.width) * 2 - 1, -((py - r.top) / r.height) * 2 + 1);
+    hRay.setFromCamera(hNdc, camera);
+    hPlane.constant = -y;
+    return hRay.ray.intersectPlane(hPlane, out);
+  }
+  /* a world point on screen (px), without allocating */
+  function scr(v, out) {
+    const r = canvasRect();
+    hProj.copy(v).project(camera);
+    out.x = r.left + (hProj.x + 1) / 2 * r.width; out.y = r.top + (1 - hProj.y) / 2 * r.height;
+    return out;
+  }
+  const sA = { x: 0, y: 0 }, sB = { x: 0, y: 0 };
+  function screenDist(a, b) { scr(a, sA); scr(b, sB); const d = Math.hypot(sA.x - sB.x, sA.y - sB.y); return Number.isFinite(d) ? d : 0; }
+  /* the bend of a flight home: the middle of the path bowed toward you (to the side, in the board's plane) */
+  function homeCurve(from, to) {
+    const dx = to.x - from.x, dz = to.z - from.z, len = Math.hypot(dx, dz);
+    if (len < 0.05) return null;
+    let nx = -dz / len, nz = dx / len;
+    if (nz < 0) { nx = -nx; nz = -nz; }
+    return new T.Vector3((from.x + to.x) / 2 + nx * len * HAND_TUNE.homeCurve, 0, (from.z + to.z) / 2 + nz * len * HAND_TUNE.homeCurve);
+  }
+  /* the board a kind of target is on, and the heights the hand works from there (in the world) */
+  function overGroup(over) { return over === 'day' ? dayb.group : over === 'week' || over === 'mini' ? week.group : over === 'bench' ? bench.group : null; }
+  function worldY(group, y) { if (!group) return y; hTmp3.set(0, y, 0); return group.localToWorld(hTmp3).y; }
+  const handDepth = () => (hand.over === 'day' ? DB_D : BLOCK_D) * (overGroup(hand.over) ? overGroup(hand.over).getWorldScale(hTmp2).z : 1);
+  /* the screen scale where the hand is: px per unit across, and down the board */
+  function handScale() {
+    const H = hand;
+    scr(H.floor, sA);
+    hTmp.copy(H.floor); hTmp.x += 1; scr(hTmp, sB);
+    const px = Math.hypot(sB.x - sA.x, sB.y - sA.y);
+    hTmp.copy(H.floor); hTmp.z += 1; scr(hTmp, sB);
+    const pz = Math.hypot(sB.x - sA.x, sB.y - sA.y);
+    if (px > 0.5 && Number.isFinite(px)) H.pxX = px;
+    if (pz > 0.5 && Number.isFinite(pz)) H.pxZ = pz;
+  }
+  /* the aim point: the pointer, or for a finger, a point above it by the touch offset, which comes in over
+     150 ms at the seam (a tile from a panel) or over the first 48 px of travel (a block or a piece under the
+     finger), so lifting without moving never re-aims at the row above */
+  function handAimPoint() {
+    const H = hand, T_ = HAND_TUNE;
+    let off = 0;
+    if (H.touch) {
+      if (H.offRamp === 'seam') H.offK = Math.min(1, (nowMs() - H.offAt) / (reduced ? 100 : T_.touchRampMs));
+      else if (H.offRamp === 'travel') H.offK = Math.max(H.offK, Math.min(1, Math.hypot(H.raw.x - H.press.x, H.raw.y - H.press.y) / T_.touchTravel));
+      const k = H.offRamp === 'seam' ? 1 - (1 - H.offK) * (1 - H.offK) : H.offK * H.offK * (3 - 2 * H.offK);
+      off = H.offTo * k;
+    }
+    H.off = off;
+    H.aim.x = H.raw.x; H.aim.y = H.raw.y - off;
+  }
+  function handReady() {
+    if (hand.rig) return;
+    hand.rig = new T.Group(); hand.hang = new T.Group(); hand.hang.rotation.order = 'YXZ';
+    hand.rig.add(hand.hang); world.add(hand.rig);
+  }
+  /* what the block in hand looks like: its name and the time it would land at, or, short on screen, its mark
+     over its name (a keycap) at twice the resolution; at least 44 px long (60 on touch) */
+  function handDress(force) {
+    const H = hand, o = drag.obj;
+    if (!o || !H.b) return;
+    if (H.piece && !force) return;
+    const sv = Math.max(0.5, H.sTo || 1), T_ = HAND_TUNE;
+    const lenPx = H.trueWU * H.pxX * sv, minPx = H.touch ? T_.minLen.touch : T_.minLen.mouse;
+    let wU = H.trueWU;
+    if (lenPx < minPx && H.pxX > 0) wU = Math.ceil((minPx / (H.pxX * sv)) * 20) / 20;
+    const face = wU * H.pxX * sv < T_.keycapPx ? 'key' : 'time';
+    const t = nowMs();
+    if (!force && wU === H.wU && face === H.face && (face === 'key' || H.sub === H.subShown)) return;
+    if (!force && t - H.dressAt < 100) return;
+    H.dressAt = t; H.wU = wU; H.face = face; H.subShown = H.sub;
+    const b = Object.assign({}, H.b, face === 'key' ? { piece: true, pieceS: 0.21, sub: '', hi: 2 } : { sub: H.sub || H.b.sub || '', stack: true, hi: 2 });
+    o.userData.inHandRig = true;
+    dressBlock(o, b, wU, H.dU, H.hMul !== 1 ? { hMul: H.hMul } : {});
+    o.userData.body.castShadow = false;
+  }
+  /* m: the block in hand; b: what it is; big: a day brick; fromObj: the block on the board it lifts out of;
+     origin: the bench piece it came from; o: { px, py (where the pointer is), u, v (where it's held, 0 to 1
+     along and across), touch, pen, card ({ width } of a card turning into it), roll, rollV (the card's swing,
+     radians), over, top (for a block moved on the board, its own top, in board units), held (a finger held
+     it still until it rose), sub (the time it would land at) }; piece: a bench piece lifting as itself */
+  function handStart(m, b, big, fromObj, origin, o, piece) {
+    const H = hand, T_ = HAND_TUNE;
+    handReady();
+    H.on = true; H.obj = m; H.b = Object.assign({}, b); H.big = big; H.piece = piece || null;
+    H.touch = !!o.touch; H.dur = b.dur || 60;
+    H.trueWU = piece ? m.userData.wU : (big ? DU : 1) * (b.dur || 60) / 60;
+    H.dU = piece ? m.userData.dU : big ? DB_D : BLOCK_D; H.hMul = piece ? (m.userData.hMul || 1) : big ? DB_HMUL : 1;
+    H.from = fromObj ? 'board' : o.card ? 'card' : origin ? 'bench' : 'card';
+    H.over = o.over || (fromObj ? (fromObj.userData.kind === 'dblock' ? 'day' : 'week') : origin ? 'bench' : 'week');
+    H.u = Math.max(0, Math.min(1, o.u == null ? 0.5 : o.u)); H.v = Math.max(0, Math.min(1, o.v == null ? 0.5 : o.v));
+    const px = Number.isFinite(o.px) ? o.px : H.raw.x, py = Number.isFinite(o.py) ? o.py : H.raw.y;
+    H.raw.x = H.press.x = px; H.raw.y = H.press.y = py; H.aimOn = true;
+    H.offK = 0; H.offAt = nowMs(); H.offRamp = H.from === 'card' ? 'seam' : 'travel';
+    H.aimTop = Number.isFinite(o.top) ? o.top : 0;
+    const g = overGroup(H.over);
+    H.baseTo = origin && !fromObj ? worldY(bench.group, BOARD_Y) : worldY(g, BOARD_Y);
+    H.base.x = H.baseTo; H.base.v = 0;
+    H.aimY = worldY(g, BOARD_Y + H.aimTop);
+    H.lift = { x: o.held ? 0.12 : 0, v: 0 }; H.ext = { x: 0, v: 0 };
+    H.s = { x: o.held ? 1.03 : 1, v: 0 }; H.seam = !!o.card; H.seamS = o.card ? o.card.width : 0;
+    H.rx = { x: 1, v: 0 }; H.ry = { x: 1, v: 0 }; H.rz = { x: 1, v: 0 };
+    H.roll = { x: Number.isFinite(o.roll) ? o.roll : 0, v: Number.isFinite(o.rollV) ? o.rollV : 0 }; H.pitch = { x: 0, v: 0 }; H.yaw = { x: 0, v: 0 };
+    H.trk.primed = false;
+    H.pull = { x: { x: 0, v: 0 }, z: { x: 0, v: 0 } }; H.slow = 0;
+    H.ok = null; H.okAt = 0; H.slotKey = ''; H.lockAt = 0; H.locked = false; H.slotOn = false;
+    H.pop = H.from === 'board' || H.from === 'bench' ? { t: 0 } : null;
+    H.no = null; H.sub = o.sub || ''; H.subShown = null; H.face = ''; H.wU = H.trueWU; H.dressAt = 0;
+    H.sTo = reduced ? 1 : H.touch ? T_.size.touch : T_.size.mouse;
+    m.userData.inHandRig = true;
+    if (m.userData.body) m.userData.body.castShadow = false;
+    H.hang.rotation.set(0, 0, 0);
+    H.hang.add(m);
+    m.rotation.set(0, 0, 0);
+    handAimPoint();
+    /* the first frame: where it is now, so it's never a frame anywhere else */
+    if (rayAt(H.aim.x, H.aim.y, H.aimY, H.floor)) { H.has = true; handScale(); }
+    if (!piece) handDress(true);
+    handPose(0);
+    handShadowReset();
+    touch();
+  }
+  /* the same block in hand takes another shape (a day brick over the day, a week brick over the week, a bench
+     piece's keycap turning into a brick over a row): it changes once, on (0.14 s, 1.0), from the box it had */
+  function handReshape(b, big, opts) {
+    const H = hand, o = drag.obj, u = o.userData;
+    const w0 = u.w || 1, h0 = u.h || H_HARD, d0 = u.dU || BLOCK_D;
+    H.b = Object.assign({}, b); H.big = !!big; H.piece = null; H.dur = b.dur || 60;
+    H.trueWU = (big ? DU : 1) * (b.dur || 60) / 60; H.dU = big ? DB_D : BLOCK_D; H.hMul = big ? DB_HMUL : 1;
+    if (opts && opts.hand && opts.hand.over) H.over = opts.hand.over;
+    if (b.add || b.tpl) drag.match = b.add ? { add: b.add } : { base: b.base };
+    handDress(true);
+    if (!reduced) { H.rx = { x: w0 / (u.w || 1), v: 0 }; H.ry = { x: h0 / (u.h || H_HARD), v: 0 }; H.rz = { x: d0 / (u.dU || BLOCK_D), v: 0 }; }
+    touch();
+    return o;
+  }
+  /* where the hand is, every move. px, py: the pointer. o: { over (week, day, mini, desk, bench), top (the plane
+     it aims on, above the board, in board units), ok (true, false, or null over no slot), sub (the time it
+     would land at), slotKey (a key for the slot, for the lock on), stretch (no block in hand: only the lean
+     follows the pointer) } */
+  function handAim(px, py, o) {
+    if (!FEEL || !Number.isFinite(px) || !Number.isFinite(py)) return;
+    const H = hand;
+    o = o || {};
+    H.raw.x = px; H.raw.y = py; H.aimOn = true;
+    if (o.stretch) { H.aim.x = px; H.aim.y = py; return; }
+    if (!H.on) return;
+    if (o.over && o.over !== H.over) {
+      H.over = o.over;
+      const g = overGroup(H.over);
+      H.baseTo = H.over === 'desk' ? (Number.isFinite(o.base) ? o.base : 0.02) : worldY(g, BOARD_Y);
+    }
+    if (o.over === 'desk' && Number.isFinite(o.base)) H.baseTo = o.base;
+    if (o.top != null && Number.isFinite(o.top)) H.aimTop = o.top;
+    const g = overGroup(H.over);
+    H.aimY = g ? worldY(g, BOARD_Y + H.aimTop) : H.baseTo;
+    if (o.ok !== undefined) {
+      const k = o.slotKey || '';
+      if (o.ok !== H.ok || k !== H.slotKey) { H.ok = o.ok; H.slotKey = k; H.okAt = nowMs(); H.locked = false; H.lockAt = 0; }
+    }
+    if (o.sub != null) H.sub = o.sub;
+    handAimPoint();
+  }
+  /* the aim point the app works out the slot from (null when nothing is in hand) */
+  function handPoint() { return hand.aimOn ? { x: hand.aim.x, y: hand.aim.y, off: hand.off, raw: { x: hand.raw.x, y: hand.raw.y } } : null; }
+  /* the touch offset right now, in px (for the drag gate: a finger aims that far below the slot) */
+  function touchLift() { return hand.on && hand.touch ? Math.round(hand.off) : 0; }
+  /* the block in hand on screen: its box (for the note above it, and the card it came from) */
+  function handRect() {
+    const o = drag.obj && drag.obj.parent === hand.hang ? drag.obj : null;
+    if (!o) return null;
+    o.updateWorldMatrix(true, false);
+    const u = o.userData, w = (u.w || 1) / 2, d = (u.dU || BLOCK_D) / 2, h = u.h || H_HARD;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const x of [-w, w]) for (const y of [0, h]) for (const z of [-d, d]) {
+      hTmp.set(x, y, z); o.localToWorld(hTmp); scr(hTmp, sA);
+      x0 = Math.min(x0, sA.x); x1 = Math.max(x1, sA.x); y0 = Math.min(y0, sA.y); y1 = Math.max(y1, sA.y);
+    }
+    if (![x0, y0, x1, y1].every(Number.isFinite)) return null;
+    return { left: x0, top: y0, width: x1 - x0, height: y1 - y0 };
+  }
+  /* the hand lets go: the rig is left empty, ready for the next */
+  function handEnd(o) {
+    const H = hand;
+    H.on = false; H.obj = null; H.has = false; H.aimOn = false; H.no = null; H.slotOn = false;
+    if (o) o.userData.inHandRig = false;
+    if (H.rig) H.hang.rotation.set(0, 0, 0);
+  }
+  /* a number in the hand that isn't one: its springs back to rest, level, over where it aims */
+  function handHeal() {
+    const H = hand;
+    H.lift = { x: HAND_TUNE.lift[H.over] || HAND_TUNE.lift.week, v: 0 }; H.ext = { x: 0, v: 0 }; H.s = { x: H.sTo || 1, v: 0 }; H.seam = false;
+    H.rx = { x: 1, v: 0 }; H.ry = { x: 1, v: 0 }; H.rz = { x: 1, v: 0 };
+    H.roll = { x: 0, v: 0 }; H.pitch = { x: 0, v: 0 }; H.yaw = { x: 0, v: 0 }; H.trk.primed = false;
+    H.pull = { x: { x: 0, v: 0 }, z: { x: 0, v: 0 } }; H.pop = null;
+    H.base = { x: Number.isFinite(H.baseTo) ? H.baseTo : BOARD_Y, v: 0 };
+    if (!finite3(H.floor)) { H.floor.set(0, BOARD_Y, 0); H.has = false; }
+    if (H.has) handPose(0);
+  }
+  /* the release of a press: the squeeze springs into a stretch, height 1.04 at 60 ms, back by 160 ms */
+  function popY(t) { if (t < 0.06) { const k = t / 0.06; return 0.94 + 0.1 * (1 - (1 - k) * (1 - k)); } if (t < 0.16) { const k = (t - 0.06) / 0.1; return 1.04 - 0.04 * (k * k * (3 - 2 * k)); } return 1; }
+  function popXZ(t) { if (t >= 0.16) return 1; const k = t / 0.16; return 0.97 + 0.03 * (1 - (1 - k) * (1 - k)); }
+  /* the hand's pose for this frame: springs, swing, and where the block hangs (dt 0: place it, no motion) */
+  function handPose(dt) {
+    const H = hand, o = drag.obj, T_ = HAND_TUNE;
+    if (!o || o.parent !== H.hang || !H.has) return;
+    const u = o.userData, calm = reduced;
+    const big = H.over === 'day';
+    const liftTo = H.over === 'desk' || H.over === 'bench' ? T_.lift.desk : T_.lift[H.over] || T_.lift.week;
+    const hangA = (big ? T_.hang.day : T_.hang.week);
+    /* the size in hand, at least 40 px deep on touch (scaled evenly, at most 2.2 times) */
+    let sHand = calm ? 1 : H.touch ? T_.size.touch : T_.size.mouse;
+    if (H.touch && !calm && H.pxZ > 0) sHand = Math.max(sHand, Math.min(T_.maxScale, T_.minDepthTouch / Math.max(1, H.pxZ * H.dU)));
+    H.sTo = sHand;
+    /* over a slot that fits it sinks a little (it wants to land); over one that doesn't it lifts away */
+    const extTo = calm || H.ok == null ? 0 : H.ok ? -T_.sink * liftTo : T_.rise * liftTo;
+    let dip = 0, shake = 0;
+    if (dt > 0) {
+      const cw = resp(T_.seamResp);
+      if (calm) { H.lift.x = liftTo; H.lift.v = 0; H.ext.x = 0; H.ext.v = 0; H.s.x = 1; H.s.v = 0; H.rx.x = H.ry.x = H.rz.x = 1; }
+      else {
+        sway(H.lift, liftTo, resp(T_.liftResp), T_.liftZeta, dt, 0);
+        sway(H.ext, extTo, resp(T_.sinkResp), T_.sinkZeta, dt, 0);
+        if (H.seam) { const r = spring(H.s.x, H.s.v, sHand, cw, dt); H.s.x = r[0]; H.s.v = r[1]; if (Math.abs(H.s.x - sHand) < 0.002 && Math.abs(H.s.v) < 0.01) H.seam = false; }
+        else sway(H.s, sHand, resp(T_.liftResp), T_.liftZeta, dt, 0);
+        for (const k of ['rx', 'ry', 'rz']) { const r = spring(H[k].x, H[k].v, 1, cw, dt); H[k].x = r[0]; H[k].v = r[1]; }
+      }
+      /* the base it hangs over (the board, the bench, the desk) changes gently */
+      const rb = spring(H.base.x, H.base.v, H.baseTo, 18, dt); H.base.x = rb[0]; H.base.v = rb[1];
+      /* how the aim point speeds up and slows down: a smooth follower of it (critically damped, w 45) */
+      const t = H.trk;
+      if (!t.primed) { t.x = H.aim.x; t.y = H.aim.y; t.vx = 0; t.vy = 0; t.primed = true; }
+      const vx0 = t.vx, vy0 = t.vy;
+      let r = spring(t.x, t.vx, H.aim.x, T_.follow, dt); t.x = r[0]; t.vx = r[1];
+      r = spring(t.y, t.vy, H.aim.y, T_.follow, dt); t.y = r[0]; t.vy = r[1];
+      const inv = 1 / Math.max(dt, 1 / 240);
+      const ax = Math.max(-T_.aMax, Math.min(T_.aMax, (t.vx - vx0) * inv)), ay = Math.max(-T_.aMax, Math.min(T_.aMax, (t.vy - vy0) * inv));
+      if (!calm) {
+        /* a pendulum about the pinch: a longer block swings slower (that's what reads as weight) */
+        const f = (T_.hz0 + T_.hzK * Math.exp(-(H.dur - 15) / 60)) * (H.touch ? T_.touchHz : 1), w = 2 * Math.PI * f, ww = w * w, D = Math.PI / 180;
+        const lx = Math.max(-T_.speedLeanMax, Math.min(T_.speedLeanMax, -T_.speedLean * t.vx)) * D;
+        const ly = Math.max(-T_.speedLeanMax, Math.min(T_.speedLeanMax, T_.speedLean * t.vy)) * D * T_.pitchK;
+        const W = u.w || 1, droop = W > 1.5 * H.dU ? T_.droop * (2 * H.u - 1) * D : 0;
+        sway(H.roll, lx + droop, w, T_.zeta, dt, -ww * ax / T_.g);
+        sway(H.pitch, ly, w, T_.zeta, dt, ww * T_.pitchK * ay / T_.g);
+        const yawTo = Math.max(-T_.capYaw, Math.min(T_.capYaw, -(2 * H.u - 1) * T_.yawK * t.vy)) * D;
+        sway(H.yaw, yawTo, 2 * Math.PI * T_.yawHz, T_.yawZeta, dt, 0);
+        /* the mouse's small snap pull: slow over a slot that fits, the body eases toward its middle */
+        const sp = Math.hypot(t.vx, t.vy);
+        H.slow = sp < T_.pullSpeed ? H.slow + dt * 1000 : 0;
+        let px = 0, pz = 0;
+        if (!H.touch && H.ok && H.slotOn && H.slow >= T_.pullAfter) {
+          const sv = H.s.x, bx = H.floor.x - (H.u - 0.5) * W * sv, bz = H.floor.z - (H.v - 0.5) * H.dU * sv;
+          const lim = T_.pullPx / Math.max(1, H.pxX);
+          px = Math.max(-lim, Math.min(lim, (H.slot.x - bx) / 2)); pz = Math.max(-lim, Math.min(lim, (H.slot.z - bz) / 2));
+        }
+        sway(H.pull.x, px, resp(T_.pullResp), T_.pullZeta, dt, 0); sway(H.pull.z, pz, resp(T_.pullResp), T_.pullZeta, dt, 0);
+      } else { H.roll.x = H.pitch.x = H.yaw.x = 0; H.roll.v = H.pitch.v = H.yaw.v = 0; H.pull.x.x = H.pull.z.x = 0; }
+      /* the lock on: a moment over a slot that fits, the outline brightens once and the shadow lines up */
+      if (H.ok && !H.locked && H.okAt && nowMs() - H.okAt >= T_.lockAfter) { H.locked = true; H.lockAt = nowMs(); ghostLock(); }
+      if (H.pop) { H.pop.t += dt; if (H.pop.t >= 0.16 || calm) H.pop = null; }
+      /* the no: a dip toward the slot, a bump, a recoil, and a shake of the head, then home */
+      if (H.no) {
+        const n = H.no, tt = (n.t += dt);
+        if (tt < 0.09) dip = -n.dip * Math.sin((tt / 0.09) * Math.PI / 2);
+        else {
+          if (!n.bumped) { n.bumped = true; feelSay('bad'); if (n.blocker) n.blocker.forEach((m) => { m.userData.knock = { t: 0, delay: 0, amp: 0.02 }; }); ghostFlash(); }
+          if (!n.rec) n.rec = { x: -n.dip, v: 0 };
+          sway(n.rec, T_.noRecoil, resp(0.18), 0.5, dt, 0);
+          dip = n.rec.x;
+        }
+        if (tt > 0.12 && tt < 0.28) shake = T_.noShake * Math.PI / 180 * Math.sin(((tt - 0.12) / 0.16) * Math.PI * 2);
+        if (tt >= T_.noHome / 1000 && !n.gone) { n.gone = true; const after = n.after; H.no = null; endDrag(after); return; }
+      }
+    }
+    const R = Math.PI / 180;
+    const sv = H.s.x, W = u.w || 1, h = u.h || H_HARD, d = u.dU || BLOCK_D;
+    H.rig.position.set(H.floor.x, H.base.x + H.lift.x + H.ext.x + dip + (h + hangA) * sv, H.floor.z);
+    H.hang.rotation.set(softCap(H.pitch.x, T_.capPitch * R), softCap(H.yaw.x, T_.capYaw * R) + shake, softCap(H.roll.x, T_.capRoll * R));
+    const py = H.pop ? popY(H.pop.t) : 1, pxz = H.pop ? popXZ(H.pop.t) : 1;
+    o.position.set(-(H.u - 0.5) * W * sv + H.pull.x.x, -(hangA + h) * sv, -(H.v - 0.5) * d * sv + H.pull.z.x);
+    o.rotation.set(calm ? 0 : T_.tilt, 0, 0);
+    o.scale.set(sv * pxz * H.rx.x, sv * py * H.ry.x, sv * pxz * H.rz.x);
+    drag.target.copy(H.rig.position);
+    drag.surface = H.base.x;
+  }
+  /* every frame, after the camera: the aim point, the floor point under it, and the pose */
+  function handStep(dt) {
+    const H = hand, o = drag.obj;
+    if (!H.on || !o || o.parent !== H.hang) return;
+    camera.updateMatrixWorld();
+    handAimPoint();
+    /* (saying no, it stays over where it was let go, whatever the camera does meanwhile) */
+    if (!H.no && rayAt(H.aim.x, H.aim.y, H.aimY, hTmp2)) { H.floor.copy(hTmp2); H.has = true; }
+    if (!H.has) return;
+    handScale();
+    /* the touch offset: the outline's near edge clears the fingertip by 22 px, the block above it */
+    if (H.touch) { const T_ = HAND_TUNE; H.offTo = Math.max(T_.touchMin, Math.min(T_.touchMax, T_.touchClear + H.pxZ * handDepth() / 2)); }
+    /* a card turning into the block: it starts as wide on screen as the card was (up to 2.2 times) */
+    if (H.seam && H.seamS > 0) {
+      const lenPx = Math.max(1, H.wU * H.pxX * H.sTo);
+      H.s.x = H.sTo * Math.max(1, Math.min(HAND_TUNE.maxScale, H.seamS / lenPx)); H.s.v = 0;
+      H.seamS = 0;
+      if (reduced) { H.s.x = 1; H.seam = false; }
+    }
+    handDress(false);
+    /* (no new objects in the frame: the last pose is kept in place) */
+    const was = hWas.copy(H.rig.position), wx = H.hang.rotation.x, wy = H.hang.rotation.y, wz = H.hang.rotation.z;
+    handPose(dt);
+    const t = H.trk;
+    if (H.rig.position.distanceToSquared(was) > 1e-8 || Math.abs(H.hang.rotation.x - wx) + Math.abs(H.hang.rotation.y - wy) + Math.abs(H.hang.rotation.z - wz) > 3e-4
+      || Math.abs(H.lift.v) > 1e-3 || Math.abs(H.s.v) > 1e-3 || Math.abs(t.vx) + Math.abs(t.vy) > 0.5 || Math.abs(H.roll.v) + Math.abs(H.pitch.v) + Math.abs(H.yaw.v) > 3e-4
+      || H.pop || H.no || (H.touch && H.offK < 1) || Math.abs(H.rx.x - 1) + Math.abs(H.ry.x - 1) + Math.abs(H.rz.x - 1) > 1e-3 || Math.abs(H.base.v) > 1e-3) moving = true;
+  }
+  /* a drop that can't land: it dips toward the slot to a quarter unit over what's in the way, bumps (the
+     sound, the outline flashing red, what's in the way giving a little), recoils, shakes no, and at 280 ms
+     flies home. o: { blocker: { date, key } }, then: when it's home */
+  function handNo(o) {
+    const H = hand;
+    if (!H.on || !drag.obj) return false;
+    const b = o && o.no && o.no.blocker;
+    const bl = b ? blockMeshes(b.date, b.key).filter((m) => m.visible && (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block')) : [];
+    const top = bl.length ? Math.max(...bl.map((m) => (m.userData.h || H_HARD) * m.parent.getWorldScale(hTmp).y)) : 0;
+    const now = H.base.x + H.lift.x + H.ext.x;
+    H.no = { t: 0, dip: Math.max(0, now - (H.base.x + top + HAND_TUNE.noDip)), blocker: bl, after: (o && o.after) || { home: true, then: o && o.then } };
+    H.ok = false;
+    touch();
+    return true;
+  }
+
+  /* == the landing: the block in hand falls into its slot ==
+     From exactly where it hung (its place, its turn, its size, its length), under desk scale gravity (about
+     110 ms), sideways into the slot as it falls, level and at its true size the moment it touches. Then the
+     board's own block takes over in the same frame, with the knock, the clack, the ring of dust, and the
+     neighbours' nudge (touchDown). */
+  const falls = [];
+  const fQ = new T.Quaternion();
+  function handFall(targets, all) {
+    const o = drag.obj, H = hand;
+    if (!o || !H.on || o.parent !== H.hang || !targets.length) return false;
+    world.attach(o);
+    const m0 = targets.slice().sort((a, b) => (a.userData.segStart || 0) - (b.userData.segStart || 0))[0], u = m0.userData;
+    const ps = m0.parent.getWorldScale(new T.Vector3());
+    const toPos = world.worldToLocal(m0.parent.localToWorld(u.target.clone()));
+    const ou = o.userData;
+    const toS = new T.Vector3(((u.w || 1) * ps.x) / Math.max(0.01, ou.w || 1), ((u.h || H_HARD) * ps.y) / Math.max(0.01, ou.h || H_HARD), ((u.dU || BLOCK_D) * ps.z) / Math.max(0.01, ou.dU || BLOCK_D));
+    /* (its base center falls to the slot's: the first piece of a block cut across lanes) */
+    const fromPos = o.position.clone(), fromQ = o.quaternion.clone(), fromS = o.scale.clone();
+    const y0 = Math.max(0, fromPos.y - toPos.y), g = HAND_TUNE.fallG * Math.max(0.3, ps.y);
+    const dur = Math.max(HAND_TUNE.fallMin, Math.min(HAND_TUNE.fallMax, Math.sqrt(2 * y0 / g)));
+    const swing = Math.abs(H.roll.x) + Math.abs(H.pitch.x);
+    handEnd(o);
+    const f = { o, targets, all, fromPos, fromQ, fromS, toPos, toS, t: 0, dur, y0, fx: null, vx: (toPos.x - fromPos.x) / dur, swing, ps: ps.x };
+    all.forEach((m) => { m.userData.held = true; m.userData.heldT = 0; m.userData.handFall = f; m.visible = false; });
+    falls.push(f);
+    handShadow.fall = f;
+    user.leanOffAt = Infinity;
+    touch();
+    return true;
+  }
+  function stepFalls(dt) {
+    for (let i = falls.length - 1; i >= 0; i--) {
+      const f = falls[i];
+      f.t += dt; moving = true;
+      const k = Math.min(1, f.t / f.dur), side = 1 - (1 - k) * (1 - k), ease = k * k * (3 - 2 * k);
+      f.o.position.set(f.fromPos.x + (f.toPos.x - f.fromPos.x) * side, f.toPos.y + f.y0 * (1 - k * k), f.fromPos.z + (f.toPos.z - f.fromPos.z) * side);
+      f.o.quaternion.slerpQuaternions(f.fromQ, fQ.identity(), 1 - (1 - k) * (1 - k));
+      f.o.scale.lerpVectors(f.fromS, f.toS, ease);
+      if (k < 1) continue;
+      falls.splice(i, 1);
+      dropBlock(f.o);
+      if (handShadow.fall === f) { handShadow.fall = null; handShadow.fade = 0.06; }
+      const view = zoomName === 'day' && layout === 'week' ? 'dblock' : 'block';
+      f.all.forEach((m) => {
+        const mu = m.userData;
+        if (mu.handFall !== f) return;
+        mu.handFall = null; mu.held = false; mu.inHand = false;
+        m.visible = true; m.position.copy(mu.target); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);
+        if (mu.vel) mu.vel.set(0, 0, 0);
+        mu.fall = null; mu.grow = null; mu.lift = 0;
+      });
+      const shown = f.all.filter((m) => m.userData.kind === view && m.parent && m.visible);
+      const fx = f.fx || { size: null, played: false, kind: 'land', speed: Math.sqrt(2 * HAND_TUNE.fallG * f.ps * f.y0) };
+      fx.speed = fx.speed || Math.sqrt(2 * HAND_TUNE.fallG * f.ps * f.y0);
+      fx.swing = f.swing;
+      (shown.length ? shown : f.targets).forEach((m) => touchDown(m, { fx, vx: f.vx }));
+      /* the camera eases back a beat after it lands */
+      user.leanOffAt = Date.now() + HAND_TUNE.leanHold;
+    }
+  }
+
+  /* V11, lift and place: the block a room preview put on the board for the one in hand stays out of sight (the
+     outline says where it goes): the app names it here; null lets go */
+  function handMatch(mm) { if (!FEEL) return; drag.match = mm || (drag.obj && hand.b ? (hand.b.add ? { add: hand.b.add } : hand.b.tpl ? { base: hand.b.base } : null) : null); }
+  /* how long until the latest block from the hand touches down (ms), for what's said 150 ms after */
+  function fallMs() { let t = 0; falls.forEach((f) => { t = Math.max(t, (f.dur - f.t) * 1000); }); return Math.round(t); }
+  /* V11, lift and place: a block dropped on a whole day (a day pill, a day's card) flies from where it was let
+     go to the slot the day gave it, on the curve a flight home takes, then falls the last 0.9 and lands with
+     the full beat. Returns false when there's nothing in hand or no slot on the board in view (the app then
+     flies its card, or presses the day it went to) */
+  function handFly(date, bkey) {
+    const H = hand, o = drag.obj;
+    if (!FEEL || reduced || !H.on || !o || o.parent !== H.hang) return false;
+    const view = zoomName === 'day' && layout === 'week' ? 'dblock' : 'block';
+    const all = blockMeshes(date, bkey).filter((m) => m.parent);
+    const to = all.filter((m) => m.userData.kind === view);
+    if (!to.length) return false;
+    world.attach(o);
+    const m0 = to.slice().sort((a, b) => (a.userData.segStart || 0) - (b.userData.segStart || 0))[0], u = m0.userData;
+    const ps = m0.parent.getWorldScale(new T.Vector3());
+    const slot = world.worldToLocal(m0.parent.localToWorld(u.target.clone()));
+    const above = slot.clone(); above.y += 0.9;
+    const from = o.position.clone();
+    const px = screenDist(from, above), dur = Math.max(HAND_TUNE.homeMin, Math.min(HAND_TUNE.homeMax, 0.2 + 0.00018 * px));
+    handEnd(o);
+    const hidden = drag.hidden;
+    drag.obj = null; drag.hidden = null; drag.origin = null;
+    (hidden || []).forEach((x) => { if (x.userData.shrink == null && !x.userData.back && !x.userData.held) x.visible = true; });
+    /* (the fall it ends in is named now, so the sound the app asks for at once rides with it, land()) */
+    const f = { o, targets: to, all, fx: null, vx: 0, swing: 0, ps: ps.x, t: 0 };
+    all.forEach((m) => { m.userData.held = true; m.userData.heldT = 0; m.userData.handFall = f; m.visible = false; });
+    const ou = o.userData;
+    const s1 = new T.Vector3(((u.w || 1) * ps.x) / Math.max(0.01, ou.w || 1), ((u.h || H_HARD) * ps.y) / Math.max(0.01, ou.h || H_HARD), ((u.dU || BLOCK_D) * ps.z) / Math.max(0.01, ou.dU || BLOCK_D));
+    homes.push({ m: o, from, to: above, t: 0, dur, arc: Math.min(0.6, 0.2 + from.distanceTo(above) * 0.03), curve: homeCurve(from, above), s0: o.scale.clone(), s1, q0: o.quaternion.clone(), keep: true, done: () => {
+      /* then the last bit down, as from the hand: the board's block takes over at the touch */
+      world.add(o);
+      const g = HAND_TUNE.fallG * Math.max(0.3, ps.y), fdur = Math.max(HAND_TUNE.fallMin, Math.min(HAND_TUNE.fallMax, Math.sqrt(2 * 0.9 / g)));
+      Object.assign(f, { fromPos: o.position.clone(), fromQ: o.quaternion.clone(), fromS: o.scale.clone(), toPos: slot, toS: s1.clone(), t: 0, dur: fdur, y0: Math.max(0, o.position.y - slot.y) });
+      all.forEach((m) => { m.userData.held = true; m.userData.heldT = Math.min(m.userData.heldT || 0, 0.6); m.userData.handFall = f; m.visible = false; });
+      falls.push(f);
+      handShadow.fall = f;
+      user.leanOffAt = Infinity;
+    } });
+    letGo();
+    showGhost(null); if (dayb.ghosts.length) showDayGhost(null);
+    touch();
+    return true;
+  }
+  /* V11, lift and place: a month card that took a block presses (1.04 to 1, 200 ms) */
+  function cardPress(date) {
+    if (!FEEL || reduced) return;
+    const c = month.cards.find((x) => x.userData.date === date && x.visible);
+    if (!c) return;
+    c.userData.press = { t: 0 };
+    touch();
+  }
+  /* == V11, lift and place: Undo plays a move backward ==
+     blockWorld: where a block is on the board in view (its base center, in the world), read before a change.
+     replayMove: the block at its slot now came from there: a copy lifts there, flies the curve a flight home
+     takes to the slot (0.30 s), falls the last bit, and lands with the full beat (the board's block waits,
+     unseen, until it touches). evaporate: a block about to leave lifts half a unit and fades away (180 ms). */
+  const inViewKind = () => (zoomName === 'day' && layout === 'week' ? 'dblock' : 'block');
+  function blockWorld(date, bkey) {
+    const ms = blockMeshes(date, bkey).filter((m) => m.visible && m.parent && m.userData.kind === inViewKind());
+    if (!ms.length) return null;
+    const m = ms.sort((a, b) => (a.userData.segStart || 0) - (b.userData.segStart || 0))[0];
+    return world.worldToLocal(m.getWorldPosition(new T.Vector3()));
+  }
+  function replayMove(date, bkey, from, size) {
+    if (!FEEL || reduced || !from || !finite3(from)) return false;
+    const all = blockMeshes(date, bkey).filter((m) => m.parent);
+    const to = all.filter((m) => m.userData.kind === inViewKind());
+    if (!to.length) return false;
+    const m0 = to.slice().sort((a, b) => (a.userData.segStart || 0) - (b.userData.segStart || 0))[0], u = m0.userData;
+    if (!u.block) return false;
+    const ps = m0.parent.getWorldScale(new T.Vector3());
+    const slot = world.worldToLocal(m0.parent.localToWorld(u.target.clone()));
+    if (slot.distanceTo(from) < 0.05) return false;
+    const o = makeBlock(u.block);
+    o.userData.kind = u.kind; o.userData.dragging = true;
+    dressBlock(o, u.block, u.wU, u.dU, u.hMul && u.hMul !== 1 ? { hMul: u.hMul } : {});
+    o.scale.copy(ps); o.position.copy(from);
+    world.add(o);
+    const above = slot.clone(); above.y += 0.6;
+    const f = { o, targets: to, all, fx: null, vx: 0, swing: 0, ps: ps.x, t: 0 };
+    all.forEach((m) => { m.userData.held = true; m.userData.heldT = 0; m.userData.handFall = f; m.visible = false; });
+    homes.push({ m: o, from: from.clone(), to: above, t: 0, dur: 0.3, arc: 0.6, curve: homeCurve(from, above), s0: o.scale.clone(), s1: ps.clone(), q0: o.quaternion.clone(), keep: true, done: () => {
+      const g = HAND_TUNE.fallG * Math.max(0.3, ps.y), fdur = Math.max(HAND_TUNE.fallMin, Math.min(HAND_TUNE.fallMax, Math.sqrt(2 * 0.6 / g)));
+      Object.assign(f, { fromPos: o.position.clone(), fromQ: o.quaternion.clone(), fromS: o.scale.clone(), toPos: slot, toS: ps.clone(), t: 0, dur: fdur, y0: Math.max(0, o.position.y - slot.y) });
+      if (!f.fx) f.fx = { size, played: false, kind: 'landSoft' };
+      else f.fx.kind = 'landSoft';
+      all.forEach((m) => { m.userData.held = true; m.userData.heldT = Math.min(m.userData.heldT || 0, 0.6); m.userData.handFall = f; m.visible = false; });
+      falls.push(f);
+    } });
+    touch();
+    return true;
+  }
+  const vapors = [];
+  /* a copy of a block to fade away, made by hand: three's clone copies userData through JSON, and a block's
+     userData points back at itself, so clone throws (and took Undo down with it) */
+  function shellOf(o) {
+    const c = o.isMesh ? new T.Mesh(o.geometry, o.material) : o.isSprite ? new T.Sprite(o.material) : new T.Group();
+    c.position.copy(o.position); c.quaternion.copy(o.quaternion); c.scale.copy(o.scale);
+    c.visible = o.visible; c.renderOrder = o.renderOrder;
+    o.children.forEach((k) => { if (k.visible && (k.isMesh || k.isSprite || k.isGroup)) c.add(shellOf(k)); });
+    return c;
+  }
+  function evaporate(date, bkey) {
+    if (!FEEL || reduced) return false;
+    const ms = blockMeshes(date, bkey).filter((m) => m.visible && m.parent && m.userData.kind === inViewKind());
+    if (!ms.length) return false;
+    ms.forEach((m) => {
+      const c = shellOf(m);
+      c.traverse((x) => { if (x.isMesh && x.material) { x.material = Array.isArray(x.material) ? x.material.map((q) => { const k = q.clone(); k.transparent = true; return k; }) : Object.assign(x.material.clone(), { transparent: true }); x.castShadow = false; } });
+      const wp = m.getWorldPosition(new T.Vector3()), ws = m.getWorldScale(new T.Vector3());
+      c.position.copy(world.worldToLocal(wp)); c.scale.copy(ws); c.rotation.set(0, 0, 0);
+      c.userData = { t: 0, y0: c.position.y, s0: ws.clone() };
+      world.add(c);
+      vapors.push(c);
+      m.visible = false; m.userData.gone = true;
+    });
+    touch();
+    return true;
+  }
+  function stepVapors(dt) {
+    for (let i = vapors.length - 1; i >= 0; i--) {
+      const c = vapors[i], u = c.userData, k = Math.min(1, (u.t += dt) / 0.18), e = 1 - (1 - k) * (1 - k);
+      moving = true;
+      c.position.y = u.y0 + 0.5 * e;
+      c.scale.copy(u.s0).multiplyScalar(1 - 0.15 * e);
+      c.traverse((x) => { if (x.isMesh && x.material) (Array.isArray(x.material) ? x.material : [x.material]).forEach((q) => { q.opacity = (q.userData.op0 == null ? (q.userData.op0 = q.opacity) : q.userData.op0) * (1 - k); }); });
+      if (k >= 1) { vapors.splice(i, 1); world.remove(c); c.traverse((x) => { if (x.isMesh && x.material) (Array.isArray(x.material) ? x.material : [x.material]).forEach((q) => q.dispose()); }); }
+    }
+  }
+  /* == one soft shadow under the block in hand ==
+     A rounded patch on the tallest top under its footprint (the board, open time, or a block), offset along
+     the key light by half the true offset, wider and fainter the higher it hangs, tightening as it falls,
+     then handing over to the block's own shadow at contact. The block in hand casts no shadow of its own. */
+  const handShadow = { mesh: null, fall: null, fade: 0, op: 0, topAt: null, top: BOARD_Y, overPrint: false };
+  function handShadowReset() { handShadow.op = 0; handShadow.fade = 0; handShadow.topAt = null; }
+  /* (the patch fills its square: its soft edge falls inside the size it's given) */
+  function shadowTex() {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+    const g = cv.getContext('2d');
+    g.filter = 'blur(10px)';
+    g.fillStyle = 'rgba(46, 26, 10, 1)';
+    rr(g, 22, 22, 256 - 44, 128 - 44, 22); g.fill();
+    return canvasTex(cv);
+  }
+  /* (made while the desk loads, hidden, its texture sent and its program built, so the first carry doesn't
+     pay for them in the frame the card turns into the block: on a phone that frame ran about 48 ms. The
+     picked glow, the outline, and the dust ring share the program) */
+  function warmHand() {
+    if (!FEEL || !hand.use || handShadow.mesh || !renderer || !scene) return;
+    const S = handShadow;
+    S.mesh = new T.Mesh(haloGeo, new T.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false }));
+    S.mesh.renderOrder = 2; S.mesh.visible = false;
+    world.add(S.mesh);
+    try { renderer.initTexture(S.mesh.material.map); renderer.compile(S.mesh, camera, scene); } catch (e) { /* the first carry builds it then */ }
+  }
+  /* the tallest top under a footprint (x0..x1 along a row or lane, at z), in the world; and whether it's print */
+  function topUnder(cx, cz, hw, hd) {
+    let top = null, print = false;
+    const look = (list) => list.forEach((m) => {
+      const u = m.userData;
+      if (!m.visible || u.shrink != null || u.held || u.inHand || u.dragging || !m.parent) return;
+      const b = u.orig || u.block;
+      if (b && b.free) return;
+      m.getWorldPosition(hTmp);
+      const s = m.parent.getWorldScale(hTmp3);
+      const w = (u.w || 1) * s.x / 2, d = (u.dU || BLOCK_D) * s.z / 2;
+      if (Math.abs(hTmp.x - cx) > w + hw || Math.abs(hTmp.z - cz) > d + hd) return;
+      const t = hTmp.y + (u.h || H_HARD) * s.y;
+      if (top == null || t > top) { top = t; print = !(b && b.soft); }
+    });
+    if (zoomName === 'day' && layout === 'week') look(dayb.blocks); else if (week.group.userData.shown) look(week.blocks);
+    return { top, print };
+  }
+  function stepHandShadow(dt) {
+    const S = handShadow;
+    const live = hand.on && drag.obj && drag.obj.parent === hand.hang && hand.has;
+    const f = S.fall;
+    if (!live && !f && S.fade <= 0) { if (S.mesh) S.mesh.visible = false; return; }
+    if (!S.mesh) {
+      S.mesh = new T.Mesh(haloGeo, new T.MeshBasicMaterial({ map: shadowTex(), transparent: true, depthWrite: false }));
+      S.mesh.renderOrder = 2;
+      world.add(S.mesh);
+    }
+    const o = f ? f.o : live ? drag.obj : null;
+    if (!o) {
+      S.fade -= dt; moving = true;
+      S.mesh.material.opacity = Math.max(0, S.op * S.fade / 0.06);
+      if (S.fade <= 0) S.mesh.visible = false;
+      return;
+    }
+    const u = o.userData;
+    o.updateWorldMatrix(true, false);
+    const ws = o.getWorldScale(hTmp3), W = (u.w || 1) * ws.x, D = (u.dU || BLOCK_D) * ws.z;
+    hTmp.set(0, 0, 0); o.localToWorld(hTmp);
+    const cx = hTmp.x, cz = hTmp.z, bottom = hTmp.y;
+    /* (the tallest top under it, looked up when it has moved a little) */
+    if (!S.topAt || Math.abs(S.topAt.x - cx) + Math.abs(S.topAt.z - cz) > 0.05 || f) {
+      const r = topUnder(cx, cz, W / 2, D / 2);
+      S.top = r.top == null ? (f ? f.toPos.y : hand.base.x) : r.top; S.overPrint = r.print;
+      S.topAt = { x: cx, z: cz };
+    }
+    const top = f ? Math.min(S.top, bottom) : S.top;
+    const hh = Math.max(0, bottom - top);
+    const liftTo = HAND_TUNE.lift[hand.over] || HAND_TUNE.lift.week;
+    const k = Math.min(1, hh / Math.max(0.3, liftTo));
+    /* along the key light: half the true offset, at most 0.6; 30 percent once it's locked on */
+    const L = sun ? hTmp2.copy(sun.position).sub(sun.target.position) : hTmp2.set(-4, 22, -5);
+    const horiz = Math.hypot(L.x, L.z) || 1, tanE = Math.max(0.5, L.y / horiz);
+    let off = Math.min(0.6, (hh / tanE) * 0.5);
+    if (hand.locked && !f) off *= 0.3;
+    const ox = (-L.x / horiz) * off, oz = (-L.z / horiz) * off;
+    const grow = f ? 1 + 0.3 * hh : 1 + 0.3 * hh;
+    S.mesh.visible = true;
+    S.mesh.position.set(cx + ox, top + 0.004, cz + oz);
+    S.mesh.rotation.y = hand.on ? hand.hang.rotation.y : 0;
+    S.mesh.scale.set((W + (f ? 0.15 + 0.15 * k : 0.3)) * grow, 1, (D + (f ? 0.15 + 0.15 * k : 0.3)) * grow);
+    let op = 0.45 - 0.25 * k;
+    if (S.overPrint) op = Math.min(op, 0.35);
+    /* (calmer motion: it fades in over 100 ms instead of growing with the lift) */
+    S.op += (op - S.op) * Math.min(1, dt / (reduced ? 0.1 : 0.06));
+    S.mesh.material.opacity = S.op * lightK();
+    S.fade = 0.06;
+    moving = moving || Math.abs(op - S.op) > 0.004;
+  }
+  /* graphics on the desk dim with the light at night, as the wood does */
+  const lightK = () => (light && Number.isFinite(light.level) ? Math.min(1, Math.max(0.6, light.level * (0.75 + 0.25 * (Number.isFinite(light.dim) ? light.dim : 1)))) : 1);
+
+  /* == the landing outline, alive ==
+     It sits on top of whatever its slot overlaps, glides on (0.12 s, 0.9), fades in the first time, brightens
+     once when the hand locks on, flashes red when a drop bumps what's in the way, and dims at night */
+  function ghostLive(g) {
+    const add = new T.Mesh(g.geometry, new T.MeshBasicMaterial({ color: '#28160A', transparent: true, opacity: 0, depthWrite: false }));
+    add.renderOrder = 4; add.visible = false;
+    g.add(add);
+    g.userData.add = add;
+    g.renderOrder = 4;
+  }
+  /* the tallest top a slot overlaps on a board (blocks being pushed included), above the board, in its units */
+  function ghostTop(map, inRow, x0, x1) {
+    let top = 0;
+    map.forEach((m) => {
+      const u = m.userData;
+      if (!m.visible || u.shrink != null || u.held || u.inHand || !inRow(u)) return;
+      const b = u.orig || u.block;
+      if (b && b.free) return;
+      const w = (u.w || 1) / 2, x = m.position.x;
+      if (x + w <= x0 + 0.02 || x - w >= x1 - 0.02) return;
+      top = Math.max(top, (u.h || H_HARD) * (m.scale.y || 1) + Math.max(0, m.position.y - u.target.y));
+    });
+    return top;
+  }
+  const ghostsLive = () => [drag.ghost].concat(dayb.ghosts).filter((g) => g && g.visible && g.userData.on);
+  function ghostLock() { ghostsLive().forEach((g) => { g.userData.lock = { t: 0 }; }); touch(); }
+  function ghostFlash() { ghostsLive().concat(dayb.ghosts.filter((g) => g && g.visible)).forEach((g) => { g.userData.flash = { t: 0 }; g.userData.on = true; }); touch(); }
+
   function blockMeshes(date, bkey) {
     const all = Array.from(week.blocks.values()).concat(Array.from(dayb.blocks.values())).filter((m) => !m.userData.back && m.userData.shrink == null && !(m.userData.wave && !m.userData.wave.show));
     const exact = all.filter((m) => m.userData.date === date && m.userData.bkey === bkey);
@@ -4128,7 +5261,9 @@
       return (ownerDate === date && ownerKey === bkey) || (u.date === date && b.add && ownerKey === bkey) || ((u.date === date || ownerDate === date) && b.base === bkey);
     });
   }
-  function squash(date, bkey) {
+  function squash(date, bkey, amp) {
+    /* V11, lift and place: amp, a settle of that size only (a stretch let go: 0.03), with no dust or knock */
+    if (FEEL && amp) { if (!reduced) blockMeshes(date, bkey).forEach((m) => { if (m.visible) m.userData.sq = { t: 0, amp, dur: 0.16 }; }); return; }
     /* feel: a landing, with its knock, its dust, and no sound of its own (whoever asked plays one) */
     if (FEEL) { land(date, bkey, null); return; }
     blockMeshes(date, bkey).forEach((m) => {
@@ -4141,6 +5276,20 @@
      feel: only on the board it was dropped on, and from there it falls the last bit and lands */
   function adoptPosition(date, bkey) {
     if (!drag.obj) return;
+    /* V11, lift and place: the block in the hand falls into its slot from exactly where it hung (its place,
+       its turn, its size, and its length), and the board's own block takes over at the touch (handFall) */
+    if (FEEL && drag.hand && drag.hand.on && drag.obj.parent === drag.hand.hang && !reduced) {
+      const all = blockMeshes(date, bkey).filter((m) => m.parent);
+      const view = zoomName === 'day' && layout === 'week' ? 'dblock' : 'block';
+      let to = all.filter((m) => m.userData.kind === view);
+      if (!to.length && view === 'dblock') to = all.filter((m) => m.userData.kind === 'block' && week.group.userData.shown);
+      if (to.length && handFall(to, all)) { drag.obj = null; return; }
+    }
+    /* (calmer motion: no fall, it's placed: in its slot at once) */
+    if (FEEL && reduced && drag.hand && drag.hand.on) {
+      blockMeshes(date, bkey).forEach((m) => { const u = m.userData; m.position.copy(u.target); m.visible = true; m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1); u.fall = null; u.grow = null; u.wave = null; u.inHand = false; tileMotions.delete(m); });
+      return;
+    }
     const wp = drag.obj.getWorldPosition(new T.Vector3());
     /* (V11: a hand whose place isn't a number hands nothing over; the block lands from its own slot) */
     if (FEEL && !finite3(wp)) { noteRepair('the block in hand as it was let go'); return; }
@@ -4171,6 +5320,8 @@
     if (!FEEL) return null;
     const ms = blockMeshes(date, bkey).filter((m) => m.parent && (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block'));
     if (!ms.length) return null;
+    /* (V11, lift and place: one still flying or falling to its slot, from the hand or an Undo, isn't judged yet) */
+    if (ms.some((m) => m.userData.held && m.userData.handFall && (m.userData.heldT || 0) < 1.4)) return 'flying';
     return ms.some((m) => m.visible && !m.userData.held && !m.userData.inHand && blockFinite(m) && m.scale.y > 0.5);
   }
   /* V11: and drawn again: shown at rest, nothing holding it back. o.stale: nothing is in the app's hand, so a
@@ -4184,6 +5335,15 @@
       if (!blockFinite(m) || m.scale.y <= 0.5) restBlock(m);
       m.visible = true;
     });
+  }
+  /* V11, lift and place: a block's right end on screen (the middle of its last piece's end, on its top), for the
+     handle a finger stretches it by */
+  function blockEnd(date, bkey) {
+    const ms = blockMeshes(date, bkey).filter((m) => m.visible && m.parent && (zoomName === 'day' && layout === 'week' ? m.userData.kind === 'dblock' : m.userData.kind === 'block'));
+    if (!ms.length) return null;
+    const m = ms.sort((a, b) => (b.userData.segStart || 0) - (a.userData.segStart || 0))[0], u = m.userData;
+    m.updateWorldMatrix(true, false);
+    return toScreen(m.localToWorld(new T.Vector3((u.w || 1) / 2, u.h || H_HARD, 0)), scene);
   }
   /* The screen point just above the picked block, for the tools that float over it. */
   function selAnchor() {
@@ -4270,9 +5430,12 @@
     week.group.add(props.pawn);
     fit();
     snapCamera();
+    /* (V11, lift and place: the shadow in hand, ready before the first carry) */
+    setTimeout(warmHand, 900);
     return { renderer, scene, camera, world };
   }
   function fit() {
+    canvasBox = null;
     const el = renderer.domElement.parentElement;
     if (!el.clientWidth || !el.clientHeight) { camSig = ''; return; }
     const w = el.clientWidth, h = el.clientHeight;
@@ -4299,10 +5462,13 @@
      block (wU), so a short block still moves when it's held in the middle. at is a point on the board in
      group's own units, where the edge is measured */
   function edgeU(group, at, base, wU, o) {
-    if (!FEEL || !o || !o.edgePx) return base;
+    if (!FEEL || ((!o || !o.edgePx) && !hand.use)) return base;
     const a = group.localToWorld(at.clone()).project(camera), b = group.localToWorld(at.clone().setX(at.x + 1)).project(camera);
     const pxU = Math.abs(b.x - a.x) / 2 * renderer.domElement.getBoundingClientRect().width;
     if (!(pxU > 0) || !Number.isFinite(pxU)) return base;
+    /* V11, lift and place: a mouse's stretch edge is 22 px on screen, but never more than a quarter of the
+       block (a 30 minute block held in the middle moves) */
+    if (!o || !o.edgePx) return Math.min(22 / pxU, wU / 4);
     return Math.max(base, Math.min(o.edgePx / pxU, wU / 3));
   }
   /* V11: a finger right past a block's end, on open board: the block whose end is within edgePx to the left
@@ -4340,6 +5506,31 @@
     const u = best.u;
     return Object.assign({ kind: 'block', board: 'week', obj: best.m, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: p.x, min: minOf(p.x), nearR: true, nearL: false, outside: true }, sourceOf(u.block, u.date));
   }
+  /* V11, lift and place: the brick a finger meant: the nearest one it could move (placed, or a routine that
+     slides) whose top is within tol px of the point on screen, and the point on its top nearest the finger */
+  function nearBrick(px, py, tol, dayOn) {
+    const r = canvasRect();
+    let best = null;
+    const pts = [new T.Vector3(), new T.Vector3(), new T.Vector3(), new T.Vector3()], q = { x: 0, y: 0 };
+    const look = (m) => {
+      const u = m.userData, b = u.orig || u.block;
+      if (!live(m) || u.fly || !b || b.free || b.sleep || b.fixed || b.soft || !(b.add || b.tpl) || !m.parent) return;
+      const w = (u.w || 1) / 2, d = (u.dU || BLOCK_D) / 2, h = (u.h || H_HARD);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      pts[0].set(-w, h, -d); pts[1].set(w, h, -d); pts[2].set(-w, h, d); pts[3].set(w, h, d);
+      for (const p of pts) { m.localToWorld(p); scr(p, q); x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+      const dx = px < x0 ? x0 - px : px > x1 ? px - x1 : 0, dy = py < y0 ? y0 - py : py > y1 ? py - y1 : 0, dist = Math.hypot(dx, dy);
+      if (dist > tol || (best && dist >= best.dist)) return;
+      /* the point on its top: the finger's ray on the top's plane, held inside the brick */
+      const top = m.localToWorld(new T.Vector3(0, h, 0));
+      const at = rayAt(px, py, top.y, new T.Vector3()) || top;
+      const local = m.worldToLocal(at.clone());
+      local.x = Math.max(-w + 0.01, Math.min(w - 0.01, local.x)); local.z = Math.max(-d + 0.01, Math.min(d - 0.01, local.z)); local.y = h;
+      best = { m, dist, point: m.localToWorld(local) };
+    };
+    if (dayOn) dayb.blocks.forEach(look); else if (week.group.userData.shown && r.width) week.blocks.forEach(look);
+    return best;
+  }
   /* What's under the pointer: a block (on the week or the day), a day tab, a bench piece, a month card, or a year card.
      opt (V11): edgePx, the size of a stretch edge on screen for a finger (edgeU) */
   function pick(px, py, opt) {
@@ -4355,6 +5546,13 @@
     else list = year.cards.filter(live);
     [lampRig.body, pad.obj].concat(thingLights.map((t) => t.owner), propList.filter((p) => p.obj && p.obj.userData.pickKind === 'clock').map((p) => p.obj)).forEach((o) => { if (o && o.visible && o.scale.x > 0.5) list.push(o); });
     const hits = ray.intersectObjects(list, true);
+    /* V11, lift and place: a finger that misses takes the nearest brick it can move within 20 px on screen
+       (a quarter hour is a few pixels on the week); opt.touch */
+    let nearBody = null;
+    if (FEEL && hand.use && opt && opt.touch && !hits.some((h) => { const o = owner(h.object); return o && (o.userData.kind === 'block' || o.userData.kind === 'dblock' || o.userData.kind === 'bench'); })) {
+      const near = nearBrick(px, py, 20, dayOn);
+      if (near) { nearBody = near.m.userData.body; hits.unshift({ object: nearBody, point: near.point }); }
+    }
     for (const h of hits) {
       const o = owner(h.object);
       if (!o || (o.userData.halo && h.object === o.userData.halo)) continue;
@@ -4366,14 +5564,15 @@
         const local = dayb.group.worldToLocal(h.point.clone());
         const min = LANES[u.lane].from + (local.x - LX0) / DU * 60;
         const ez = edgeU(dayb.group, new T.Vector3(local.x, BOARD_Y, laneZ(u.lane)), 0.32, dayX(u.lane, u.segEnd) - dayX(u.lane, u.segStart), opt);
-        return Object.assign({ kind: 'block', board: 'day', obj: o, date: u.date, displayDate: u.date, key: u.bkey, block: u.orig, min, nearR: u.last && dayX(u.lane, u.segEnd) - local.x < ez && u.orig.dur >= 30, nearL: u.first && local.x - dayX(u.lane, u.segStart) < ez }, sourceOf(u.orig, u.date));
+        /* (near: the finger missed and this is the brick it was forgiven onto; a tap there is a tap on what's under it) */
+        return Object.assign({ kind: 'block', board: 'day', obj: o, date: u.date, displayDate: u.date, key: u.bkey, block: u.orig, min, nearR: u.last && dayX(u.lane, u.segEnd) - local.x < ez && u.orig.dur >= 30, nearL: u.first && local.x - dayX(u.lane, u.segStart) < ez, near: !!nearBody && h.object === nearBody }, sourceOf(u.orig, u.date));
       }
       if (u.kind === 'block') {
         if (dayOn) return { kind: 'miniRow', obj: o, row: u.row, date: u.date };
         const local = week.group.worldToLocal(h.point.clone());
         const right = xOf(u.block.start + u.block.dur), left = xOf(u.block.start);
         const ez = edgeU(week.group, new T.Vector3(local.x, BOARD_Y, rowZ(u.row)), 0.22, right - left, opt);
-        return Object.assign({ kind: 'block', board: 'week', obj: o, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: local.x, min: minOf(local.x), nearR: right - local.x < ez && u.block.dur >= 30, nearL: local.x - left < ez }, sourceOf(u.block, u.date));
+        return Object.assign({ kind: 'block', board: 'week', obj: o, date: u.date, displayDate: u.date, row: u.row, key: u.bkey, block: u.block, x: local.x, min: minOf(local.x), nearR: right - local.x < ez && u.block.dur >= 30, nearL: local.x - left < ez, near: !!nearBody && h.object === nearBody }, sourceOf(u.block, u.date));
       }
       if (u.kind === 'tab') return dayOn ? { kind: 'miniRow', obj: o, row: u.row } : { kind: 'tab', obj: o, row: u.row };
       if (u.kind === 'card') return { kind: 'card', obj: o, date: u.date };
@@ -4478,12 +5677,17 @@
      question (what's under the pointer, where a block is on screen) doesn't */
   const changes = { fit, setNow, setDaylight, setWeek, setMonth, setYear, setDay, setBench, setBenchOpen, showLayout, rippleWeek, beginNavigation, setZoom, setPhoneDay, setInsets, snapCamera, setSelected, showDayGhost,
     startDrag, dragTo, showGhost, endDrag, squash, adoptPosition, puff, zoomTo, panBy, resetView, focusOn, lean, setMotion, refreshFaces, setFocus, setPropsAway, setAway,
-    press, land, holdBack, weekSet, direct, leanAmount, setKinds, benchCarry, showBlock,
+    press, land, holdBack, weekSet, direct, leanAmount, setKinds, benchCarry, showBlock, handAim, handPreset, handMatch, handFly, cardPress, holdInsets, replayMove, evaporate,
     setLamp, setLight, setNotepad, setDayOnly, setAlone, setTheme, setDesk, setClock24, setQuality, wake, setTight, setHours };
   Object.keys(changes).forEach((k) => { const fn = changes[k]; changes[k] = function () { touch(); return fn.apply(null, arguments); }; });
   root.World = {
     init, render, step, parallax, touch, setWeekStart, setDayShape,
-    pick, edgeAt, blockShown, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, kindCardScreen, get kindsOn() { return kinds.on; }, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    pick, edgeAt, blockShown, blockEnd, blockWorld, boardAt, dayAt, slotWorld, slotScreen, pieceScreen, kindCardScreen, get kindsOn() { return kinds.on; }, toScreen, propScreen, cardWorld, ycardWorld, rowWorld, setHover, selAnchor, LANES, laneOf, blockAnchor,
+    /* V11, lift and place: the hand. handPoint: the aim point the slot is worked out from; handRect: the block in
+       hand on screen; touchLift: the touch offset now (px); hand: its state, for the drag gate and Dev */
+    handPoint, handRect, touchLift, get handOn() { return hand.on; }, get handPresetName() { return handPresetName; }, get fallMs() { return fallMs(); },
+    get camSum() { return camera ? camera.position.x * 1.37 + camera.position.y * 7.11 + camera.position.z * 13.3 + camera.quaternion.x * 101 + camera.quaternion.y * 211 + camera.zoom : 0; },
+    get hand() { const H = hand, D = 180 / Math.PI; return { on: H.on, over: H.over, touch: H.touch, u: H.u, v: H.v, aim: { x: Math.round(H.aim.x), y: Math.round(H.aim.y) }, raw: { x: Math.round(H.raw.x), y: Math.round(H.raw.y) }, off: +H.off.toFixed(1), offTo: +H.offTo.toFixed(1), lift: +H.lift.x.toFixed(3), s: +H.s.x.toFixed(3), roll: +(H.roll.x * D).toFixed(2), pitch: +(H.pitch.x * D).toFixed(2), yaw: +(H.yaw.x * D).toFixed(2), ok: H.ok, locked: H.locked, floor: H.has ? [+H.floor.x.toFixed(3), +H.floor.y.toFixed(3), +H.floor.z.toFixed(3)] : null, falls: falls.length, lean: +user.lean.toFixed(3), leanZ: +(user.leanZ || 1).toFixed(4), pxX: +H.pxX.toFixed(1), pxZ: +H.pxZ.toFixed(1), wU: H.wU, face: H.face, preset: handPresetName }; },
     /* true when nothing on the desk is moving and nothing changed lately: the frame can be skipped.
        lazy: only something slow is moving (steam), so a few frames a second are plenty */
     get idle() { return stillFrames > 12; }, get lazy() { return lazyOnly && !moving && nowMs() >= activeUntil; },
@@ -4505,7 +5709,7 @@
     get userZoom() { return user.zoomTo; }, get focused() { return !!focus.pt; },
     xOf, minOf, rowZ, BOARD_Y, BLOCK_D, H_HARD, DB_HMUL,
     get layout() { return layout; }, get camera() { return camera; }, get busy() { return pops.length > 0 || tileMotions.size > 0; },
-    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size }, repairs: { count: repairs.count, list: repairs.list.slice() } }; },
+    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size }, repairs: { count: repairs.count, list: repairs.list.slice() }, hand, handShadow, falls, vapors, drag, user }; },
     get hours() { return { start: RAIL0, end: RAIL1 }; },
     get benchOn() { return benchOn; },
     /* V11: the bench's close framing, for checking by hand: wanted, how close, where it is now, in hand */

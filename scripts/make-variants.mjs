@@ -45,7 +45,16 @@ for (const id of ids) {
   if (id === 'corners11') html = html.replace('&family=Poppins:wght@400;500;600;700', '&family=Poppins:wght@400;500;600;700&family=Onest:wght@400..800');
   if (VEC.has(id)) html = html.replace('<script src="src/icons.js"></script>', '<script src="src/icon-paths.js"></script>\n<script src="src/icons.js"></script>');
   html = html.replace('  <header class="topnav" id="topnav"></header>\n', '');
-  html = html.replace('<title>Sunday Reset</title>', `<title>Sunday Reset · ${names[id]}</title>`);
+  /* V11 (Oct 15, the first-visit walk): the page and its link preview say Sunday Reset, never a build's name (Corners
+     V11 read as a prototype in a friend's message); the version's name stays in a meta tag. A link pasted into Messages
+     shows the desk with a week on it (assets/og.png, rendered from the app) and the manifest's one line. */
+  if (id === 'corners11') {
+    const og = 'https://sunday-reset-corners-v11.vercel.app/assets/og.png', line = 'Your week as wooden blocks. Plan it on Sunday, live it on your phone.';
+    html = html.replace('<title>Sunday Reset</title>', ['<title>Sunday Reset</title>', `<meta name="sunday-reset-version" content="${names[id]}">`,
+      '<meta property="og:type" content="website">', '<meta property="og:site_name" content="Sunday Reset">', '<meta property="og:title" content="Sunday Reset">', `<meta property="og:description" content="${line}">`,
+      `<meta property="og:image" content="${og}">`, '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">', '<meta property="og:image:alt" content="A wooden desk with a week of colored blocks on it, Sunday to Saturday">',
+      '<meta property="og:url" content="https://sunday-reset-corners-v11.vercel.app/">', '<meta name="twitter:card" content="summary_large_image">', '<meta name="twitter:title" content="Sunday Reset">', `<meta name="twitter:description" content="${line}">`, `<meta name="twitter:image" content="${og}">`].join('\n'));
+  } else html = html.replace('<title>Sunday Reset</title>', `<title>Sunday Reset · ${names[id]}</title>`);
   /* a version that moves on springs says so on its page (feel, in the board's own code) */
   html = html.replace('<body>', `<body class="v-${id}${FEEL.has(id) ? ' feel' : ''}">`);
   writeFileSync(join(out, 'index.html'), html);

@@ -2,7 +2,7 @@
   "name": "Sunday Reset",
   "short_name": "Sunday Reset",
   "description": "Your week as wooden blocks. Plan it on Sunday, live it on your phone.",
-  "start_url": "/?today",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#C3955F",

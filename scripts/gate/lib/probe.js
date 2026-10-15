@@ -9,8 +9,9 @@
   /* when the first finger or the mouse went down, first moved 8 px, and lifted, as the page saw them: a busy
      machine can stretch a tap or a swipe past the app's press to lift (300 ms), and then it isn't one */
   mx.ptr = { down: 0, move8: 0, up: 0, x: 0, y: 0 };
-  document.addEventListener('pointerdown', (e) => { if (!e.isPrimary) return; mx.ptr = { down: now(), move8: 0, up: 0, x: e.clientX, y: e.clientY }; }, { capture: true, passive: true });
-  document.addEventListener('pointermove', (e) => { if (!e.isPrimary || mx.ptr.move8 || !mx.ptr.down || mx.ptr.up) return; if (Math.hypot(e.clientX - mx.ptr.x, e.clientY - mx.ptr.y) >= 8) mx.ptr.move8 = now(); }, { capture: true, passive: true });
+  /* (downT, move8T: the events' own clock, which the app's hold goes by) */
+  document.addEventListener('pointerdown', (e) => { if (!e.isPrimary) return; mx.ptr = { down: now(), move8: 0, up: 0, x: e.clientX, y: e.clientY, downT: e.timeStamp, move8T: 0 }; }, { capture: true, passive: true });
+  document.addEventListener('pointermove', (e) => { if (!e.isPrimary || mx.ptr.move8 || !mx.ptr.down || mx.ptr.up) return; if (Math.hypot(e.clientX - mx.ptr.x, e.clientY - mx.ptr.y) >= 8) { mx.ptr.move8 = now(); mx.ptr.move8T = e.timeStamp; } }, { capture: true, passive: true });
   document.addEventListener('pointerup', (e) => { if (e.isPrimary && !mx.ptr.up) mx.ptr.up = now(); }, { capture: true, passive: true });
   const W = window.World;
   const num = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v);
@@ -150,6 +151,8 @@
   };
   /* the block in hand right now */
   mx.handState = () => { const m = mx.dragMesh; if (!m) return null; return mx.meshState(m); };
+  /* V11, lift and place: how far above a finger the block in hand rides (px; 0 with a mouse or nothing in hand) */
+  mx.aimLift = () => (W && W.touchLift ? W.touchLift() : 0);
   mx.stepDesk = (n = 240, dt = 0.05) => { for (let i = 0; i < n; i++) W.step(dt); W.render(); return true; };
   /* wait, in real time, until the desk has stopped moving (the camera settled), up to ms */
   mx.still = async (ms = 2000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { if (W.idle) return Math.round(performance.now() - t0); await new Promise((r) => setTimeout(r, 50)); } return -1; };

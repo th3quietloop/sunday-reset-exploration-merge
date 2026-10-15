@@ -497,6 +497,9 @@
       [St('Pick the dates', 10), St('Look at places to stay', 20), St('Book the stay', 15), St('Book travel', 20), St('Make a loose plan for each day', 20), St('Tell anyone who needs to know', 5)]),
     BD('flights', 'travel', ['flights', 'book a flight', 'book flights', 'book the flight', 'plane tickets', 'airfare'],
       [St('Pick dates and times that work', 10), St('Compare prices', 20), St('Book it', 15), St('Add it to the calendar and share it', 5)]),
+    /* (Look ahead's Book travel for a date: getting there, and a place to stay) */
+    BD('book-travel', 'travel', ['book travel', 'travel for', 'book the travel', 'book train tickets', 'book the train'],
+      [St('Pick the dates and times', 10), St('Compare a few ways to get there', 20, [['Look at the options', 10], ['Compare the prices', 10]]), St('Book it', 15), St('Book a place to stay if you need one', 20, [['Look at a few places', 10], ['Book one', 10]]), St('Add it to the calendar and share it', 5)]),
     BD('hotel', 'travel', ['hotel', 'airbnb', 'place to stay', 'lodging', 'book a hotel'],
       [St('Set a budget and an area', 5), St('Compare a few places', 20), St('Book it', 10), St('Save the confirmation', 5)]),
     BD('passport', 'travel', ['passport', 'renew passport', 'passport renewal', 'visa application'],
@@ -512,7 +515,7 @@
 
     /* events and gifts */
     BD('birthday', 'event', ['birthday', 'bday', 'birthday gift', 'birthday present'],
-      [St('Jot a few gift ideas', 10), St('Pick a card or gift', 15), St('Order it or buy it', 15), St('Write a note', 10), Wh('Call on the day', 30)]),
+      [St('Jot a few gift ideas', 10), St('Pick a card or gift', 15), St('Order it or buy it', 15), St('Write a note', 10), St('Set a reminder to call on the day', 5)]),
     BD('party', 'event', ['birthday party', 'party', 'kids party', 'host a party', 'throw a party', 'party for', 'housewarming', 'get together', 'cookout', 'bbq'],
       [St('Pick a date and a few people', 10), St('Send the invites', 15), St('Plan the food and the cake', 20), St('Shop for supplies', 45, [['Make the list', 10], ['Shop', 35, true]]), St('Decorate and set up', 45, [['Clean the main room', 15], ['Decorate', 15], ['Set out the food and drinks', 15]]), St('Clean up after', 30, [['Do the trash and dishes', 15], ['Do the rest', 15]])]),
     BD('holiday-dinner', 'event', ['thanksgiving', 'host thanksgiving', 'holiday dinner', 'friendsgiving', 'christmas dinner', 'easter dinner'],
@@ -523,18 +526,33 @@
       [St('List who', 10), St('Set a budget for each', 10), St('Pick gifts', 45, [['Pick the first few', 15], ['Pick a few more', 15], ['Pick the rest', 15]]), St('Order them', 30, [['Order the first half', 15], ['Order the rest', 15]]), St('Wrap them', 45, [['Wrap the first few', 15], ['Wrap a few more', 15], ['Wrap the rest', 15]])]),
     BD('gift', 'event', ['gift', 'present', 'gift for', 'buy a gift'],
       [St('Make a list of ideas', 10), St('Pick one', 10), St('Order it or buy it', 15), St('Wrap it', 15)]),
+    BD('registry-gift', 'event', ['wedding gift', 'wedding present', 'registry', 'shower present'],
+      [St('Find the registry', 5), St('Pick a gift from it', 15), St('Order it', 10), St('Write a card', 10)]),
     BD('card', 'event', ['card', 'cards', 'birthday card', 'greeting card', 'sympathy card', 'get well card', 'anniversary card', 'mom card', 'dad card'],
       [St('Write the card', 10), St('Address and stamp it', 10), St('Mail it', 15)]),
+    BD('card-buy', 'event', ['buy a card', 'get a card', 'pick up a card', 'buy a birthday card', 'buy cards'],
+      [St('Pick out a card', 10), Wh('Buy it', 15), St('Write a note in it', 10), St('Mail it or put it with the gift', 5)]),
     BD('holiday-cards', 'event', ['christmas cards', 'christmas card', 'holiday cards', 'holiday card', 'new year cards'],
       [St('Pick a photo', 10), St('Order the cards', 20), St('Update the address list', 20), St('Address them', 45, [['Address the first few', 15], ['Address a few more', 15], ['Address the rest', 15]]), St('Stamp and mail them', 15)]),
     BD('thank-you', 'event', ['thank you notes', 'thank you note', 'thank you cards', 'thank you card', 'thank yous'],
       [St('List who to thank and for what', 10), St('Write the first few', 20), St('Write the rest', 20), St('Address, stamp, and mail them', 15)]),
-    BD('wedding-guest', 'event', ['wedding', 'go to the wedding', 'wedding gift', 'rsvp'],
+    BD('wedding-guest', 'event', ['wedding', 'go to the wedding', 'wedding weekend'],
       [St('RSVP', 5), St('Pick a gift from the registry', 15), St('Plan what to wear', 20), St('Book travel and a room if you need them', 30, [['Book travel', 15], ['Book a room', 15]]), St('Write a card', 10)]),
     BD('wedding-plan', 'event', ['plan the wedding', 'plan our wedding', 'plan a wedding', 'wedding planning', 'our wedding'],
       [St('Talk about what matters most', 10), St('Set the budget', 20), St('Make the guest list', 30, [['Make the first draft', 15], ['Make the final list', 15]]), St('Pick a date and a venue', 60, [['Look at venues', 20], ['Visit the top two', 20, true], ['Book one', 20]]), St('Book the big vendors', 60, [['Book the photographer', 20], ['Book the food', 20], ['Book the music', 20]]), St('Send save the dates', 30, [['Make them', 15], ['Send them', 15]])]),
     BD('shower', 'event', ['baby shower', 'bridal shower', 'shower gift'],
       [St('RSVP', 5), St('Pick a gift from the registry', 15), St('Order it', 10), St('Wrap it and write a card', 15)]),
+    /* (Look ahead's Plans for a date, and going to someone else's party) */
+    BD('celebrate', 'event', ['plans for', 'birthday plans', 'plan a birthday', 'plan something for', 'celebrate'],
+      [St('Think about what would make the day', 10), St('Pick what to do', 10), St('Book it or set it up', 15), St('Tell whoever’s coming', 5), St('Get a card', 10)]),
+    BD('party-guest', 'event', ['go to the party', 'go to a party', 'party invite', 'invited to a party'],
+      [St('RSVP', 5), St('Pick a gift or something to bring', 15), Wh('Get it', 20), St('Plan what to wear', 10), St('Check the time and how to get there', 5)]),
+    BD('rsvp', 'event', ['rsvp', 'wedding rsvp', 'reply to the invite', 'answer the invite'],
+      [St('Check the date works', 5), St('Check with {partner}', 5), St('Send the RSVP', 5)]),
+    BD('outfit', 'event', ['something to wear', 'what to wear', 'outfit', 'outfit for', 'dress for', 'suit for'],
+      [St('Check the dress code', 5), St('Try on what you have', 15), St('List what’s missing', 5), Wh('Shop for it', 45), St('Try it all on together', 10)]),
+    BD('tickets', 'event', ['tickets', 'buy tickets', 'get tickets', 'tickets for', 'book tickets'],
+      [St('Check the date and who’s going', 5), St('Compare seats and prices', 15), St('Buy the tickets', 10), St('Save them where you’ll find them', 5)]),
     BD('move', 'event', ['moving', 'move out', 'move in', 'move house', 'move to', 'moving day', 'pack the house', 'moving boxes', 'the move', 'new apartment', 'new house'],
       [St('Pick a moving date', 10), St('Book movers or a truck', 30, [['Get quotes', 15], ['Book one', 15]]), St('Get boxes and tape', 30, [['Find boxes', 15], ['Pick them up', 15, true]]), St('Pack room by room', 180, [['Pack the kitchen', 60], ['Pack the bedrooms', 60], ['Pack everything else', 60]]), St('Change your address', 20), St('Set up internet and utilities', 30, [['Set up the internet', 15], ['Set up power and water', 15]]), St('Clean the old place', 120, [['Clean the kitchen', 30], ['Clean the bathroom', 30], ['Clean the floors', 30], ['Clean the walls and closets', 30]]), St('Unpack the essentials first', 60, [['Set up the beds', 20], ['Unpack the kitchen basics', 20], ['Unpack the bathroom', 20]])]),
     BD('anniversary', 'event', ['anniversary', 'anniversary plans'],
@@ -551,6 +569,9 @@
       [St('Call and book a time', 10), St('Write down questions and what’s changed', 10), St('Find your insurance card', 5), Wh('Go to the appointment', 60), St('Note what’s next and book any follow up', 10)]),
     BD('dentist', 'health', ['dentist', 'dental', 'teeth cleaning', 'book a cleaning', 'dental cleaning', 'cleaning for', 'orthodontist'],
       [St('Call and book a time', 10), St('Find the insurance card', 5), Wh('Go to the appointment', 60), St('Book the next one before you leave', 5)]),
+    /* (making an appointment is booking it; going to it is the appointment itself) */
+    BD('book-appt', 'health', ['make an appointment', 'book an appointment', 'schedule an appointment', 'make a doctor appointment', 'book a doctor appointment', 'make a dentist appointment'],
+      [St('Find the number or the booking page', 5), St('Look at your week for times that work', 5), St('Call or book a time', 10), St('Add it to your calendar', 5), St('Find your insurance card', 5)]),
     BD('lab', 'health', ['blood test', 'blood work', 'lab work', 'labs', 'x ray', 'mammogram'],
       [St('Check if you need to fast or book ahead', 5), St('Book a time', 10), Wh('Go', 45), St('Watch for the results', 5)]),
     BD('routine', 'health', ['routine', 'habit', 'new routine', 'start a routine', 'morning routine', 'bedtime routine', 'new habit', 'build a habit'],
@@ -631,8 +652,13 @@
   const EXAMS = [
     { id: 'bar', name: 'The bar exam', words: ['bar exam', 'bar exams', 'pass the bar', 'take the bar', 'study for the bar', 'sit for the bar', 'bar prep', 'uniform bar', 'ube', 'mbe'], hours: 400,
       parts: [['Civil Procedure', 35], ['Constitutional Law', 35], ['Contracts', 35], ['Criminal Law and Procedure', 35], ['Evidence', 35], ['Real Property', 35], ['Torts', 35], ['Essay practice', 95], ['Performance tests', 60]] },
-    { id: 'cfa', name: 'CFA Level I', words: ['cfa', 'cfa level 1', 'cfa level i', 'chartered financial analyst'], hours: 300,
+    { id: 'cfa', name: 'CFA Level I', words: ['cfa', 'cfa level 1', 'cfa level i', 'cfa 1', 'cfa l1', 'chartered financial analyst'], hours: 300,
       parts: [['Quantitative Methods', 25], ['Economics', 25], ['Corporate Issuers', 20], ['Financial Statement Analysis', 40], ['Equity Investments', 35], ['Fixed Income', 35], ['Derivatives', 20], ['Alternative Investments', 20], ['Portfolio Management', 35], ['Ethical and Professional Standards', 45]] },
+    /* (each level names itself, so a Level II or III never gets Level I's parts) */
+    { id: 'cfa2', name: 'CFA Level II', words: ['cfa level 2', 'cfa level ii', 'cfa 2', 'cfa ii', 'cfa l2', 'level 2 cfa', 'level ii cfa', 'chartered financial analyst level 2', 'chartered financial analyst level ii'], hours: 300,
+      parts: [['Quantitative Methods', 20], ['Economics', 15], ['Financial Statement Analysis', 40], ['Corporate Issuers', 20], ['Equity Valuation', 40], ['Fixed Income', 35], ['Derivatives', 25], ['Alternative Investments', 20], ['Portfolio Management', 35], ['Ethical and Professional Standards', 30], ['Practice exams', 20]] },
+    { id: 'cfa3', name: 'CFA Level III', words: ['cfa level 3', 'cfa level iii', 'cfa 3', 'cfa iii', 'cfa l3', 'level 3 cfa', 'level iii cfa', 'chartered financial analyst level 3', 'chartered financial analyst level iii'], hours: 300,
+      parts: [['Asset Allocation', 45], ['Portfolio Construction', 45], ['Performance Measurement', 25], ['Derivatives and Risk Management', 40], ['Ethical and Professional Standards', 35], ['Your pathway (Portfolio Management, Private Markets, or Private Wealth)', 60], ['Essay practice (constructed response)', 30], ['Practice exams', 20]] },
     { id: 'sie', name: 'The SIE exam', words: ['sie', 'sie exam', 'securities industry essentials'], hours: 50,
       parts: [['Capital markets', 7], ['Products and their risks', 18], ['Trading, accounts, and prohibited activities', 13], ['The regulatory framework', 4], ['Practice exams', 8]] },
     { id: 'series7', name: 'The Series 7 exam', words: ['series 7', 'series seven', 'general securities representative'], hours: 80,
@@ -666,9 +692,10 @@
     'learn guitar', 'learn the guitar', 'learn piano', 'learn the piano', 'learn to code', 'learn coding', 'learn python'];
   const GOAL_NOT = ['eye', 'eyes', 'dental', 'dentist', 'doctor', 'physical', 'blood', 'covid', 'vision', 'hearing', 'annual', 'checkup', 'check up', 'pap', 'skin', 'allergy', 'drug', 'pregnancy',
     'smoke', 'alarm', 'emissions', 'smog', 'swab', 'lab', 'urine', 'stress test', 'hair', 'vet', 'car', 'recipe', 'drive'];
-  /* Parts for a goal that isn't an exam, by kind, in hours. They're a start: the person sets their own. */
+  /* Parts for a goal that isn't an exam, by kind, in hours. They're a start: the person sets their own.
+     mix: the parts take turns, a little of each every week (a race's runs), the way an exam's do */
   const GOAL_TEMPLATES = [
-    { id: 'race', kind: 'event', words: ['marathon', 'half marathon', 'triathlon', 'ironman', '5k', '10k', 'race'], parts: [['Easy runs', 40], ['Long runs', 35], ['Speed work', 15], ['Strength and stretching', 10]] },
+    { id: 'race', kind: 'event', mix: true, words: ['marathon', 'half marathon', 'triathlon', 'ironman', '5k', '10k', 'race'], parts: [['Easy runs', 40], ['Long runs', 35], ['Speed work', 15], ['Strength and stretching', 10]] },
     { id: 'thesis', kind: 'project', words: ['thesis', 'dissertation', 'capstone', 'manuscript', 'write a book', 'novel'], parts: [['Pick the question and plan', 20], ['Read and take notes', 60], ['Research or gather data', 80], ['Write the draft', 80], ['Revise', 40], ['Finish and turn it in', 10]] },
     { id: 'launch', kind: 'project', words: ['launch', 'go live', 'website', 'portfolio', 'start a business', 'business plan'], parts: [['Plan the launch', 4], ['Build what’s left', 20], ['Test it', 6], ['Tell people', 6], ['Launch day', 2]] },
     { id: 'project', kind: 'project', words: ['project', 'renovation', 'remodel', 'build'], parts: [['Plan it', 2], ['Draft it', 10], ['Review it', 5], ['Finish it', 3]] },

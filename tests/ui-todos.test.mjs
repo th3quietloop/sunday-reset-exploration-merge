@@ -63,13 +63,23 @@ test('steps that don’t fit before the day get real choices: more a day, a late
   assert.equal(plan.ok, false);
   const ch = plain(rules.spreadChoices(st, task(st), opts, MON, 7 * 60));
   assert.equal(JSON.stringify(st), before, 'working out the choices changes nothing');
-  assert.deepEqual(ch.map((c) => c.kind), ['cap', 'by', 'drop']);
-  const cap = ch.find((c) => c.kind === 'cap'), by = ch.find((c) => c.kind === 'by'), drop = ch.find((c) => c.kind === 'drop');
+  assert.deepEqual(ch.map((c) => c.kind), ['cap', 'by'], 'taking one step off wouldn’t make ' + plan.unplaced.length + ' fit, so it isn’t offered');
+  const cap = ch.find((c) => c.kind === 'cap'), by = ch.find((c) => c.kind === 'by');
   assert.ok(M.spreadPlan(st, 'room', Object.assign({}, opts, { cap: cap.cap }), MON, 7 * 60).ok, 'the cap it offers holds every step');
   assert.ok(!M.spreadPlan(st, 'room', Object.assign({}, opts, { cap: rules.capStep(cap.cap, -1) }), MON, 7 * 60).ok, 'and it is the least that does');
   assert.ok(M.spreadPlan(st, 'room', Object.assign({}, opts, { by: by.by }), MON, 7 * 60).ok, 'the day it offers holds every step');
   assert.ok(!M.spreadPlan(st, 'room', Object.assign({}, opts, { by: M.addDays(by.by, -1) }), MON, 7 * 60).ok, 'and it is the first that does');
-  assert.equal(drop.step, plan.unplaced[plan.unplaced.length - 1], 'the step it offers to take off is the last that doesn’t fit');
+  // one step short: taking that one off, by name, is offered, and the rest fit without it
+  const one = board(null, '2026-10-16');
+  const p1 = M.spreadPlan(one, 'room', opts, MON, 7 * 60);
+  assert.equal(p1.unplaced.length, 1);
+  const drop = plain(rules.spreadChoices(one, task(one), opts, MON, 7 * 60)).find((c) => c.kind === 'drop');
+  assert.ok(drop, 'taking it off is offered');
+  assert.deepEqual(drop.steps, p1.unplaced);
+  assert.equal(drop.name, task(one).steps.find((s) => s.id === p1.unplaced[0]).name, 'named');
+  const rest = JSON.parse(JSON.stringify(one));
+  rest.tasks.find((t) => t.id === 'room').steps = task(one).steps.filter((s) => !drop.steps.includes(s.id));
+  assert.ok(M.spreadPlan(rest, 'room', opts, MON, 7 * 60).ok, 'and without it the rest fit');
   // everything fits: nothing to choose
   const fits = board();
   assert.deepEqual(plain(rules.spreadChoices(fits, task(fits), { days: 'daily', cap: 15, when: 'any' }, MON, 7 * 60)), []);

@@ -28,3 +28,9 @@
   .k-sheet.c-ai h2 { font-size: 26px; }
   .c-ai-acts > * { flex: 1 1 auto; }
 }
+/* Larger text reaches this sheet as it reaches every panel, a size up (zoom 1.14, style.css). Its width and height
+   are held to the window as drawn: lengths grow with the zoom and a percent of the window doesn't, so the room
+   around it is divided by 1.14 */
+body.big-text .k-sheet.c-ai { zoom: 1.14; width: min(560px, calc((100vw - 32px) / 1.14)); max-height: calc((100vh - 60px) / 1.14); }
+@media (max-width: 759px) { body.big-text .k-sheet.c-ai { width: calc((100vw - 16px) / 1.14) !important; } }
+@media (max-height: 640px) { body.big-text .k-sheet.c-ai { max-height: calc(100% - (16px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)) / 1.14); } }

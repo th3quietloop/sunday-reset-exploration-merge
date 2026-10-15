@@ -54,6 +54,39 @@
   .k-sheet.c-intro .c-intro-l { position: sticky; top: 0; }
 }
 
+/* == every other sheet on a short window keeps its buttons in view (Oct 14, the polish pass) ==
+   The Smart breakdowns sheet had Turn on and Not now under the fold on the folded Duo (386 by 580): its buttons
+   pin at its foot on the intro pages' terms, the sheet's own color behind them and a hairline over them, while
+   the words scroll above. The line under them comes along at the end. The board's own sheets (a link code, a
+   board that couldn't be read, a week that didn't open) pin their row of buttons the same way. */
+@media (max-height: 640px) {
+  .k-sheet.c-ai { padding-bottom: 0 !important; background: #201F20 !important; scroll-padding-bottom: 96px; }
+  .k-sheet.c-ai .c-ai-acts { position: sticky; bottom: 0; z-index: 2; flex-wrap: nowrap; margin: 12px -36px 0; padding: 12px 36px max(14px, env(safe-area-inset-bottom, 0px)); background: #201F20; box-shadow: 0 -1px 0 var(--sf-edge, rgba(255, 255, 255, 0.1)); }
+  .k-sheet.c-ai .c-ai-small { margin: 0; padding: 4px 0 18px; }
+  .sheet:not(.onb) { background: #201F20 !important; }
+  .sheet:not(.onb) > .actions { position: sticky; bottom: -24px; z-index: 3; margin: 4px -28px -24px; padding: 12px 28px max(16px, env(safe-area-inset-bottom, 0px)); background: #201F20; box-shadow: 0 -1px 0 var(--sf-edge, rgba(255, 255, 255, 0.1)); }
+}
+/* the week's plan on a short phone's window (the folded Duo, a small phone): Start Sunday Reset and Open the week leave
+   the top of a long page and pin at its foot, as the intro pages' do, so a way on is always in reach while the week
+   scrolls above them (each closes the plan); side by side where there's room, stacked on a phone held upright */
+@media (max-height: 640px) and (max-width: 759px) {
+  .k-sheet.c-plan { display: flex; flex-direction: column; padding-bottom: 0 !important; background: #201F20 !important; scroll-padding-bottom: 150px; }
+  .k-sheet.c-plan .c-plan-head { display: contents; }
+  .k-sheet.c-plan .c-plan-head > div:first-child { padding-right: 52px; margin-bottom: 18px; }
+  .k-sheet.c-plan .c-plan-acts { order: 9; position: sticky; bottom: 0; z-index: 2; flex-direction: column; gap: 8px; margin: 12px -18px 0; padding: 12px 18px max(12px, env(safe-area-inset-bottom, 0px)); background: #201F20; box-shadow: 0 -1px 0 var(--sf-edge, rgba(255, 255, 255, 0.1)); }
+  .k-sheet.c-plan .c-plan-acts > .c-go, .k-sheet.c-plan .c-plan-acts > .c-ghost { width: 100%; min-height: 52px; }
+}
+@media (max-height: 640px) and (min-width: 481px) and (max-width: 759px) {
+  .k-sheet.c-plan .c-plan-acts { flex-direction: row; }
+  .k-sheet.c-plan .c-plan-acts > .c-go, .k-sheet.c-plan .c-plan-acts > .c-ghost { flex: 1 1 0; min-width: 0; width: auto; }
+}
+/* a phone's width: the sheet's sides are 18 there (variant.css), and the two buttons share the foot, 52 tall where a
+   thumb is */
+@media (max-height: 640px) and (max-width: 759px) {
+  .k-sheet.c-ai .c-ai-acts { margin: 12px -18px 0; padding-left: 18px; padding-right: 18px; }
+  .k-sheet.c-ai .c-ai-acts > .c-go, .k-sheet.c-ai .c-ai-acts > .c-ghost { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 0 16px; }
+}
+
 /* == a phone on its side, or the Duo stood on its edge from the Home Screen: the page runs under the notch, the
    rounded corners, or the status column, so a sheet centers in the room between them and Settings starts clear
    of them (the safe edges are 0 where there's nothing in the way) == */
@@ -135,4 +168,24 @@ body.phone .todayview { padding-left: max(12px, env(safe-area-inset-left, 0px));
 /* the phone's day on the desk, clear of the notch and the rounded corners either way up */
 .phonebar { left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); }
 .pd-add { right: max(16px, calc(env(safe-area-inset-right, 0px) + 8px)); }
+/* its round Add steps aside for the version's own sheets too (the setup's first page, the plan, Smart breakdowns), as
+   it does for the board's: now that a phone can open on its desk, one sat over a sheet's foot (Oct 14) */
+body.k-sheet-open .pd-add { display: none; }
 body.phone-desk .btools { left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); }
+
+/* == toasts on the phone's list on its side: over the right column, the day's blocks, never across the block you're
+   in on the left, where they covered its Done early and Didn't get to it (app.js listToasts measures the column).
+   Not while a panel, the meal board, or a mat has them somewhere of its own == */
+body.phone.c-toasts-col:not(.c-toasts-top):not(.c-toasts-up):not(:has(#side:not([hidden]))) #toasts { left: var(--toast-l, 12px); right: var(--toast-r, 12px); }
+
+/* == toasts on a phone: solid, and never over what was touched (Oct 14) ==
+   Russell on his iPhone: a toast at the top sat see-through over the list's cards and was hard to read. On the
+   phone's views a toast is the solid surface (#232325; white words about 15 to 1), with no glass. app.js
+   phoneToasts puts them in the half of the screen away from the last touch: body.c-toasts-high stands them at the
+   top, clear of the status bar on the list and under the phone's bar on its desk; otherwise they keep their place
+   over the add line. (With a panel open on the list they're at the top already, mealspeople.css.) */
+body.phone .toast, body.phone-desk .toast { background: var(--sf-solid) !important; -webkit-backdrop-filter: none; backdrop-filter: none; }
+body.phone.c-toasts-high:not(.c-toasts-top):not(.c-toasts-up) #toasts { top: max(12px, env(safe-area-inset-top, 0px)); bottom: auto !important; }
+body.phone-desk.c-toasts-high:not(.c-toasts-top):not(.c-toasts-up) #toasts { top: var(--toast-top, 12px); bottom: auto !important; right: max(12px, env(safe-area-inset-right, 0px)) !important; }
+/* (on the phone's desk a panel's toasts start under the phone's bar too, not over it) */
+body.feel.phone-desk:has(#side:not([hidden])) #toasts { top: var(--toast-top, 12px); }

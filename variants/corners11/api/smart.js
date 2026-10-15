@@ -5,16 +5,17 @@
    device, and sends only the words of that one to-do or goal, with the step size or the goal's date.
    Nothing here keeps those words or writes them to a log.
 
-     GET  /api/smart   200 { ready: true } when ANTHROPIC_API_KEY is set, else 503 { ready: false }
+     GET  /api/smart   200 { ready: true } when ANTHROPIC_API_KEY is set, else 200 { ready: false }: the page asks
+                       on every load, and a site without the key isn't an error (a browser logs any 503)
      POST /api/smart   { kind: 'steps', name, size: 'small' | 'medium' | 'big' }
                          200 { steps: [{ name, dur }] }   dur in minutes, 5 to 240 on a 5 minute grid,
                                                           the first step 10 or less
                        { kind: 'parts', name, date: 'YYYY-MM-DD' }
                          200 { parts: [{ name, min }], note }
 
-   Anything else answers { error, message }, the error one of not_ready (503), too_many (429, with
-   Retry-After), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when Claude
-   took longer than 15 seconds), so the page can keep its built-in steps.
+   Every other answer is { error, message }, the error one of not_ready (503, a POST with no key), too_many
+   (429, with Retry-After), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when
+   Claude took longer than 15 seconds), so the page can keep its built-in steps.
 
    Vercel runs a file in api/ as a Node.js function; the default export is the Web standard fetch form.
    Characters past ASCII in patterns are written as \u{...} escapes, so no dash sits in this file. */
@@ -59,6 +60,9 @@ export function cleanName(text, max = 60, sentence = false) {
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.;:!?])/g, '$1')
     .replace(/([,;:])(?:\s*[,;:])+/g, '$1')
+    /* a pause and a stop side by side keep the stop, so a dash and a filler word never leave ",." behind */
+    .replace(/[,;:]+(?=[.!?])/g, '')
+    .replace(/([.!?])[,;:]+/g, '$1')
     .trim()
     .replace(/^[\s,;:.!?]+/, '')
     .replace(/[\s,;:]+$/, '');
@@ -299,7 +303,8 @@ export function makeHandler(opts = {}) {
   const limits = opts.limiter || makeLimiter({ now });
   return async function handle(request) {
     const method = request.method;
-    if (method === 'GET' || method === 'HEAD') return env.ANTHROPIC_API_KEY ? reply(200, { ready: true }) : reply(503, { ready: false });
+    /* the readiness check: yes or no, never an error (real errors are for asks, the POSTs) */
+    if (method === 'GET' || method === 'HEAD') return reply(200, { ready: !!env.ANTHROPIC_API_KEY });
     if (method !== 'POST') return fail(405, 'bad_request', 'Ask with GET or POST.', { allow: 'GET, POST' });
     if (!sameSite(request)) return fail(403, 'bad_request', 'This answers Sunday Reset’s own page only.');
     if (!/^application\/json\b/i.test(request.headers.get('content-type') || '')) return fail(415, 'bad_request', 'Send the ask as JSON.');

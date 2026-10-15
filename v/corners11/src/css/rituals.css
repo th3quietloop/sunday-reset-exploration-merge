@@ -1,0 +1,194 @@
+/* == V11, the rituals walk (Oct 15): the Sunday Reset, meals, and Settings, walked as Russell and Kim doing the reset at
+   7 pm on Sunday, and as a parent who batch cooks (docs/walk/reset-meals-settings.md). Loads with the other area
+   files, in name order. Type stays on the scale (12, 13, 14, 16, 19, 22, 26, 30), words pass 4.5 to 1 on the
+   surface (#AFAFAF is the quietest), and every target reaches 44 px. == */
+
+/* == who's cooking, settled at the table: the finish's nights with a dish and nobody cooking it, a tap for each cook == */
+.c-fin-cook { margin: 8px 0 2px; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px var(--sf-edge, rgba(255, 255, 255, 0.1)); }
+.c-fin-cookh { margin: 0 0 4px; font: 600 14px/1.3 var(--k-font); color: var(--tx, #FFFFFF); }
+.c-fin-cookrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 0 4px; }
+.c-fin-cookrow + .c-fin-cookrow { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.c-fin-cookrow .c-fin-day { flex: none; min-width: 32px; font: 600 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-fin-cookrow .c-fin-name { flex: 1 1 120px; min-width: 0; font: 400 14px/1.3 var(--k-font); color: var(--tx, #FFFFFF); overflow-wrap: anywhere; }
+.c-fin-cooks { display: flex; flex-wrap: wrap; gap: 6px; }
+.k .c-opt.c-fin-cookbtn, .c-opt.c-fin-cookbtn { position: relative; min-height: 36px; border: 0; background: transparent; color: var(--tx, #FFFFFF); font: 600 14px/1 var(--k-font); cursor: pointer; }
+.c-opt.c-fin-cookbtn:hover { background: var(--sf-hover, rgba(255, 255, 255, 0.1)); }
+.c-opt.c-fin-cookbtn::after { content: ''; position: absolute; inset: -4px; }
+.c-opt.c-fin-cookbtn:active { transform: translateY(1px); }
+.c-opt.c-fin-cookbtn:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+/* a night's dish keeps two lines beside who cooks it, before it's cut */
+.c-fin-card:not(.c-fin-list) .c-fin-row .c-fin-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* == a question that's still open says so beside it, quietly: Who's cooking? Not picked yet == */
+.c-notyet { margin-left: 8px; font: 500 12px/1.3 var(--k-font); letter-spacing: 0; text-transform: none; color: var(--tx-3, #AFAFAF); }
+.c-kick.c-ask { color: var(--tx, #FFFFFF); }
+
+/* == the dinner panel's grocery line: a quiet row, so the panel's one gold is its own == */
+#side .c-quietcta, .c-quietcta { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; margin-top: 8px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--sf-raised, rgba(255, 255, 255, 0.06)); box-shadow: inset 0 0 0 1px var(--sf-edge, rgba(255, 255, 255, 0.1)); color: var(--tx, #FFFFFF); font: 600 14px/1.3 var(--k-font); text-align: left; cursor: pointer; }
+.c-quietcta small { display: block; margin-top: 2px; font: 400 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-quietcta:hover { background: var(--sf-hover, rgba(255, 255, 255, 0.1)); }
+.c-quietcta:active { transform: translateY(1px); }
+.c-quietcta:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+
+/* == Settings: one card for keeping the week, and the line about two phones == */
+.c-keepcard .dcard-h { font-size: 16px; }
+.c-keepcard .dsec-line { margin: 6px 0 0; }
+.c-twophones { margin-top: 10px; }
+
+@media (prefers-reduced-motion: reduce) { .c-quietcta:active, .c-opt.c-fin-cookbtn:active { transform: none; } }
+
+/* == the meal board: Fill the week, asked once ==
+   Two tiles over the board, white on the one showing; under them the proposal, whose Use this plan (or Keep all) is
+   the one gold thing while it's up, so Done steps back to a quiet button */
+.c-fillways { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.c-fillway { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--tx, #FFFFFF); text-align: left; cursor: pointer; }
+.c-fillway:hover { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.c-fillway:active { transform: translateY(1px); }
+.c-fillway:focus-visible { outline: 3px solid #F2CF7A; outline-offset: 2px; }
+.c-fillway.on, .c-fillway[aria-pressed="true"] { background: #FFFFFF; box-shadow: none; color: #1C1C1E; cursor: default; }
+.c-fillway canvas { flex: none; width: 18px !important; height: 18px !important; }
+.c-fillway-w { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-fillway-w b { font: 600 16px/1.25 var(--k-font); }
+.c-fillway-w small { font: 500 13px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-fillway.on .c-fillway-w small { color: #3A3A3C; }
+.c-prepadds { margin: 2px 0 0; font: 600 14px/1.35 var(--k-font); color: var(--tx, #FFFFFF); }
+/* the Meal prep block's switch says its whole time, right before dinner, on two lines where one won't hold it */
+.k .c-opt.c-preptog, .c-opt.c-preptog { height: auto; padding-top: 10px; padding-bottom: 10px; line-height: 1.3; text-align: left; white-space: normal; }
+.c-opt.c-preptog * { white-space: normal; overflow: visible; text-overflow: clip; }
+/* (Fill the week and Same as an earlier week, while their bar is open: a stronger ring, since white fill is for a pick) */
+.k .c-again.on, .c-again.on { box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-mat.c-proposing .c-mat-head .c-go { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35); color: var(--tx, #FFFFFF); }
+.c-mat.c-proposing .c-mat-head .c-go:hover { background: var(--sf-hover, rgba(255, 255, 255, 0.1)); }
+/* the weeks planned before, a tap each */
+.c-weekpick { display: flex; flex-direction: column; gap: 8px; }
+.c-weekpick > .c-opt { align-self: flex-start; background: transparent; border: 0; cursor: pointer; }
+.c-weekpick-rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.c-weekpick-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 14px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--tx, #FFFFFF); text-align: left; cursor: pointer; }
+.c-weekpick-row:hover { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.c-weekpick-row:active { transform: translateY(1px); }
+.c-weekpick-row:focus-visible { outline: 3px solid #F2CF7A; outline-offset: 2px; }
+.c-weekpick-row b { font: 600 16px/1.25 var(--k-font); }
+.c-weekpick-row span { font: 500 13px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-sugline > .c-opt, .c-sugline .c-sugbtns > .c-opt { background: transparent; border: 0; cursor: pointer; }
+/* an idea's x reaches 44 px; what shows is the small cream circle it always was */
+.c-propx { width: 44px !important; height: 44px !important; top: -14px !important; right: -14px !important; border: 0; background: radial-gradient(circle, var(--cream, #FFFFFF) 0 12px, transparent 12.5px) !important; box-shadow: none !important; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); cursor: pointer; }
+.c-propx::before { display: none; }
+
+/* == the meal board on a small screen: Show is one button with a menu, so the first screen holds the week == */
+.c-mealtoggles.c-showfold { position: relative; }
+.c-mealtoggles.c-showfold .c-tlabel { display: none; }
+.c-mealtoggles.c-showfold.open { flex-wrap: wrap; }
+.k .c-again.c-showbtn, .c-again.c-showbtn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+@media (max-width: 599px) {
+  .c-meals .c-meal-top { flex-wrap: wrap; gap: 8px; }
+  /* Fill the week and Same as an earlier week share a row, a little tighter; on a narrower phone the second wraps
+     whole under the first, never cut off at the edge */
+  .c-meals .c-meal-acts { flex-wrap: wrap; gap: 8px; }
+  .c-meals .c-meal-acts > * { flex: none; }
+  .c-meals .c-meal-acts > .c-again { padding: 0 12px; gap: 6px; }
+  /* the list's actions keep their words on one line each; three wrap as whole buttons */
+  .c-shop-acts > * { flex: 1 1 auto; white-space: nowrap; }
+}
+/* the store view has no week arrows, so its kicker lines up with its title */
+.c-mat.c-store .c-weeknav { margin-left: 0; }
+
+/* == the open Duo gets the book: the seven days across on the left page, the meals on the right == */
+.c-mat.c-meals.c-book .c-meal-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 300px); gap: 16px; flex: 1; min-height: 0; }
+.c-mat.c-meals.c-book .c-meal-main { overflow-y: auto; }
+.c-mat.c-meals.c-book .c-meal-side { background: rgba(0, 0, 0, 0.12); overflow: hidden; }
+.c-mat.c-meals.c-book .c-meal-scroll { overflow-y: auto; padding: 12px; }
+.c-mat.c-meals.c-book .c-mealgrid { min-width: 0; grid-template-columns: 64px repeat(7, minmax(0, 1fr)); gap: 4px; padding: 8px; }
+.c-mat.c-meals.c-book .c-mealgrid .c-mcell { min-height: 60px; padding: 3px; }
+.c-mat.c-meals.c-book .c-mealgrid .c-mcell .c-dblock { min-height: 52px; padding: 6px 6px 8px; }
+.c-mat.c-meals.c-book .c-mealgrid .c-mcell .c-dblock b { font-size: 12px; }
+/* a meal with who's cooking keeps room for its tag under its name, which takes two lines here before it's cut */
+.c-mat.c-meals.c-book .c-mealgrid .c-mcell .c-dblock.c-in-cell:has(.c-cook) { padding-bottom: 26px; }
+.c-mat.c-meals.c-book .c-mealgrid .c-mcell .c-dblock.c-in-cell b { -webkit-line-clamp: 2; }
+.c-mat.c-meals.c-book .c-mealgrid .c-mrow { font-size: 13px; padding: 6px; }
+
+/* == a day's card keeps its foot on screen: the middle scrolls, Take it off and Done stay == */
+.c-mpop:not(.c-sheet) { max-height: min(560px, calc(100vh - 24px)) !important; overflow-y: auto; }
+.c-mpop .c-mpop-foot { position: sticky; bottom: -16px; z-index: 1; margin: 0 -16px -16px; padding: 12px 16px 16px; background: var(--sf-solid, #232325); border-radius: 0 0 20px 20px; }
+.c-mpop.c-sheet .c-mpop-foot { bottom: calc(-18px - env(safe-area-inset-bottom)); margin: 0 -16px calc(-18px - env(safe-area-inset-bottom)); padding-bottom: calc(18px + env(safe-area-inset-bottom)); border-radius: 0; }
+
+/* == the grocery list: things that aren't for a meal, and the store view == */
+.c-shop-add { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.c-shop-add .c-find { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: #FFFFFF; box-shadow: inset 0 0 0 1.5px rgba(123, 83, 32, 0.35); color: #2A2118; font: 500 16px/1.2 var(--k-font); }
+/* on the paper the field's edge is the paper's brown at 70 percent, about 3.1 to 1 (at 35 it read 1.6), and a ring
+   on the paper is the dark ring, since the corners' white ring vanishes there; the field's own focus edge still wins */
+.c-shop-paper .c-shop-add .c-find { box-shadow: inset 0 0 0 1.5px rgba(123, 83, 32, 0.7); }
+.c-shop-add .c-find::placeholder { color: #76664F; }
+.c-shop-add .c-find:focus, .c-shop-paper .c-shop-add .c-find:focus { outline: none; box-shadow: inset 0 0 0 2px #4A3418; }
+.c-shop-paper button:focus-visible, .c-shop-paper input:focus-visible, .c-shop-paper label:focus-visible { outline-color: var(--ring-dark, #1E1408); }
+.c-shop-paper .c-shop-add .c-again { min-height: 44px; background: #4A3418; box-shadow: none; color: #FFFFFF; }
+.c-shop-paper .c-shop-add .c-again:hover { background: #5C4024; }
+.c-shop-off { flex: none; width: 44px; height: 44px; margin: -8px -10px -8px auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.c-shop-off:hover { background: rgba(123, 83, 32, 0.12); }
+.c-shop-off:focus-visible { outline: 2px solid #4A3418; outline-offset: -2px; }
+.c-shop-off canvas { width: 12px !important; height: 12px !important; }
+.c-cartfold { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; padding: 0 12px; border: 0; border-radius: 10px; background: rgba(123, 83, 32, 0.1); color: #4A3418; font: 600 14px/1.2 var(--k-font); cursor: pointer; }
+.c-cartfold:focus-visible { outline: 2px solid #4A3418; outline-offset: 2px; }
+.c-cartfold canvas { width: 12px !important; height: 12px !important; }
+.c-shop-group.c-incart { margin-top: 4px; }
+.c-storebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.c-storebar[hidden] { display: none; }
+.c-storebar .c-mathow { margin: 0; }
+.c-mat.c-store .c-meal-top, .c-mat.c-store .c-sugbar, .c-mat.c-store .c-mealgrid, .c-mat.c-store .c-prep, .c-mat.c-store .c-meal-side, .c-mat.c-store .c-shopjump, .c-mat.c-store .c-weekbtn, .c-mat.c-store > .c-mat-in > .c-mathow { display: none !important; }
+.c-mat.c-store .c-meal-body, .c-mat.c-meals.c-book.c-store .c-meal-body { display: block; }
+.c-mat.c-store .c-shop-tog { cursor: default; }
+
+/* == the reset's Meals step: a week with nothing planned says the two ways to fill it == */
+.c-ms-none, body.c-resetting .rack.resetting .rack-body > .c-ms-none { flex: 1 1 100%; min-width: 0; margin: 4px 0 0; white-space: normal; font: 400 14px/1.45 var(--k-font); color: var(--tx-2, #CDCDCD); }
+/* Same as an earlier week, See the meals, and the step's Fill the week carry a mark beside their words, as Fill the week does */
+.c-earlierbtn, .c-tomeals, .c-ms-fill, .c-ms-again { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.c-earlierbtn canvas, .c-tomeals canvas, .c-ms-fill canvas, .c-ms-again canvas { width: 14px !important; height: 14px !important; }
+.c-earlierbtn[hidden] { display: none; }
+/* the step's two ways sit on their own row under its heading, from the left, wrapping whole where the panel is narrow */
+.c-ms-head:has(.c-ms-acts) .c-ms-acts { flex: 1 1 100%; justify-content: flex-start; }
+
+/* == People: a routine said quietly under what's planned, and on a phone the ideas first, sliding sideways == */
+.pp-line.pp-usual { margin-top: 6px; font-size: 13px; color: var(--tx-3, #AFAFAF); }
+body.c-resetting .rack.resetting .rack-body > .rsec.pp-ideas.pp-first { flex: 1 1 100%; min-width: 0; margin-top: 4px; }
+.rsec.pp-ideas.pp-first .rsec-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.rsec.pp-ideas.pp-first .rsec-row > * { flex: none; }
+
+/* == Look back's two fields: an edge you can see, 3 to 1 on the panel (the surface's own edge, white at 10 percent, read
+   1.6 to 1), and their focus edge still wins == */
+.rack .c-lb-field .input, .c-lb-field .input { box-shadow: inset 0 0 0 1px var(--field-edge, rgba(255, 255, 255, 0.42)); }
+.rack .c-lb-field .input:focus, .c-lb-field .input:focus { box-shadow: inset 0 0 0 2px var(--tx-2, #CDCDCD); }
+
+/* == the finish: a picture of the plan is the second way to send it == */
+.k .c-again.c-fin-pic, .c-again.c-fin-pic { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; min-height: 44px; margin-top: 8px; background: transparent; color: var(--tx, #FFFFFF); cursor: pointer; }
+.c-fin-pic canvas { width: 14px !important; height: 14px !important; }
+
+/* == Look ahead: the holiday grid's Done at its top, in view while the tiles scroll == */
+.c-ah-holtop { position: sticky; top: -4px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -4px 8px; padding: 8px 4px; background: var(--sf-solid, #232325); }
+.c-ah-holtop .c-ah-wkh { margin: 0; }
+
+/* == Your time on a sheet (a phone): your blocks in one row that slides sideways, right under the suggestion, so the
+   step's two ways (the one tap, and your own pick) share the first screen == */
+body.c-resetting.c-rsheet .rack.resetting .yt-blocks { margin-top: 0; }
+body.c-resetting.c-rsheet .rack.resetting .yt-hd p { margin-top: 2px; font-size: 13px; }
+/* on a sheet the tiles' own grips say they drag, and the hours say enough without the count of blocks, so the row of
+   your blocks makes the first screen */
+body.c-resetting.c-rsheet .rack.resetting .yt-hd > p:not([class]), body.c-resetting.c-rsheet .rack.resetting .yt-sum .yt-sub { display: none; }
+body.c-resetting.c-rsheet .rack.resetting .yt-grid { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+body.c-resetting.c-rsheet .rack.resetting .yt-grid > * { flex: none; width: 148px; }
+body.c-resetting.c-rsheet .rack.resetting .yt-sum .yt-days { margin-top: 8px; }
+
+/* == To-dos: a to-do made for a date that's over says so between its tile and its two answers == */
+.c-tdw.c-tdgone .c-tdgone-q { margin: 0; padding: 8px 12px 4px; background: var(--sf-hover, rgba(255, 255, 255, 0.1)); font: 500 13px/1.35 var(--k-font); color: var(--tx, #FFFFFF); }
+.c-tdw.c-tdgone > .tile { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+/* what this reset gave a time stays in the step under Has a time, each a tap from its to-do */
+.c-tdhas { flex: 1 1 100%; min-width: 0; margin-top: 4px; }
+.c-tdhas-h { margin: 10px 0 4px; font: 600 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3, #AFAFAF); }
+.rack .c-tdhas-row, .c-tdhas-row { display: flex; align-items: center; gap: 12px; width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 6px 8px; border: 0; border-radius: 10px; background: none; color: var(--tx, #FFFFFF); text-align: left; cursor: pointer; }
+.c-tdhas-row:hover { background: var(--sf-hover, rgba(255, 255, 255, 0.1)); }
+.c-tdhas-row:active { transform: translateY(1px); }
+.c-tdhas-row:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: -2px; }
+.c-tdhas-row .c-tdhas-w { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-tdhas-row b { font: 600 14px/1.3 var(--k-font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-tdhas-row small { font: 500 13px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-tdhas-row canvas { flex: none; width: 14px !important; height: 14px !important; }
+.c-shop-paper .c-shop-add .c-again { display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; }
+.c-shop-add .c-again canvas { width: 12px !important; height: 12px !important; }

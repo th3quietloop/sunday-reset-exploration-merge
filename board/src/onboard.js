@@ -19,16 +19,21 @@
   const PAINS = [
     { id: 'head', name: 'Too much lives in my head', line: 'Dates, to-dos, who needs what', icon: 'note2', before: 'In your head', after: 'On the board', how: 'Dates and to-dos live on your week, where you can see them.', research: 'scullin', lean: 'To-dos and the Sunday Reset', tries: ['todo'] },
     { id: 'slip', name: 'Things slip through the cracks', line: 'A due date sneaks up on me', icon: 'flag', before: 'Remembered late', after: 'A day and a time', how: 'Each to-do gets a due date and a time to do it.', research: 'gollwitzer', lean: 'Due soon and the notepad', tries: ['todo'] },
+    /* V11 (Oct 15, the first-visit walk): the pain a version with goals answers. goals: offered only where the board
+       has goals (painsFor's opts.goals); help: picking it says yes to A goal with a date on the next question */
+    { id: 'big', name: 'Big things are hard to start', line: 'An exam, a paper, a move', icon: 'mountain', before: 'Too big to start', after: 'A little each day', how: 'A goal with a date becomes a little time on the days before it.', research: 'gollwitzer', lean: 'Goals: a little time each day until the date', tries: ['todo'], help: 'goal', goals: true },
     { id: 'runs', name: 'The week runs me', line: 'It’s Thursday before I look up', icon: 'calendar', before: 'Thursday already?', after: 'Set on Sunday', how: 'About 20 minutes on Sunday lays out the week ahead.', research: 'masicampo', lean: 'The Sunday Reset', tries: [] },
-    { id: 'crash', name: 'My plans fall apart', line: 'The day never fits what I planned', icon: 'overlap', before: 'More than fits', after: 'You see when a day is full', how: 'On the board, time is length, so a full day looks full.', research: 'buehler', lean: 'Kinds of day and moving blocks', tries: [] },
+    /* (a block running past the end of its lane: two linked rings read as wedding rings at tile size) */
+    { id: 'crash', name: 'My plans fall apart', line: 'The day never fits what I planned', icon: 'overrun', before: 'More than fits', after: 'You see when a day is full', how: 'On the board, time is length, so a full day looks full.', research: 'buehler', lean: 'Kinds of day and moving blocks', tries: [] },
     { id: 'me', name: 'I never get time for myself', line: 'Everything else comes first', icon: 'sun', before: 'Squeezed out', after: 'Hours that are yours', how: 'Time for you goes on the board, and it counts your hours.', research: 'sharif', lean: 'Block library and the hours that are yours', tries: [], focus: 'make' },
     { id: 'dinner', name: 'Dinner is a nightly scramble', line: 'What’s for dinner, at 5 pm', icon: 'pot', before: 'The 5 pm scramble', after: 'Decided on Sunday', how: 'Pick the week’s dinners once, and the grocery list fills in.', research: 'ducrot', lean: 'Dinners and the grocery list', tries: ['dinner'], help: 'dinners' },
     { id: 'us', name: 'Not enough time together', line: 'We’re two people passing', icon: 'heart', before: 'Whenever we can', after: 'An evening each week', how: 'An evening together stays on the board, every week.', research: 'tonietto', lean: 'Time together', tries: [], help: 'together', partnered: true },
     { id: 'load', name: 'I carry the planning for everyone', line: 'Noticing, deciding, remembering', icon: 'people', before: 'Carried alone', after: 'Written down, ready to hand off', how: 'What you keep track of is written down, where others can see it.', research: 'daminger', lean: 'To-do groups and the Sunday Reset', tries: ['todo'], notAlone: true, focus: 'home' }
   ];
   const painById = (id) => PAINS.find((p) => p.id === id);
-  /* the pains that fit who's at home: nobody living alone is asked about time together */
-  const painsFor = (home) => PAINS.filter((p) => !(p.partnered && home !== 'partner' && home !== 'family') && !(p.notAlone && (home || 'solo') === 'solo'));
+  /* the pains that fit who's at home: nobody living alone is asked about time together. opts.goals: the board
+     has goals, so Big things are hard to start is one of them */
+  const painsFor = (home, opts) => PAINS.filter((p) => !(p.partnered && home !== 'partner' && home !== 'family') && !(p.notAlone && (home || 'solo') === 'solo') && !(p.goals && !(opts && opts.goals)));
 
   /* The studies the app leans on, each said plainly and no bigger than it is, with what it means for
      the board. big and small are the card on a phone: the number first, then one line. Every link is a DOI checked against Crossref on Oct 1, 2026. */
@@ -64,15 +69,20 @@
 
   /* The steps of the first visit for these answers, each with its chapter. Asking why only follows a
      pick; drop off and pick up only for a family with kids; a try only for a part the board helps with.
-     Who's at home comes before what gets in the way, so the pains offered fit the home. */
-  function stepsFor(a) {
-    const pains = a.pains || [];
+     Who's at home comes before what gets in the way, so the pains offered fit the home.
+     opts (V11, Oct 15, the first-visit walk): phone, a calendar file can't come from a phone, so that step waits
+     in Getting started for a computer; asked, dinner is tried here only by someone who said dinner is a
+     scramble (everyone else finds Pick a dinner in Getting started), and their own words alone get the
+     research step's answer too. */
+  function stepsFor(a, opts) {
+    const o = opts || {}, pains = a.pains || [];
     const out = [['name', 'you'], ['home', 'you'], ['pains', 'you']];
-    if (pains.length) out.push(['why', 'you']);
+    if (pains.length || (o.asked && String(a.painOther || '').trim())) out.push(['why', 'you']);
     out.push(['help', 'you'], ['days', 'week'], ['work', 'week']);
     if (a.home === 'family' && (a.kids || []).length) out.push(['kids', 'week']);
-    out.push(['calendar', 'week'], ['try', 'try'], ['ahead', 'try']);
-    if (!a.help || a.help.dinners !== false) out.push(['dinner', 'try']);
+    if (!o.phone) out.push(['calendar', 'week']);
+    out.push(['try', 'try'], ['ahead', 'try']);
+    if ((!a.help || a.help.dinners !== false) && (!o.asked || pains.includes('dinner'))) out.push(['dinner', 'try']);
     if (pains.some((p) => (painById(p) || {}).tries.includes('todo'))) out.push(['todo', 'try']);
     out.push(['reset', 'plan'], ['build', 'plan'], ['plan', 'plan']);
     return out.map(([id, chapter]) => ({ id, chapter }));
@@ -203,24 +213,30 @@
       st.dinners[a.dinner.date] = { name: a.dinner.name || '', recipe: a.dinner.recipe || null, cook: a.dinner.cook || '', items: (a.dinner.items || []).slice() };
       on.push({ kind: 'dinner', name: a.dinner.name || '', cook: a.dinner.cook || '', date: a.dinner.date });
     }
-    if (a.todo && a.todo.name) {
-      const t = a.todo;
+    /* (V11: the to-do step can take several, one per line, for someone with too much in their head: a.more) */
+    [a.todo].concat(a.more || []).forEach((t) => {
+      if (!t || !t.name) return;
       if (t.kind === 'block' && t.date && t.start != null) {
         const r = M.placeAdd(st, t.date, { name: t.name, cat: t.cat || 'yours', icon: t.icon || 'star', dur: t.dur || 30, src: { type: 'custom' } }, t.start);
         if (r && r.ok) on.push({ kind: 'block', name: t.name, date: r.date || t.date, start: r.start, dur: t.dur || 30 });
         /* the time was taken (a locked block, or a full day): it's never lost, it waits in To do for that day */
         else on.push(todoOf(M, st, Object.assign({}, t, { due: t.date }), { taken: t.start }));
       } else on.push(todoOf(M, st, t));
-    }
-    /* what else gets in the way, in their words, waits in To do for the first reset (the plan says so, so it isn't listed twice) */
-    if (a.painOther && a.painOther.trim()) todoOf(M, st, { name: 'Look at: ' + a.painOther.trim().slice(0, 70), icon: 'note2' });
+    });
+    /* what else gets in the way, in their words, waits in To do for the first reset (the plan says so, so it isn't listed
+       twice); V11: unless it's the goal the setup is making, which the plan leads with instead */
+    if (a.painOther && a.painOther.trim() && !(a.goal && a.goal.from === 'other')) todoOf(M, st, { name: 'Look at: ' + a.painOther.trim().slice(0, 70), icon: 'note2' });
     return on;
   }
 
+  /* (V11: a to-do can come with its steps, from Break it down on the to-do step, and a due date joined to the date
+     See further ahead heard; the extra says which task it became, so a goal made from it can take it off the list) */
   function todoOf(M, st, t, extra) {
     const group = (st.groups.find((g) => g.id === 'inbox') || st.groups[0] || {}).id || null;
-    st.tasks.push({ id: M.newId('t'), name: t.name, group, icon: t.icon && t.icon !== 'star' ? t.icon : 'check', cat: t.cat || 'yours', dur: t.dur || null, due: t.due || null, repeat: null, done: false, steps: [] });
-    return Object.assign({ kind: 'todo', name: t.name, due: t.due || null }, extra || {});
+    const id = M.newId('t');
+    const steps = (t.steps || []).filter((s) => s && s.name).map((s, i) => ({ id: id + '-s' + (i + 1), name: s.name, dur: s.dur || 15, done: false }));
+    st.tasks.push({ id, name: t.name, group, icon: t.icon && t.icon !== 'star' ? t.icon : 'check', cat: t.cat || 'yours', dur: t.dur || null, due: t.due || null, repeat: null, done: false, steps });
+    return Object.assign({ kind: 'todo', id, name: t.name, due: t.due || null }, steps.length ? { steps: steps.length } : {}, extra || {});
   }
 
   /* The numbers the plan leads with, read from a usual week of the board that was built, the same way
@@ -276,7 +292,8 @@
   /* The lines the build step shows while it builds, each one from the answers, in the order a day goes. */
   function buildLines(M, a, st, extras, ics) {
     const out = ['Mornings from ' + M.clock(a.wake.wd) + ' on weekdays'];
-    if (!a.noWork && a.work.days.length) out.push('Work on ' + a.work.days.slice().sort((x, y) => ((x + 6) % 7) - ((y + 6) % 7)).map((d) => M.DAY_SHORT[d]).join(', '));
+    /* (V11: what fills the weekdays says its own name: Class, or Work and class) */
+    if (!a.noWork && a.work.days.length) out.push(fillName(a) + ' on ' + a.work.days.slice().sort((x, y) => ((x + 6) % 7) - ((y + 6) % 7)).map((d) => M.DAY_SHORT[d]).join(', '));
     const ate = a.meals ? ['Breakfast', 'Lunch'].filter((m) => a.meals[m.toLowerCase()]) : [];
     if (ate.length) out.push(ate.join(' and ') + ' at a time each day');
     const kids = a.home === 'family' ? (a.kids || []) : [];
@@ -292,12 +309,68 @@
     /* what the tries did goes on the board too, so the build says so in their own words */
     const dayOf = (d) => M.DAY_LONG[M.weekday(d)];
     (extras || []).forEach((x) => {
-      if (x.kind === 'soon') out.push('Marking ' + x.name);
+      /* (V11: a date goes on the board, said plainly: Putting Bar exam on Tuesday, Feb 23, never Marking it) */
+      if (x.kind === 'soon') out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + ', ' + M.dateText(x.date));
       else if (x.kind === 'block' && x.date) out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + (x.start != null ? ' at ' + M.clock(x.start) : ''));
       else if (x.kind === 'dinner' && x.date) out.push(x.name ? x.name + ' for dinner on ' + dayOf(x.date) : 'Dinner on ' + dayOf(x.date) + ', decided');
-      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to your to-dos');
+      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to your to-dos' + (x.steps ? ', in ' + x.steps + ' steps' : ''));
     });
+    /* the goal the setup heard: its plan is the first thing the week opens on */
+    if (a.goal && a.goal.name) out.push('Setting up ' + a.goal.name + ' as a goal');
     out.push('Counting the hours that are yours');
+    return out;
+  }
+  /* V11: what fills the weekdays (the work step's first answer): work, school, or both */
+  const FILLS = [
+    { id: 'work', name: 'Work', line: 'A job', icon: 'laptop', block: 'Work', blockIcon: 'laptop' },
+    { id: 'school', name: 'School', line: 'Classes and studying', icon: 'book', block: 'Class', blockIcon: 'book' },
+    { id: 'both', name: 'Both', line: 'Work and classes', icon: 'people', block: 'Work and class', blockIcon: 'laptop' },
+    { id: 'none', name: 'Neither', line: 'No set hours', icon: 'sun' }
+  ];
+  const fillOf = (a) => FILLS.find((f) => f.id === (a.noWork ? 'none' : a.fills || 'work')) || FILLS[0];
+  const fillName = (a) => fillOf(a).block || 'Work';
+
+  /* V11: three ways a day can go, each setting weekdays and weekends at once; the steppers fine tune them */
+  const DAY_SHAPES = [
+    { id: 'early', name: 'Early', wake: 360, bed: 1320 },
+    { id: 'usual', name: 'Usual', wake: 420, bed: 1380 },
+    { id: 'late', name: 'Late', wake: 540, bed: 1500 }
+  ];
+
+  /* == V11: the big thing the setup heard (Oct 15, the first-visit walk) ==
+     A goal is a date with hours before it. goalLoad is what one asks of a week: an exam's hours (a common estimate,
+     from Data.EXAMS through Model.goalForExam) spread over the weeks until its date. */
+  function goalLoad(M, D, name, date, today) {
+    const ex = M.goalForExam(name, D);
+    const days = date ? M.diffDays(today, date) : null;
+    const weeks = days != null && days > 0 ? days / 7 : null;
+    const hours = ex.hours || null;
+    const perWeek = hours && weeks ? hours / Math.max(1, weeks) : null;
+    return { exam: ex.exam || null, kind: ex.kind, match: ex.match, hours, days, weeks, perWeek, perDay: perWeek ? perWeek / 7 : null, parts: ex.parts.length };
+  }
+  /* Which one thing to lead with: the goal made in the setup, or else something said that looks like one (the date from
+     See further ahead, the to-do, their own words for what gets in the way), the first with a date leading. Two that
+     name the same exam are one thing: the to-do lends its id, the date its day. */
+  function bigThing(M, D, a, today) {
+    const same = (x, y) => { const gx = M.goalForExam(x, D), gy = M.goalForExam(y, D); return (gx.exam && gx.exam === gy.exam) || String(x).trim().toLowerCase() === String(y).trim().toLowerCase(); };
+    const cands = [];
+    if (a.soon && a.soon.name && a.soon.date && a.soon.date > today && M.looksLikeGoal(a.soon.name, D)) cands.push({ name: a.soon.name.trim(), date: a.soon.date, from: 'ahead' });
+    const tt = a.todo && (a.todo.text || a.todo.name);
+    if (tt && a.todo.name && M.looksLikeGoal(tt, D)) cands.push({ name: a.todo.name, date: a.todo.due && a.todo.due > today ? a.todo.due : null, from: 'todo' });
+    const other = String(a.painOther || '').trim();
+    if (other && M.looksLikeGoal(other, D)) { const ex = M.goalForExam(other, D); cands.push({ name: ex.exam || other.slice(0, 40), date: null, from: 'other' }); }
+    if (a.goal && a.goal.name) {
+      const g = Object.assign({ made: true }, a.goal);
+      const lend = cands.find((c) => c.date && same(c.name, g.name));
+      if (!g.date && lend) g.date = lend.date;
+      const td = cands.find((c) => c.from === 'todo' && same(c.name, g.name));
+      if (td) g.todo = true;
+      return g;
+    }
+    if (!cands.length) return null;
+    const lead = cands.find((c) => c.date) || cands[0];
+    const out = Object.assign({ made: false }, lead);
+    if (cands.some((c) => c.from === 'todo' && same(c.name, lead.name))) out.todo = true;
     return out;
   }
 
@@ -311,17 +384,41 @@
     dinner: { name: 'Pick a dinner', line: 'Tap a Dinner block and say how it’s happening.' },
     todo: { name: 'Add a to-do', line: 'In plain words, like Call the dentist by Friday.' },
     desk: { name: 'Open the desk', line: 'One day, with blocks you can move.' },
-    reset: { name: 'Do your first Sunday Reset', line: 'About 20 minutes, through the week ahead.' }
+    reset: { name: 'Do your first Sunday Reset', line: 'About 20 minutes, through the week ahead.' },
+    /* V11: a goal heard in the setup and not made yet, and a calendar a phone's setup couldn't bring in */
+    goal: { name: 'Make it a goal', line: 'A little time each day until its date, on your board.' },
+    calendar: { name: 'Bring in a calendar', line: 'From Google, Apple, or Outlook, as a file ending in .ics.', phone: 'On a computer: Settings, Calendars. A file ending in .ics, from Google, Apple, or Outlook.' }
   };
-  function movesFor(pains, help, phone) {
-    const wantsTodo = (pains || []).some((p) => ['head', 'slip', 'load'].includes(p));
+  /* ctx (V11, Oct 15): did, what the setup's tries already did (place, stretch, todo, dinner), which count as done, two
+     at most so the list still has things to try; goal, a big thing heard and not made a goal yet; calendar, the
+     setup ran on a phone, which can't bring a calendar file in. The list is six on the desk and five on a phone,
+     with what's still to try after what's done, and the reset last. */
+  function movesFor(pains, help, phone, ctx) {
+    const wantsTodo = (pains || []).some((p) => ['head', 'slip', 'load', 'big'].includes(p));
     const dinners = !help || help.dinners !== false;
+    if (ctx) {
+      const did = ctx.did || {}, size = phone ? 5 : 6;
+      const done = (phone ? ['todo', 'dinner'] : ['place', 'stretch', 'todo', 'dinner']).filter((id) => did[id] && (id !== 'dinner' || dinners)).slice(0, 2);
+      /* (a phone's first look is already the desk, so Open the desk is done before the list is read; the calendar
+         the phone's setup left out comes early, so it isn't lost) */
+      const open = (phone ? ['goal', 'calendar', 'todo', 'dinner'] : ['goal', 'place', 'stretch', 'todo', 'dinner', 'month', 'calendar']).filter((id) => {
+        if (done.includes(id) || did[id]) return false;
+        if (id === 'goal') return !!ctx.goal;
+        if (id === 'dinner') return dinners;
+        if (id === 'calendar') return !!ctx.calendar;
+        if (id === 'todo') return phone || wantsTodo;
+        return true;
+      });
+      /* (filler, when what's left is short: the month, or a to-do) */
+      ['month', 'todo'].forEach((id) => { if (!phone && !open.includes(id) && !done.includes(id) && !did[id]) open.push(id); });
+      return ['build'].concat(done, open.slice(0, size - 2 - done.length), ['reset']);
+    }
     if (phone) return ['build', 'todo'].concat(dinners ? ['dinner'] : [], ['desk', 'reset']);
     const flex = [wantsTodo ? 'todo' : null, dinners ? 'dinner' : null, 'month', 'todo'].filter(Boolean).filter((x, i, l) => l.indexOf(x) === i).slice(0, 2);
     return ['build', 'place', 'stretch'].concat(flex, ['reset']);
   }
 
-  const api = { CHAPTERS, PAINS, RESEARCH, PARTS, FOCUS, RESET_TIMES, MOVES, ORDER, STEP_NAMES, painById, painsFor, quietReset, stepsFor, nearestStep, progress, reflect, markFor, nextReset, resetIcs, applyExtras, planStats, nextSteps, leanFor, hoursFor, buildLines, movesFor };
+  const api = { CHAPTERS, PAINS, RESEARCH, PARTS, FOCUS, RESET_TIMES, MOVES, ORDER, STEP_NAMES, FILLS, DAY_SHAPES, painById, painsFor, quietReset, stepsFor, nearestStep, progress, reflect, markFor, nextReset, resetIcs, applyExtras, planStats, nextSteps, leanFor, hoursFor, buildLines, movesFor, goalLoad, bigThing, fillOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Onboard = api;
 })(typeof window !== 'undefined' ? window : globalThis);

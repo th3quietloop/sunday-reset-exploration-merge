@@ -1,0 +1,216 @@
+/* == V11: a to-do's sheet (docs/PHONE-REDESIGN.md, section 6) ==
+   A to-do is its name, one line of facts, the shape of its work, and its steps as a plain checklist; its next move is
+   the sheet's footer (sheet.css). Break it down, Change (Spread it out's choices), and Details are pages of the same
+   sheet. app.js tsTodo, tsBreak, tsChange, tsDetails. Words: names in Gabarito, everything read or tapped in Onest,
+   at the eight sizes; every color is a token that passes 4.5 to 1 on the sheet (contrast.css, sheet.css). */
+
+/* the sheet's parts set their own spacing, not the panel's 18 px between everything */
+.side-in:has(> .c-ts-head), .side-in:has(> .c-ts-title) { gap: 0; }
+
+/* -- the head: its mark, its name to type over, one line of facts -- */
+.c-ts-head { display: flex; align-items: flex-start; gap: 12px; padding-top: 2px; }
+.c-ts-mark { flex: none; width: 28px; height: 28px; margin-top: 2px; border-radius: 8px; display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
+.c-ts-mark canvas { width: 16px; height: 16px; }
+.c-ts-name { display: block; flex: 1; min-width: 0; margin: -2px -8px 0; padding: 2px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tx); font: 800 22px/1.2 var(--name); letter-spacing: -0.01em; resize: none; overflow: hidden; field-sizing: content; }
+.c-ts-name:hover { background: var(--sf-raised); }
+.c-ts-name:focus { outline: none; background: var(--sf-raised); box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-ts-head.done .c-ts-name { color: var(--tx-2); }
+.c-ts-title { margin: 2px 0 0; font: 800 22px/1.2 var(--name); letter-spacing: -0.01em; color: var(--tx); outline: none; }
+.c-ts-facts { margin: 6px 0 0 40px; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+.c-ts-title + .c-ts-facts { margin-left: 0; }
+/* its day is a tap from the calendar: the date box lies over the words, unseen until it has focus */
+.c-ts-due { position: relative; display: inline-block; border-radius: 6px; cursor: pointer; }
+.c-ts-due span { text-decoration: underline; text-decoration-color: rgba(205, 205, 205, 0.5); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.c-ts-due .input { position: absolute; inset: -12px -6px; width: calc(100% + 12px); height: calc(100% + 24px); min-height: 0; padding: 0; opacity: 0; border: 0; cursor: pointer; color-scheme: dark; }
+.c-ts-due:has(.input:focus-visible) { outline: 2.5px solid #FFFFFF; outline-offset: 3px; }
+.c-ts-len { position: relative; display: inline; min-height: 0; padding: 0; margin: 0; border: 0; background: none; color: var(--tx-2); font: inherit; text-decoration: underline; text-decoration-color: rgba(205, 205, 205, 0.5); text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
+.c-ts-len::after { content: ''; position: absolute; inset: -14px -6px; }
+.c-ts-len:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 3px; border-radius: 4px; }
+/* a choice of lengths, in place, one line on a folded Duo */
+.side .chips.c-ts-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.side .c-ts-chips .chip-btn { min-height: 36px; margin: 4px 0; padding: 0 12px; border-radius: 18px; border: 0; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); font: 600 13px var(--k-font); }
+.side .c-ts-chips .chip-btn[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); box-shadow: none; }
+.side .c-ts-chips .chip-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ts-head + .c-ts-facts + .c-ts-chips { margin-left: 40px; }
+
+/* -- the bar: the shape of the work, a piece a step, as long as its minutes -- */
+.c-ts-bar { display: flex; gap: 3px; height: 8px; margin: 16px 0 0; }
+.c-ts-bar span { flex: var(--m) 1 0; min-width: 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.16); transition: background-color 0.2s var(--f-out), transform 70ms; }
+.c-ts-bar span.d { background: var(--c); }
+.c-ts-bar span.n { background: var(--c); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
+.c-ts-bar.one span { background: color-mix(in srgb, var(--c) 35%, transparent); box-shadow: none; }
+/* Break it down's first look: the one long piece breaks into its steps, left to right, each dipping as it lands
+   (docs/PHONE-REDESIGN.md, 12), with one soft knock as the last opens (app.js tsBar) */
+.c-ts-bar.crack span { animation: c-ts-crack 0.32s var(--f-out) both; animation-delay: calc(var(--i) * 40ms); }
+@keyframes c-ts-crack { 0% { margin-left: -3px; border-radius: 0; background: color-mix(in srgb, var(--c) 35%, transparent); box-shadow: none; } 55% { transform: translateY(2px); } 100% { margin-left: 0; transform: none; } }
+.c-ts-bar.crack span:first-child { animation-name: c-ts-crack1; }
+@keyframes c-ts-crack1 { 0% { border-radius: 4px 0 0 4px; background: color-mix(in srgb, var(--c) 35%, transparent); box-shadow: none; } 55% { transform: translateY(-2px); } 100% { transform: none; } }
+body.calm .c-ts-bar.crack span { animation: none; }
+@media (prefers-reduced-motion: reduce) { .c-ts-bar.crack span { animation: none; } .c-ts-bar span { transition: none; } }
+
+/* -- a calm line on a raised plate: what moved on its own, the steps that went by -- */
+.c-ts-plate { margin: 16px 0 0; padding: 12px 14px; border-radius: 16px; background: var(--sf-raised); font: 500 14px/1.4 var(--k-font); color: var(--tx); }
+.c-ts-late { margin: 14px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--k-gold); }
+
+/* -- the steps: a check, the name, its time; one line each, a hairline between -- */
+.c-ts-steps { list-style: none; margin: 14px 0 0; padding: 0; }
+.c-ts-step { position: relative; display: flex; align-items: flex-start; min-height: 56px; }
+.c-ts-step + .c-ts-step::before, .c-ts-addrow::before { content: ''; position: absolute; top: 0; left: 44px; right: 0; height: 1px; background: var(--sf-edge); }
+.c-ts-check { flex: none; width: 44px; height: 44px; margin: 6px 0 0 -10px; padding: 0; border: 0; background: none; display: grid; place-items: center; cursor: pointer; }
+.c-ts-check i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55); transition: background-color 0.16s var(--f-out), box-shadow 0.16s, transform 70ms; }
+.c-ts-check i canvas { width: 14px; height: 14px; }
+.c-ts-check:hover i { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+.c-ts-check:active i { transform: scale(0.92); }
+/* (the ring is the button's own, round, 3 px off the circle: the contrast gate reads focus on the control itself) */
+.c-ts-check:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -7px; border-radius: 50%; }
+.c-ts-step.done .c-ts-check i { background: var(--good, #8FD3B1); box-shadow: none; }
+.c-ts-num { flex: none; width: 44px; height: 44px; margin: 6px 0 0 -10px; display: grid; place-items: center; }
+.c-ts-num { font: 700 12px var(--k-font); color: var(--tx-2); }
+.c-ts-num::before { content: ''; position: absolute; width: 24px; height: 24px; margin-top: 16px; border-radius: 50%; background: var(--sf-hover); z-index: -1; }
+.c-ts-draft .c-ts-step { isolation: isolate; }
+.c-ts-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; min-height: 56px; margin: 0 0 0 0; padding: 9px 0; border: 0; border-radius: 10px; background: transparent; color: var(--tx); text-align: left; cursor: pointer; touch-action: pan-y; }
+.c-ts-words:hover .c-ts-sn { text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.35); text-underline-offset: 3px; }
+.c-ts-words:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+.c-ts-words.pressed { background: var(--sf-raised); }
+.c-ts-sn { font: 500 16px/1.3 var(--k-font); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.c-ts-sm { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+.c-ts-here { font: 700 12px var(--k-font); color: var(--good, #8FD3B1); }
+.c-ts-moved { color: var(--tx); }
+/* a time only proposed: the board's dashed landing outline, under the words */
+.c-ts-prop { text-decoration: underline dashed rgba(255, 255, 255, 0.5); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.c-ts-step.done .c-ts-sn { color: var(--tx-3); text-decoration: line-through; text-decoration-color: rgba(175, 175, 175, 0.8); }
+.c-ts-step.done .c-ts-sm { color: var(--tx-3); }
+/* a step, open: its name, how long, a way to give it a time or move it, and Remove last */
+.c-ts-step.open { display: block; margin: 6px -8px; padding: 0; }
+.c-ts-step.open::before, .c-ts-step.open + .c-ts-step::before { display: none; }
+.c-ts-step.open .c-ts-check { display: none; }
+.c-ts-step.open .c-ts-num { display: none; }
+.c-ts-edit { padding: 12px; border-radius: 16px; background: var(--sf-raised); }
+.c-ts-etop { display: flex; align-items: flex-start; gap: 6px; }
+.c-ts-ename { flex: 1; min-width: 0; min-height: 48px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 500 16px/1.3 var(--k-font); resize: none; overflow: hidden; field-sizing: content; box-shadow: inset 0 0 0 1.5px var(--field-edge, rgba(255, 255, 255, 0.42)); }
+.c-ts-ename:focus { outline: none; box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-ts-shut { flex: none; width: 44px; height: 48px; border: 0; border-radius: 12px; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.c-ts-shut canvas { width: 16px; height: 16px; }
+.c-ts-shut:hover { background: var(--sf-hover); }
+.c-ts-shut:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+.c-ts-eacts { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.side .small.c-ts-ebtn { min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); }
+.side .small.c-ts-ebtn:hover { background: var(--sf-press); }
+.c-ts-del { min-height: 44px; margin-left: auto; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--bad, #FF9E8C); font: 600 14px var(--k-font); cursor: pointer; }
+.c-ts-del:hover { background: var(--sf-hover); }
+.c-ts-del:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+.c-ts-step.open .c-ts-eacts > :only-child { margin-left: auto; }
+/* Add a step, the list's last row */
+.c-ts-addrow { position: relative; display: flex; align-items: center; min-height: 52px; }
+.c-ts-addrow canvas { flex: none; width: 16px; height: 16px; margin: 0 24px 0 4px; }
+.c-ts-add { flex: 1; min-width: 0; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--tx); font: 500 16px var(--k-font); }
+.c-ts-add::placeholder { color: var(--field-hint, var(--tx-3)); opacity: 1; }
+.c-ts-add:focus { outline: none; }
+/* (a field with no edge shows focus with a ring of its own) */
+.c-ts-add:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 3px; border-radius: 10px; }
+
+/* -- Make it a goal, only when it fits -- */
+.c-ts-goal { margin: 18px 0 0; padding-top: 14px; box-shadow: 0 -1px 0 var(--sf-edge); }
+.c-ts-goal p { margin: 0 0 6px; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+.side .c-ts-goal .small { min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); }
+
+/* -- steps that don't fit by the day: the question, what's in the way, and the choices as answers -- */
+.c-ts-ask { margin: 18px 0 0; }
+.c-ts-q { margin: 0; font: 600 16px/1.35 var(--k-font); color: var(--tx); }
+.c-ts-way { margin: 6px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+.c-ts-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.c-ts-opt { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 52px; padding: 12px 14px; border: 0; border-radius: 16px; background: var(--sf-raised); color: var(--tx); text-align: left; cursor: pointer; }
+.c-ts-opt:hover { background: var(--sf-hover); }
+.c-ts-opt.on { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+.c-ts-opt:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ts-rd { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
+.c-ts-opt.on .c-ts-rd { box-shadow: inset 0 0 0 7px #FFFFFF; }
+.c-ts-ow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-ts-ow b { font: 600 16px/1.3 var(--k-font); }
+.c-ts-ow small { font: 500 13px/1.35 var(--k-font); color: var(--tx-2); }
+
+/* -- Break it down and Change: a label, one control each -- */
+.c-ts-lbl { margin: 20px 0 8px; font: 600 13px var(--k-font); color: var(--tx-2); }
+.c-ts-seg { display: flex; padding: 3px; gap: 2px; border-radius: 12px; background: var(--sf-raised); }
+.c-ts-segb { flex: 1 1 0; min-width: 0; min-height: 38px; padding: 0 4px; border: 0; border-radius: 9px; background: transparent; color: var(--tx-2); font: 600 14px var(--k-font); white-space: nowrap; text-align: center; cursor: pointer; transition: background-color 0.16s var(--f-out), color 0.16s; }
+.c-ts-segb:hover { color: var(--tx); }
+.c-ts-segb[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); }
+.c-ts-segb:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ts-segb:active { transform: translateY(1px); }
+@media (max-width: 400px) { .c-ts-seg .c-ts-segb { font-size: 13px; } }
+.c-ts-days7 { margin-top: 10px; }
+/* where the steps came from: Claude writing, Steps from Claude, the built-in ones */
+.c-ts-src { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 16px 0 -2px; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+.c-ts-ask1 { color: var(--tx); font-weight: 600; flex-basis: 100%; }
+.c-ts-dots { display: inline-flex; gap: 4px; }
+.c-ts-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--tx-2); animation: c-ts-dot 1.2s infinite ease-in-out; }
+.c-ts-dots i:nth-child(2) { animation-delay: 0.15s; } .c-ts-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes c-ts-dot { 0%, 80%, 100% { opacity: 0.35; } 40% { opacity: 1; } }
+body.calm .c-ts-dots i { animation: none; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce) { .c-ts-dots i { animation: none; opacity: 0.8; } }
+.c-ts-link { position: relative; min-height: 0; padding: 0; border: 0; background: none; color: var(--tx); font: 600 14px var(--k-font); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; cursor: pointer; }
+.c-ts-link::after { content: ''; position: absolute; inset: -14px -6px; }
+.c-ts-link:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 3px; border-radius: 4px; }
+.side .small.c-ts-aib { min-height: 44px; margin-top: 10px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); align-self: flex-start; }
+.c-ts-total { margin: 14px 0 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+/* Done by, a row whose date box lies over it */
+.c-ts-byrow { position: relative; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 12px; border-radius: 16px; background: var(--sf-raised); color: var(--tx); font: 500 16px var(--k-font); cursor: pointer; }
+.c-ts-byrow span { flex: 1; }
+.c-ts-byrow canvas { width: 16px; height: 16px; }
+.c-ts-byrow .input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; border: 0; cursor: pointer; color-scheme: dark; }
+.c-ts-byrow:has(.input:focus-visible) { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* -- the week strip: each day's pieces against its cap, a dashed line nothing crosses -- */
+.c-ts-stripw { margin-top: 14px; }
+.c-ts-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px 6px; }
+.c-ts-col { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.c-ts-wl { font: 700 12px var(--k-font); color: var(--tx-2); }
+.c-ts-well { position: relative; width: 100%; max-width: 44px; height: 64px; padding: 3px; display: flex; flex-direction: column-reverse; gap: 2px; border-radius: 8px; background: var(--sf-raised); }
+.c-ts-pc { flex: none; border-radius: 4px; background: color-mix(in srgb, var(--c) 30%, transparent); box-shadow: inset 0 0 0 1.5px var(--c); }
+.c-ts-cap { position: absolute; left: 2px; right: 2px; height: 0; border-top: 1.5px dashed rgba(255, 255, 255, 0.5); }
+.c-ts-col.today .c-ts-well { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+.c-ts-col.off .c-ts-well { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-ts-wt { font: 600 12px var(--k-font); color: var(--tx-2); white-space: nowrap; font-variant-numeric: tabular-nums; min-height: 16px; }
+
+/* -- More: the header's dot button and its menu -- */
+#side .c-smore { position: relative; }
+#side .c-smore-btn { width: 44px; height: 44px; padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
+#side .c-smore-dot { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--sf-hover); }
+#side .c-smore-dot canvas { width: 18px; height: 18px; }
+#side .c-smore-btn:hover .c-smore-dot, #side .c-smore-btn[aria-expanded="true"] .c-smore-dot { background: var(--sf-press); }
+#side .c-smore-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -4px; border-radius: 50%; }
+#side .c-smenu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 10; width: 264px; padding: 4px 0; border-radius: 14px; background: var(--sf-toast, #2C2D31); box-shadow: inset 0 0 0 1px var(--sf-edge), 0 24px 48px -12px rgba(0, 0, 0, 0.75); animation: c-smenu-in 0.16s var(--f-out); }
+@keyframes c-smenu-in { from { opacity: 0; transform: translateY(-4px); } }
+body.calm #side .c-smenu { animation: none; }
+#side .c-menu-i { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: 12px; width: 100%; min-height: 44px; padding: 6px 14px; border: 0; border-radius: 0; background: transparent; color: var(--tx); font: 500 16px/1.25 var(--k-font); text-align: left; cursor: pointer; }
+#side .c-menu-i canvas { width: 18px; height: 18px; }
+#side .c-menu-i small { grid-column: 2; font: 500 13px/1.3 var(--k-font); color: var(--tx-2); }
+#side .c-menu-i:hover { background: var(--sf-hover); }
+#side .c-menu-i:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -3px; }
+#side .c-menu-i.bad { color: var(--bad, #FF9E8C); }
+#side .c-smenu hr { border: 0; height: 1px; margin: 4px 0; background: var(--sf-edge); }
+/* on the desk the header shows only when a page or More needs it: a row beside the panel's x */
+body.feel:not(.phone):not(.phone-desk) #side .c-shead:has(.c-smore:not(:empty)),
+body.feel:not(.phone):not(.phone-desk) #side .c-shead:has(.c-sback:not(:empty)) { display: flex; align-items: center; gap: 2px; min-height: 44px; margin: -12px 34px 6px -10px; position: relative; z-index: 3; }
+/* (the panel's x floats at the top right; More and Back keep clear of it) */
+body.feel:not(.phone):not(.phone-desk) #side .c-shead .c-grab { display: none; }
+
+/* -- a step's own sheet: its name, its facts, grouped rows, and Take it off the day, quiet, last -- */
+.c-ts-hname { flex: 1; min-width: 0; margin: 0; font: 800 22px/1.2 var(--name); letter-spacing: -0.01em; color: var(--tx); overflow-wrap: anywhere; }
+.c-ts-head.done .c-ts-hname { color: var(--tx-2); text-decoration: line-through; text-decoration-color: rgba(205, 205, 205, 0.6); }
+.c-ts-rows { margin: 18px 0 0; border-radius: 16px; background: var(--sf-raised); overflow: hidden; }
+.c-ts-row { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 0; background: transparent; color: var(--tx); font: 500 16px var(--k-font); text-align: left; cursor: pointer; }
+.c-ts-row + .c-ts-row::before { content: ''; position: absolute; top: 0; left: 54px; right: 0; height: 1px; background: var(--sf-edge); }
+.c-ts-row:hover { background: var(--sf-hover); }
+.c-ts-row:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -3px; }
+.c-ts-row > canvas { width: 14px; height: 14px; flex: none; }
+.c-ts-rt { flex: none; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--sf-hover); }
+.c-ts-rt canvas { width: 16px; height: 16px; }
+.c-ts-rn { flex: 1; min-width: 0; }
+.c-ts-moveb { display: flex; flex-direction: column; gap: 14px; margin: 12px 0 0; padding: 12px; border-radius: 16px; background: var(--sf-raised); }
+.c-ts-off { align-self: flex-start; min-height: 44px; margin: 14px 0 0 -8px; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--tx-2); font: 600 14px var(--k-font); cursor: pointer; }
+.c-ts-off:hover { background: var(--sf-hover); color: var(--tx); }
+.c-ts-off:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+/* Details: its fields a step apart, under the page's title */
+.side-in:has(> .c-ts-title) > .field { margin-top: 18px; }
+.side-in:has(> .c-ts-title) > .field + .field { margin-top: 16px; }

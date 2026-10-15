@@ -63,12 +63,14 @@
    the board's teal) */
 .pd-add { background: var(--sf); -webkit-backdrop-filter: var(--sf-blur); backdrop-filter: var(--sf-blur); box-shadow: var(--sf-float); }
 /* the same surface where what's behind is flat or already blurred (the list's desk is hidden, the phone's
-   cards sit on a smooth gradient, the meal library sits on leather), so a blur would cost and show nothing */
-.agenda, .td-head, .td-now, .td-card, .c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt, .k .c-su-x {
+   cards sit on a smooth gradient, the meal library sits on leather), so a blur would cost and show nothing.
+   A note from the app (.td-note: keep this week, add it to the Home Screen, link, reminders) stays paper
+   with its own dark ink, so it never reads as part of the day: on this surface that ink was about 1.2 to 1 */
+.agenda, .td-head, .td-now, .td-card:not(.td-note), .c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt, .k .c-su-x {
   background: var(--sf) !important;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
-.agenda, .td-head, .td-now, .td-card { box-shadow: var(--sf-float) !important; }
+.agenda, .td-head, .td-now, .td-card:not(.td-note) { box-shadow: var(--sf-float) !important; }
 .c-mat .c-leave, .c-mat .k-seg.c-for, .c-mat .c-su-steps, .c-mat .k .c-su-opt:not(.on), .k .c-su-x { box-shadow: inset 0 0 0 1px var(--sf-edge); }
 /* solid, where nothing should show through: the list inside the date chip, the hover note (it follows the
    pointer, so no blur), the tray's arrows, and the phone's two bars */

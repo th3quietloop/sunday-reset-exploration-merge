@@ -115,7 +115,8 @@ test('a prep week from the sample: two batch cooks with their leftovers, and fre
   assert.deepEqual(plan.list.map((x) => x.kind), ['batch', 'leftovers', 'leftovers', 'batch', 'leftovers', 'leftovers', 'leftovers'].concat(fresh.map(() => 'fresh')));
   const left = plan.list.find((x) => x.kind === 'leftovers');
   assert.deepEqual(left.meal, { name: 'Leftovers: Sheet pan chicken', how: 'leftovers', from: { date: NEXT, slot: 'dinner' } });
-  assert.deepEqual(plan.list[0].meal, { name: 'Sheet pan chicken', cook: 'home', items: ['chicken', 'broccoli', 'sweetpotato'], recipe: 'sheetpan' });
+  /* (the rituals walk: nobody is picked to cook it; who cooks is asked, so the batch dinner's cook is empty) */
+  assert.deepEqual(plan.list[0].meal, { name: 'Sheet pan chicken', cook: '', items: ['chicken', 'broccoli', 'sweetpotato'], recipe: 'sheetpan' });
   assert.equal(plan.message, 'Two batch cooks, Sunday and Wednesday, cover 5 more meals, with ' + fresh.length + ' fresh nights.');
   // a Meal prep block for Sunday afternoon, with what it makes
   assert.equal(plan.block.date, NEXT);

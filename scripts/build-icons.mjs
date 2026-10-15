@@ -30,7 +30,14 @@ const MAP = {
   overlap: ['intersect', 'bold'], cloud: ['cloud', 'fill'], print: ['printer', 'fill'], textsize: ['text-aa', 'bold'], leaf: ['leaf', 'fill'],
   left: ['caret-left', 'bold'], right: ['caret-right', 'bold'], sliders: ['sliders-horizontal', 'bold'], grip: ['dots-six-vertical', 'bold'],
   redo: ['arrow-clockwise', 'bold'], lamp: ['lamp', 'fill'], tray: ['tray', 'fill'], bell: ['bell', 'fill'], help: ['question', 'fill'],
-  person: ['user', 'fill'], pin: ['push-pin', 'fill'], note2: ['chat-centered-text', 'fill'], fn: ['function', 'bold']
+  person: ['user', 'fill'], pin: ['push-pin', 'fill'], note2: ['chat-centered-text', 'fill'], fn: ['function', 'bold'],
+  /* (Oct 15, the first-visit walk: Big things are hard to start) */
+  mountain: ['mountains', 'fill']
+};
+/* marks Phosphor doesn't have, drawn here on its 256 unit grid: a block running past the end of its lane (My plans fall
+   apart; two linked rings read as wedding rings at tile size) */
+const CUSTOM = {
+  overrun: 'M64,80H224a16,16,0,0,1,16,16v40a16,16,0,0,1-16,16H64a16,16,0,0,1-16-16V96A16,16,0,0,1,64,80Z M24,192a8,8,0,0,1,8-8H168v16H32A8,8,0,0,1,24,192Z M168,176a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Z'
 };
 
 const out = {};
@@ -40,6 +47,7 @@ for (const [name, [file, weight]] of Object.entries(MAP)) {
   if (!ds.length) throw new Error('no path in ' + file);
   out[name] = ds.join(' ');
 }
+Object.assign(out, CUSTOM);
 const body = `/* Sunday Reset's marks, as vectors: Phosphor Icons (phosphoricons.com), MIT License, Copyright (c) 2023
    Phosphor Icons; the license is in src/PHOSPHOR-LICENSE.txt. Each is one SVG path on a 256 unit grid: the
    fill weight for things, the bold weight for controls. Written by scripts/build-icons.mjs; don't edit. */

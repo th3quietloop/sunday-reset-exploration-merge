@@ -26,6 +26,7 @@ Options, for `node scripts/gate/release-gate.mjs`:
 | `-serve 4467 -cdp 9467` | the ports for the page and for Chrome |
 | `-no-webkit`, `-no-break`, `-no-matrix` | leave a part out |
 | `-out folder` | where the results go |
+| `-baseline file`, `-no-baseline` | hold to another list of the last green run's cells, or to none |
 
 One part on its own: `node scripts/gate/gate.mjs -sizes ipadP -inputs touch -paths move-week -n 5`, `node scripts/gate/break.mjs -sizes phone -only second,cancel`, or `node scripts/gate/gate.mjs -browser webkit -paths reset-yours`.
 
@@ -38,6 +39,8 @@ One part on its own: `node scripts/gate/gate.mjs -sizes ipadP -inputs touch -pat
 5. **Nothing threw**: no exception and no console error (a server with no API, which the live site doesn't have, is the one thing let through). Two guards in the app write to the console when they step in: the desk's watchdog, when a block has a number that isn't one and is put back at rest (`scene.js` `watchBlocks`), and the landing watch, when a block set down isn't drawn 1.7 seconds later and is drawn again (`app.js` `watchLanding`). People never see either, and the gate fails on both, so the cause gets fixed.
 
 Every attempt is undone, so the next starts from the same board: the made up family's week (Dev, sample), nothing saved, the clock held at 10 am. A path that's on a size but can't run once there (no pieces to pick up, no place to put one) counts as a failure too: that's a path that broke quietly.
+
+**n/a means only "not on this size".** A path says so itself (`na: true` in `lib/paths.js`: the bench on a phone, the phone's desk on a computer). A path that couldn't open its place (a button that moved, a panel that didn't come) shows as **not run**, which fails the gate, with the reason. And every cell (a path at a size with an input) that ran in the last green run has to run again: `scripts/gate/last-green.json` lists them, `release-gate.mjs` fails any that didn't run, whatever this run called it, and a green run adds the cells it ran. A cell leaves that list only by hand, when its path is meant to leave that size. (It was started on Oct 15 from the last green run before that day's changes, 07cfa4d: 101 cells in Chrome and 19 in WebKit.)
 
 ## The paths
 
@@ -56,7 +59,7 @@ Every attempt is undone, so the next starts from the same board: the made up fam
 
 Sizes: `mac1` 1440x900, `mac2` 1280x800, `ipadL` 1180x820, `ipadP` 820x1180, `duoOpen` 951x669, `duoFold` 466x678, `duoSafari` 386x580, `phone` 390x844, `phoneL` 844x390. A path that isn't on a size (the bench on a phone) shows as n/a, with the reason.
 
-**How a hand moves.** Each drag presses, moves most of the way, waits, looks again at where the target is now (the desk leans in under a carried block, and a person re-aims at what they see), finishes, and lets go. A finger presses for 420 ms first: a tile in a list that scrolls lifts after 300 ms under a finger (or at once when it first moves across the list), so a list of tiles still scrolls under a thumb. Touch is Chrome's touch emulation with real input events (`Input.dispatchTouchEvent`), one finger or two.
+**How a hand moves.** Each drag presses, moves most of the way, waits, looks again at where the target is now (the desk leans in under a carried block, and a person re-aims at what they see), finishes, and lets go. A finger carrying a block on the desk steers it from below: the block and its outline ride above the fingertip (docs/LIFT-AND-PLACE.md 3.5), so the finger goes that far below the slot, and looks once more as the block comes up off it. A finger stretches a block from the handle on the picked block, so it taps the block first. A finger presses for 420 ms first: a tile in a list that scrolls lifts after 300 ms under a finger (or at once when it first moves across the list), so a list of tiles still scrolls under a thumb. Touch is Chrome's touch emulation with real input events (`Input.dispatchTouchEvent`), one finger or two.
 
 ## The tries to break it (`break.mjs`, in `gate:full`)
 
@@ -77,7 +80,7 @@ About ten minutes, in Safari and then from the Home Screen.
 5. Meal board on an iPhone: a flick scrolls; press, then drag a meal onto a day.
 6. Hold a tile still for a second without moving: no callout, no text selection, no magnifier. Letting go puts it back.
 7. A fresh tab whose first action is a drag: you hear the pick and the clack.
-8. Stretch a block by its end with a finger, on the week and on the day: it stretches (it no longer turns into a move).
+8. Stretch a block with a finger, on the week and on the day: tap it, then drag the round handle at its end. It stretches (it no longer turns into a move), one tick per 15 minutes.
 9. Add a block from the place panel: the card flies from the panel to where the block lands.
 10. The reset's sheet on an iPhone from the Home Screen: Next and Finish later sit above the home indicator.
 11. Settings, Dev, open a made up board, then Back to my board, then Day, Week, Month: the bottom bar changes each time.
