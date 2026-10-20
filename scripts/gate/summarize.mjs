@@ -32,11 +32,13 @@ export function summarize(files, o = {}) {
     const row = [p];
     for (const s of sizes) {
       const bits = [];
-      for (const inp of ['mouse', 'touch']) {
+      /* (a row judged once per load, like boot, has no mouse or finger: its count stands alone) */
+      for (const inp of ['mouse', 'touch', 'load']) {
         const c = cell[p + '|' + s + '|' + inp];
         if (!c) continue;
-        if (!c.n && c.skip) { bits.push(inp[0] + ' not run !'); continue; }
-        bits.push(inp[0] + ' ' + c.pass + '/' + c.n + (c.pass < c.n ? ' !' : ''));
+        const tag = inp === 'load' ? '' : inp[0] + ' ';
+        if (!c.n && c.skip) { bits.push(tag + 'not run !'); continue; }
+        bits.push(tag + c.pass + '/' + c.n + (c.pass < c.n ? ' !' : ''));
       }
       if (!bits.length) bits.push(na[p + '|' + s] ? 'n/a' : '');
       row.push(bits.join(', '));

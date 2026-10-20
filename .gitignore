@@ -8,3 +8,5 @@ dist
 # Overnight before and after screenshots (Oct 15): kept on this Mac, too heavy for the repo
 docs/walk/*-after/
 docs/mocks/phone-redesign/built/
+docs/mocks/big-moments/built/
+docs/mocks/setup-week/built/

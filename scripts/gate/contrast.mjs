@@ -7,11 +7,11 @@
 //
 //   npm run contrast        every screen at iPhone, Duo folded, Duo open, iPad, and Mac, one lane a size
 //   node scripts/gate/contrast.mjs -sizes phone,mac -screens phone,settings [-out folder] [-shots] [-verbose]
-//     [-build folder] (a V11 build already made) [-serve 4486 -cdp 9486] (the ports it starts on: Chrome on
+//     [-build folder] (a build already made, V11-2's corners11-2 or V11's) [-serve 4486 -cdp 9486] (the ports it starts on: Chrome on
 //     9486 unless -cdp says, the page on a free port unless -serve says)
 //     [-url http://localhost:4486/ -port 9486] (a build and a Chrome already running) [-one-lane]
-// Groups for -screens: first look phone today planner panels goals breakdown meals more reset todos rituals
-// settings toasts band bigtext. Sizes: phone duoFold duoOpen ipad mac. Exit code 1 when anything fails. The run's
+// Groups for -screens: first look phone today planner panels goals breakdown meals more reset todos rituals big
+// settings toasts band next focus bigtext. Sizes: phone duoFold duoOpen ipad mac. Exit code 1 when anything fails. The run's
 // folder (printed at the end) has summary.md, results.json, and, with -shots, a picture of every screen
 // that failed.
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';

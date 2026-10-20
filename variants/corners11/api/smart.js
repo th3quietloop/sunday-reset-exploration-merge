@@ -14,7 +14,7 @@
                          200 { parts: [{ name, min }], note }
 
    Every other answer is { error, message }, the error one of not_ready (503, a POST with no key), too_many
-   (429, with Retry-After), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when
+   (429, with Retry-After, and limit 'minute' or 'day', most, and retry in seconds in the body), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when
    Claude took longer than 15 seconds), so the page can keep its built-in steps.
 
    Vercel runs a file in api/ as a Node.js function; the default export is the Web standard fetch form.
@@ -266,8 +266,9 @@ const clientIp = (request) => ((request.headers.get('x-real-ip') || (request.hea
 /* == how often: about 10 a minute and 100 a day for each address, counted in this instance's memory ==
    Vercel keeps an instance warm between requests, so this holds for a run of asks; a new instance starts
    counting again. The spend limit in the Anthropic Console is the backstop. */
-const MINUTE_FULL = 'That’s 10 in a minute, the most for now. Try again in a minute.';
-const DAY_FULL = 'That’s 100 today from this connection, the most for a day. Try again tomorrow.';
+/* (V11-2, honest errors: the page says these in its own words from limit and retry; these say the same) */
+const MINUTE_FULL = 'That’s ' + PER_MINUTE + ' asks this minute. Try again in a minute.';
+const DAY_FULL = 'That’s ' + PER_DAY + ' asks today. Try again tomorrow.';
 export function makeLimiter({ perMinute = PER_MINUTE, perDay = PER_DAY, now = Date.now } = {}) {
   const seen = new Map();
   return {
@@ -276,8 +277,8 @@ export function makeLimiter({ perMinute = PER_MINUTE, perDay = PER_DAY, now = Da
       let r = seen.get(ip);
       if (!r || t - r.day0 >= DAY) { r = { day0: t, day: 0, min: [] }; seen.set(ip, r); }
       r.min = r.min.filter((x) => t - x < MINUTE);
-      if (r.day >= perDay) return { ok: false, retry: Math.max(1, Math.ceil((r.day0 + DAY - t) / 1000)), message: DAY_FULL };
-      if (r.min.length >= perMinute) return { ok: false, retry: Math.max(1, Math.ceil((r.min[0] + MINUTE - t) / 1000)), message: MINUTE_FULL };
+      if (r.day >= perDay) return { ok: false, limit: 'day', most: perDay, retry: Math.max(1, Math.ceil((r.day0 + DAY - t) / 1000)), message: DAY_FULL };
+      if (r.min.length >= perMinute) return { ok: false, limit: 'minute', most: perMinute, retry: Math.max(1, Math.ceil((r.min[0] + MINUTE - t) / 1000)), message: MINUTE_FULL };
       r.min.push(t); r.day += 1;
       if (seen.size > 10000) for (const [k, v] of seen) if (t - v.day0 >= DAY) seen.delete(k);
       return { ok: true };
@@ -319,7 +320,7 @@ export function makeHandler(opts = {}) {
     const key = env.ANTHROPIC_API_KEY;
     if (!key) return fail(503, 'not_ready', 'Smart breakdowns aren’t set up on this site yet.');
     const turn = limits.take(clientIp(request));
-    if (!turn.ok) return fail(429, 'too_many', turn.message, { 'retry-after': String(turn.retry) });
+    if (!turn.ok) return reply(429, { error: 'too_many', message: turn.message, limit: turn.limit, most: turn.most, retry: turn.retry }, { 'retry-after': String(turn.retry) });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), waitMs);
     try {

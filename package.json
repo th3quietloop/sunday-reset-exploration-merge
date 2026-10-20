@@ -10,7 +10,8 @@
     "test": "node --test tests/*.test.mjs",
     "gate": "node scripts/gate/release-gate.mjs",
     "gate:full": "node scripts/gate/release-gate.mjs -full",
-    "contrast": "node scripts/gate/contrast.mjs"
+    "contrast": "node scripts/gate/contrast.mjs",
+    "unhappy": "node scripts/gate/unhappy.mjs"
   },
   "devDependencies": {
     "@phosphor-icons/core": "^2.1.1",

@@ -1,6 +1,10 @@
 {
  "about": "The cells (path|size|input) the last green drag gate ran. A cell here that does not run fails the gate. Written by release-gate.mjs after a green run; take a cell out by hand only when its path is meant to leave that size.",
  "chrome": [
+  "boot|duoFold|load",
+  "boot|ipadP|load",
+  "boot|mac1|load",
+  "boot|phone|load",
   "desk-home|duoFold|mouse",
   "desk-home|duoFold|touch",
   "desk-home|ipadP|mouse",
@@ -15,6 +19,10 @@
   "desk-letters|mac1|mouse",
   "desk-letters|phone|mouse",
   "desk-letters|phone|touch",
+  "first-press|duoFold|mouse",
+  "first-press|ipadP|mouse",
+  "first-press|mac1|mouse",
+  "first-press|phone|mouse",
   "lib-day|ipadP|mouse",
   "lib-day|ipadP|touch",
   "lib-day|mac1|mouse",
@@ -101,11 +109,15 @@
   "today-bench|mac1|mouse",
   "today-move|ipadP|mouse",
   "today-move|ipadP|touch",
-  "today-move|mac1|mouse"
+  "today-move|mac1|mouse",
+  "todo-step-day|mac1|mouse",
+  "todo-step-week|mac1|mouse"
  ],
  "webkit": [
+  "boot|mac1|load",
   "desk-home|mac1|mouse",
   "desk-letters|mac1|mouse",
+  "first-press|mac1|mouse",
   "lib-day|mac1|mouse",
   "lib-week|mac1|mouse",
   "move-day|mac1|mouse",
@@ -122,6 +134,8 @@
   "stretch-day|mac1|mouse",
   "stretch-week|mac1|mouse",
   "today-bench|mac1|mouse",
-  "today-move|mac1|mouse"
+  "today-move|mac1|mouse",
+  "todo-step-day|mac1|mouse",
+  "todo-step-week|mac1|mouse"
  ]
 }

@@ -127,7 +127,11 @@ test('about 10 a minute and 100 a day from one address, and it says so plainly',
   assert.equal(r.status, 429);
   const over = await r.json();
   assert.equal(over.error, 'too_many');
-  assert.match(over.message, /10 in a minute/);
+  assert.match(over.message, /10 asks this minute/);
+  /* (V11-2, honest errors: which limit, how many it allows, and when it lets go, so the page can say the time) */
+  assert.equal(over.limit, 'minute');
+  assert.equal(over.most, 10);
+  assert.ok(over.retry > 0 && over.retry <= 60);
   assert.ok(Number(r.headers.get('retry-after')) > 0 && Number(r.headers.get('retry-after')) <= 60);
   assert.equal((await ask('198.51.100.99')).status, 200, 'another address has its own count');
   clock += 61 * 1000;
@@ -137,7 +141,10 @@ test('about 10 a minute and 100 a day from one address, and it says so plainly',
   clock += 61 * 1000;
   r = await ask();
   assert.equal(r.status, 429);
-  assert.match((await r.json()).message, /100 today/);
+  const full = await r.json();
+  assert.match(full.message, /100 asks today/);
+  assert.equal(full.limit, 'day');
+  assert.equal(full.most, 100);
   clock += 24 * 60 * 60 * 1000;
   assert.equal((await ask()).status, 200, 'the next day it answers again');
   // a bad ask doesn't use one up
@@ -466,16 +473,44 @@ test('anything that goes wrong settles as null, says why, and never waits past 1
   let i = 0;
   const p = page({ stored: '{"on":true}', answer: () => replies[i]() });
   await tick(); await tick();
+  /* (V11-2, honest errors: each says what really happened) an answer that didn't fit the board */
   assert.equal(await p.ai.breakdown('Clean the garage'), null);
-  assert.equal(p.ai.lastError().code, 'upstream');
+  assert.equal(p.ai.lastError().code, 'odd');
+  /* the minute's limit, with when the next ask can go: from the server's own retry, or its Retry-After */
   i = 1;
+  const before = Date.now();
   assert.equal(await p.ai.breakdown('Clean the garage'), null);
-  assert.deepEqual(plain(p.ai.lastError()), { code: 'too_many', message: 'That’s 10 in a minute, the most for now. Try again in a minute.' });
+  const lim = plain(p.ai.lastError());
+  assert.equal(lim.code, 'too_many');
+  assert.equal(lim.limit, 'minute');
+  assert.equal(lim.most, 10);
+  assert.ok(lim.at >= before + 60000 - 50 && lim.at <= Date.now() + 60000, 'no retry given: a minute from now');
+  /* Claude answered with an error */
   i = 2;
   assert.equal(await p.ai.breakdown('Clean the garage'), null);
+  assert.equal(p.ai.lastError().code, 'upstream');
+  /* nothing answered, and the device says it's online: the server couldn't be reached */
   i = 3;
   assert.equal(await p.ai.breakdown('Clean the garage'), null);
-  assert.equal(p.ai.lastError().code, 'upstream');
+  assert.equal(p.ai.lastError().code, 'unreachable');
+  /* the day's limit, said by the server */
+  const day = page({ stored: '{"on":true}', answer: () => new Response(JSON.stringify({ error: 'too_many', message: 'That’s 100 asks today. Try again tomorrow.', limit: 'day', most: 100, retry: 3600 }), { status: 429, headers: { 'retry-after': '3600' } }) });
+  await tick(); await tick();
+  assert.equal(await day.ai.breakdown('Clean the garage'), null);
+  assert.equal(day.ai.lastError().limit, 'day');
+  assert.ok(day.ai.lastError().at > Date.now() + 3500000);
+  /* the server's own 15 seconds ran out (504): a timeout, the same as no answer here */
+  const late = page({ stored: '{"on":true}', answer: () => new Response(JSON.stringify({ error: 'upstream', message: 'Claude took longer than 15 seconds. Try again in a moment.' }), { status: 504 }) });
+  await tick(); await tick();
+  assert.equal(await late.ai.breakdown('Clean the garage'), null);
+  assert.equal(late.ai.lastError().code, 'timeout');
+  /* offline: said at once, and nothing is sent */
+  const off = page({ stored: '{"on":true}', answer: () => assert.fail('nothing goes while offline') });
+  await tick(); await tick();
+  off.ctx.navigator = { onLine: false };
+  assert.equal(await off.ai.breakdown('Clean the garage'), null);
+  assert.equal(off.ai.lastError().code, 'offline');
+  assert.equal(off.posts().length, 0);
   // the server lost its key: it stops being offered
   const q = page({ stored: '{"on":true}', answer: () => new Response('{"error":"not_ready","message":"Not set up"}', { status: 503 }) });
   await tick(); await tick();
@@ -488,7 +523,7 @@ test('anything that goes wrong settles as null, says why, and never waits past 1
   await tick(); await tick();
   assert.equal(await slow.ai.breakdown('Clean the garage'), null);
   assert.ok(waits.includes(15000));
-  assert.match(slow.ai.lastError().message, /15 seconds/);
+  assert.equal(slow.ai.lastError().code, 'timeout');
   // a success clears what went wrong before
   const ok = page({ stored: '{"on":true}', answer: () => answer({ steps: [{ name: 'Start', dur: 5 }] }) });
   await tick(); await tick();

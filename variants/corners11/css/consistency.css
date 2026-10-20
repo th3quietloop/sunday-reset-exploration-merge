@@ -54,10 +54,9 @@ body.calm .c-tdahead { transition: none; }
    so the days, the strip, and the button get the panel's whole width: 44 px days with 4 between. On a
    phone the panel's sides are 16; a phone narrower than that still has 44 px days, and the row scrolls
    sideways (its padding keeps a focus ring whole). */
-#side:has(.weekpick) > .side-x { float: none; top: -10px; margin: -10px -10px -22px auto; }
-/* (a finger's 44 px button reaches past the kicker, so the block under it starts 4 px lower) */
+/* (Oct 20: the x is every panel's corner now, centered on the kicker's row here, planner.css, the side panel's
+   corner; a finger's ring around it reaches past the kicker, so the block under it starts 4 px lower) */
 @media (pointer: coarse) {
-  #side:has(.weekpick) > .side-x { margin-bottom: -34px; }
   #side:has(.weekpick) .side-in > .side-kicker:first-child { margin-bottom: 4px; }
 }
 #side .weekpick { grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 4px; margin: -6px; padding: 6px; overflow-x: auto; scrollbar-width: none; }
@@ -79,7 +78,6 @@ body.calm .c-tdahead { transition: none; }
 #side.more .place-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 32px; background: linear-gradient(to bottom, rgba(35, 35, 37, 0), var(--sf-solid)); pointer-events: none; }
 @media (max-width: 599px) {
   #side:has(.weekpick) { --pf-x: 16px; }
-  #side:has(.weekpick) > .side-x { margin-right: -4px; }
 }
 /* a row of days too wide for a narrow phone scrolls sideways; its edge fades on the side with more days
    (.more-l, .more-r, set by weekCells as it scrolls) */

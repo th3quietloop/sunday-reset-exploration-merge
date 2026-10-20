@@ -8,6 +8,10 @@
   let focusOpen = false;
   let focus = null; /* the session: what, how long, when it started, paused time */
   let pick = null; /* what's being chosen before a session starts */
+  /* V11-2 (Russell's pick, Oct 20): a version with a side panel of its own draws Focus there (SRFocus.usePanel): the
+     dark panel on the desk and the sheet on a phone. The session and its rules stay here; this room stays for the
+     versions without one. { open, close, isOpen, draw, tick, changed } */
+  let panel = null;
 
   try { focus = JSON.parse(localStorage.getItem(FKEY) || 'null'); } catch (e) { focus = null; }
   const saveFocus = () => { try { if (focus) localStorage.setItem(FKEY, JSON.stringify(focus)); else localStorage.removeItem(FKEY); } catch (e) { /* storage off */ } };
@@ -29,6 +33,7 @@
 
   /* == Focus == */
   function openFocus() {
+    if (panel) { panel.open(); changed(); return; }
     focusOpen = true;
     $('focusroom').hidden = false;
     document.body.classList.add('focus-open');
@@ -39,6 +44,7 @@
     if (f) f.focus({ preventScroll: true });
   }
   function closeFocus() {
+    if (panel) { if (panel.isOpen()) { panel.close(); changed(); } return; }
     if (!focusOpen) return;
     focusOpen = false;
     $('focusroom').hidden = true;
@@ -65,6 +71,29 @@
     return out;
   }
 
+  /* V11-2 (Russell's list, Oct 20): what a session has to stop before, after now today: a locked block, sleep, or a
+     time with people (Family, You and Kim, Friends, a meeting). Its name, when it starts, and how far off it is */
+  const PEOPLE = ['family', 'us', 'friends'];
+  function wall(now, blocks) {
+    const next = (blocks || []).filter((b) => b.start > now && (b.fixed || b.sleep || b.meeting || PEOPLE.includes(b.cat))).sort((a, b) => a.start - b.start)[0];
+    if (!next) return null;
+    return { name: next.sleep ? 'bed' : SR.blockName(next), at: next.start, min: next.start - now };
+  }
+  /* the lengths a session can take, each one ending before the wall, and the wall itself named last ("Until Pick up
+     Robin at 4:45 pm"); four at most */
+  function lengths(o, now, cur, w) {
+    const room = w ? w.min : Infinity, out = [];
+    const add = (min, label, sub) => { if (min >= 5 && min <= room && !out.some((x) => x.min === min)) out.push({ min, label, sub: sub || 'until ' + SR.M.clock((now + min) % 1440) }); };
+    add(25, '25 min'); add(50, '50 min');
+    if (o.kind === 'task' && o.dur && o.dur <= 120) add(o.dur, lenWords(o.dur), 'its length, until ' + SR.M.clock((now + o.dur) % 1440));
+    const block = o.kind === 'block' ? o : o.inside || cur;
+    /* (a block that ends where the wall begins ends because of it: the wall names that time, Until Pick up Robin) */
+    if (block && block.until - now >= 10 && !(w && block.until >= w.at)) add(block.until - now, 'Until ' + block.name + ' ends', SR.M.clock(block.until) + ', ' + lenWords(block.until - now));
+    const list = out.slice(0, w ? 3 : 4);
+    if (w && w.min >= 5) list.push({ min: w.min, label: 'Until ' + w.name + ' at ' + SR.M.clock(w.at), sub: lenWords(w.min) + ' from now' });
+    return list.filter((x, i) => !list.slice(i + 1).some((y) => y.min === x.min));
+  }
+
   function brickFor(o, cls) {
     const c = SR.cat(o.cat);
     const b = h('span', 'fr-brick ' + (cls || ''));
@@ -75,6 +104,7 @@
   }
 
   function drawFocus() {
+    if (panel) { panel.draw(); return; }
     const room = $('focusroom');
     room.replaceChildren();
     const x = h('button', 'fr-x'); x.type = 'button'; x.setAttribute('aria-label', 'Back to the board'); x.title = 'Back to the board (Esc)';
@@ -136,16 +166,12 @@
     card.append(back(() => { pick = { step: 'what' }; drawFocus(); }), h('span', 'fr-kick', 'Focus'));
     card.appendChild(brickFor(o, 'fr-big'));
     card.appendChild(h('h1', 'fr-h fr-h2', 'For how long?'));
-    const now = SR.nowMin;
-    const lens = [];
-    const add = (min, label, sub) => { if (min >= 5 && !lens.some((x) => x.min === min)) lens.push({ min, label, sub: sub || 'until ' + SR.M.clock((now + min) % 1440) }); };
-    add(25, '25 min'); add(50, '50 min');
-    if (o.kind === 'task' && o.dur && o.dur <= 120) add(o.dur, lenWords(o.dur), 'its length, until ' + SR.M.clock((now + o.dur) % 1440));
-    const cur = options().find((x) => x.kind === 'block');
-    const block = o.kind === 'block' ? o : o.inside || cur;
-    if (block && block.until - now >= 10) add(block.until - now, 'Until ' + block.name + ' ends', SR.M.clock(block.until) + ', ' + lenWords(block.until - now));
+    const now = SR.nowMin, w = wall(now, (SR.day(SR.today) || {}).blocks);
+    const lens = lengths(o, now, options().find((x) => x.kind === 'block'), w);
+    /* (nothing fits before what's next: say so, plainly) */
+    if (!lens.length && w) card.appendChild(h('p', 'fr-line', (w.name === 'bed' ? 'Bed' : w.name) + ' is at ' + SR.M.clock(w.at) + ', in ' + lenWords(Math.max(1, w.min)) + '. That’s too close to start one.'));
     const row = h('div', 'fr-lens');
-    lens.slice(0, 4).forEach((l, i) => {
+    lens.forEach((l, i) => {
       const b = h('button', 'fr-len' + (i === 0 ? ' fr-first' : '')); b.type = 'button';
       b.append(h('b', '', l.label), h('span', '', l.sub));
       b.addEventListener('click', () => start(o, l.min));
@@ -186,15 +212,21 @@
     if (f.inside) card.appendChild(h('p', 'fr-line', 'Part of ' + f.inside));
     const acts = h('div', 'fr-acts');
     const up = leftMs(f) <= 0;
+    /* V11-2 (Russell's list, Oct 20): time running out never marks anything done; only Mark it done does, for a to-do,
+       and it checks off its steps too. Done ends a session on a block or your own thing, which has nothing to mark */
+    const isTask = !!f.task && !f.brk;
     if (up) {
-      card.appendChild(h('p', 'fr-ask', f.brk ? 'Break’s over.' : 'Time’s up. Done, or a little more?'));
-      acts.append(btn(f.brk ? 'Back to it' : 'Done', 'fr-go', () => (f.brk ? endBreak() : finish())), btn('10 more min', 'fr-ghost', () => more(10)));
+      card.appendChild(h('p', 'fr-ask', f.brk ? 'Break’s over.' : isTask ? 'Time’s up. Is it done?' : 'Time’s up. Done, or a little more?'));
+      if (f.brk) acts.append(btn('Back to it', 'fr-go', () => endBreak()), btn('10 more min', 'fr-ghost', () => more(10)));
+      else if (isTask) acts.append(btn('Mark it done', 'fr-go', () => finish(true)), btn('10 more min', 'fr-ghost', () => more(10)), btn('Stop here', 'fr-ghost', () => finish(false)));
+      else acts.append(btn('Done', 'fr-go', () => finish(false)), btn('10 more min', 'fr-ghost', () => more(10)));
     } else {
-      acts.append(btn(f.runningSince ? 'Pause' : 'Resume', 'fr-ghost', toggle), btn('5 more min', 'fr-ghost', () => more(5)), btn(f.brk ? 'End the break' : 'Done', 'fr-go', () => (f.brk ? endBreak() : finish())));
+      acts.append(btn(f.runningSince ? 'Pause' : 'Resume', 'fr-ghost', toggle), btn('5 more min', 'fr-ghost', () => more(5)), btn(f.brk ? 'End the break' : isTask ? 'Mark it done' : 'Done', 'fr-go', () => (f.brk ? endBreak() : finish(isTask))));
     }
     card.appendChild(acts);
+    /* (once the time is up its row has Stop here, so this goes) */
     const quit = h('button', 'fr-quiet', f.brk ? '' : 'Stop without finishing'); quit.type = 'button';
-    if (!f.brk) { quit.addEventListener('click', () => { focus = null; saveFocus(); pick = { step: 'what' }; drawFocus(); changed(); }); card.appendChild(quit); }
+    if (!f.brk && !up) { quit.addEventListener('click', () => { focus = null; saveFocus(); pick = { step: 'what' }; drawFocus(); changed(); }); card.appendChild(quit); }
     sessionEls = { worn, left, until, up };
     tick();
   }
@@ -210,15 +242,16 @@
     f.total += min; f.chimed = false;
     saveFocus(); drawFocus();
   }
-  function finish() {
+  function finish(mark) {
     const f = focus;
-    f.used = used(f); f.runningSince = null; f.done = true;
+    f.used = used(f); f.runningSince = null; f.done = true; f.marked = false;
     const mins = Math.max(1, Math.round(f.used / 60000));
-    f.said = mins < 2 ? f.name + ', done' : lenWords(mins) + ' on ' + f.name;
-    if (f.task) {
+    /* (marked: the to-do and every step of it, in one change, with Undo) */
+    if (mark && f.task) {
       const t = SR.taskById(f.task);
-      if (t && !t.done) { SR.commit(() => { SR.markDone(t, null, true); }); SR.toast(t.name + ', done', 'good', { label: 'Undo', fn: () => SR.undo() }); }
+      if (t && !t.done) { SR.commit(() => { SR.markDone(t, null, true); }); f.marked = true; SR.toast(t.name + ' is done.', 'good', { label: 'Undo', fn: () => SR.undo() }); }
     }
+    f.said = f.marked && mins < 2 ? f.name + ', done' : lenWords(mins) + ' on ' + f.name;
     if (SR.Snd.good) SR.Snd.good();
     saveFocus(); drawFocus(); changed();
   }
@@ -227,7 +260,7 @@
   function drawDone(card) {
     const f = focus;
     card.append(h('span', 'fr-kick', 'Done'), h('h1', 'fr-h', f.said + '.'));
-    if (f.task) card.appendChild(h('p', 'fr-line', 'It’s checked off on the board.'));
+    if (f.marked) card.appendChild(h('p', 'fr-line', 'It’s checked off on the board.'));
     const next = options().find((o) => o.kind === 'task' && o.id !== f.task);
     const acts = h('div', 'fr-acts fr-col');
     acts.appendChild(btn('Take a 5 min break', 'fr-ghost fr-wide', () => start({ name: 'Break', cat: 'open', icon: 'cup' }, 5, true)));
@@ -248,10 +281,12 @@
     if (ms <= 0 && !f.chimed) {
       f.chimed = true; f.used = f.total * 60000; f.runningSince = null; saveFocus();
       if (SR.Snd.good) SR.Snd.good();
-      if (focusOpen) drawFocus();
+      if (focusOpen || (panel && panel.isOpen())) drawFocus();
       changed();
       return;
     }
+    /* (the panel puts the minutes left and the wear in place itself) */
+    if (panel) { if (panel.isOpen()) panel.tick(); return; }
     if (sessionEls && focusOpen) {
       sessionEls.worn.style.width = Math.min(100, (used(f) / (f.total * 60000)) * 100).toFixed(2) + '%';
       const lw = leftWords(ms);
@@ -263,9 +298,19 @@
   }
   setInterval(tick, 1000);
 
-  const changed = () => { if (window.SRFocus.onChange) window.SRFocus.onChange(); };
+  const changed = () => { if (window.SRFocus.onChange) window.SRFocus.onChange(); if (panel && panel.changed) panel.changed(); };
   document.addEventListener('keydown', (e) => {
     if (focusOpen && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeFocus(); }
   }, true);
-  window.SRFocus = { open: openFocus, close: closeFocus, get isOpen() { return focusOpen; }, get running() { return !!focus && !focus.done; }, onChange: null };
+  /* (stopped without finishing, or after it's done: nothing is kept, and the next open starts at the pick) */
+  function clear() { focus = null; pick = panel ? null : { step: 'what' }; saveFocus(); drawFocus(); changed(); }
+  window.SRFocus = {
+    open: openFocus, close: closeFocus, get isOpen() { return panel ? panel.isOpen() : focusOpen; }, get running() { return !!focus && !focus.done; }, onChange: null,
+    /* V11-2: what a side panel draws Focus from (usePanel), and what its buttons do */
+    usePanel(p) { panel = p || null; },
+    get session() { return focus; },
+    left() { if (!focus) return null; const ms = leftMs(focus); return { ms, used: used(focus), total: focus.total * 60000, up: ms <= 0, ends: endsAt(focus) }; },
+    options, wall, lengths, lenWords, leftWords, clockAt,
+    start: (o, min, isBreak) => start(o, min, isBreak), toggle: () => toggle(), more: (min) => more(min), finish: (mark) => finish(mark), endBreak: () => endBreak(), clear
+  };
 })();

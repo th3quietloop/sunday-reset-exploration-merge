@@ -1,0 +1,87 @@
+/* == V11-2: every dead end gets a next step, and progress as counts (Oct 20) ==
+   The reset's To-dos step with nothing to place: the to-dos with no day yet, as pieces, with Give one a day and Skip
+   for now (.c-noday). What was due before today waits in its own calm group, From last week (.c-tdfrom in the reset,
+   .c-ds-from in the phone's due sheet, a To-dos section of its own). The Sunday Reset on the phone's Today, on its day
+   (.c-resetline). Look back's counts for this month and last (.c-lb-month). Type sizes are the eight; ink on the dark
+   panels is the panel's own (4.5 to 1 or more). */
+
+/* the to-dos with no day yet, in the reset's To-dos step */
+body.c-resetting .rack.resetting .rack-body > .c-noday { flex: 1 1 100%; min-width: 0; width: 100%; }
+.c-noday { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; }
+.c-noday-h { margin: 6px 0 0; font: 600 14px/1.4 var(--k-font); color: var(--tx); }
+.c-noday.said .c-noday-h { display: none; }
+.c-noday-more { margin: 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+.c-noday-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.c-noday-give, .c-noday-skip { min-height: 44px; border: 0; font: 600 14px var(--k-font); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s ease-out; }
+.c-noday-give { display: inline-flex; align-items: center; gap: 8px; padding: 0 16px; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); }
+.c-noday-give canvas { width: 14px !important; height: 14px !important; flex: none; }
+.c-noday-give:hover { background: var(--sf-hover); }
+.c-noday-skip { padding: 0 12px; border-radius: 12px; background: none; color: var(--tx-2); }
+.c-noday-skip:hover { background: var(--sf-hover); color: var(--tx); }
+.c-noday-give:active, .c-noday-skip:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-noday-give:focus-visible, .c-noday-skip:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+
+/* a to-do from an earlier day, in the reset: its tile and its one next step */
+.c-tdw.c-tdnew .c-tdw-btn { font-size: 13px; }
+
+/* the phone's due sheet: what was due before today, under the name of when it's from */
+.c-ds-from { margin: 20px 0 0; font: 600 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3, #AFAFAF); }
+.c-ds-from + .c-ds-list { margin-top: 4px; }
+
+/* the reset on the phone's Today, on its day: a line at the top, the sample line's shape */
+.td-head .c-resetline { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--sf-raised); }
+.c-resetline .c-rl-w { min-width: 0; font: 500 14px/1.35 var(--k-font); color: var(--tx-2); }
+.c-resetline .c-rl-w b { font-weight: 700; color: #FFFFFF; }
+.c-resetline .c-rl-go { flex: none; min-height: 44px; padding: 0 16px; border-radius: 12px; font: 700 14px var(--k-font); white-space: nowrap; cursor: pointer; }
+.c-resetline .c-rl-go.quiet { border: 0; background: var(--sf-hover); box-shadow: inset 0 0 0 1px var(--sf-edge); color: #FFFFFF; }
+.c-resetline .c-rl-go.quiet:hover { background: var(--sf-press); }
+.c-resetline .c-rl-go.go { color: var(--sf-ink); }
+.c-resetline .c-rl-go:active { transform: translateY(1px); }
+.c-resetline .c-rl-go:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* look back: this month and last, as counts */
+.c-lb-month { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--sf-edge); }
+.c-lb-month p { margin: 0; font: 500 14px/1.45 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-lb-month p + p { margin-top: 4px; }
+.c-lb-month b { font-weight: 700; color: var(--tx, #FFFFFF); }
+
+body.calm .c-noday-give, body.calm .c-noday-skip { transition: none; }
+body.calm .c-noday-give:active, body.calm .c-noday-skip:active, body.calm .c-resetline .c-rl-go:active { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .c-noday-give, .c-noday-skip { transition: none; }
+  .c-noday-give:active, .c-noday-skip:active, .c-resetline .c-rl-go:active { transform: none; }
+}
+
+/* V11-2 (the unhappy gate's round): the due sheet's Add a to-do and its rows with no day yet */
+.c-ds-add { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; margin: 18px 0 4px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: #FFFFFF; font: 600 14px var(--k-font); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.12s ease-out; }
+.c-ds-add canvas { width: 14px !important; height: 14px !important; flex: none; }
+.c-ds-add:hover { background: var(--sf-hover); }
+.c-ds-add:active { transform: translateY(1px); transition-duration: 0.06s; }
+.c-ds-add:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ds-more { margin: 8px 0 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+
+/* the next 7 days with nothing in them: one line, one way forward, and the days a tap away */
+.c-n7-go { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; margin-top: 14px; padding: 0 18px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: #FFFFFF; font: 600 14px var(--k-font); cursor: pointer; }
+.c-n7-go canvas { width: 14px !important; height: 14px !important; flex: none; }
+.c-n7-go:hover { background: var(--sf-hover); }
+.c-n7-hint { margin: 18px 0 8px; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+.c-n7-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.c-n7-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 56px; padding: 6px 0; border: 0; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: #FFFFFF; cursor: pointer; }
+.c-n7-day:hover { background: var(--sf-hover); }
+.c-n7-day.on { box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-n7-dw { font: 600 12px var(--k-font); color: var(--tx-2); }
+.c-n7-dn { font: 700 16px 'Gabarito', var(--k-font); color: #FFFFFF; }
+.c-n7-go:active, .c-n7-day:active { transform: translateY(1px); }
+.c-n7-go:focus-visible, .c-n7-day:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* the meal board's empty days: a quiet + Add anyone can see, dark ink on the wood */
+.c-madd { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; font: 600 13px var(--k-font); color: #2E1E0C; pointer-events: none; }
+.c-madd canvas { width: 14px !important; height: 14px !important; }
+.c-meals .c-mealgrid.c-tall .c-madd { font-size: 12px; gap: 2px; }
+
+body.calm .c-ds-add, body.calm .c-n7-go, body.calm .c-n7-day { transition: none; }
+body.calm .c-ds-add:active, body.calm .c-n7-go:active, body.calm .c-n7-day:active { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .c-ds-add, .c-n7-go, .c-n7-day { transition: none; }
+  .c-ds-add:active, .c-n7-go:active, .c-n7-day:active { transform: none; }
+}

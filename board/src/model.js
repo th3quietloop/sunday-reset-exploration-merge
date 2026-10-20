@@ -183,9 +183,11 @@
     }
     return liveMemo.out;
   }
-  const markersOn = (state, date) => liveEvents(state).filter((e) => e.kind === 'marker' && (e.yearly ? yearlyDay(e, date) : e.date === date));
-  const tripOn = (state, date) => liveEvents(state).find((e) => e.kind === 'trip' && e.date <= date && date <= e.end) || null;
-  const timedOn = (state, date) => liveEvents(state).filter((e) => e.kind === 'timed' && e.date === date);
+  /* V11-2 (big moments): a fuzzy date (window: { from, to } and no date yet, sometime in spring) is still a live event,
+     so Look ahead and the countdown see it, but it puts nothing on any day and is never a trip day */
+  const markersOn = (state, date) => liveEvents(state).filter((e) => e.kind === 'marker' && !!e.date && (e.yearly ? yearlyDay(e, date) : e.date === date));
+  const tripOn = (state, date) => liveEvents(state).find((e) => e.kind === 'trip' && !!e.date && !!e.end && e.date <= date && date <= e.end) || null;
+  const timedOn = (state, date) => liveEvents(state).filter((e) => e.kind === 'timed' && !!e.date && e.date === date);
 
   /* == building a day == */
   /* Which kind of week a date is in: one picked for that week, or, when weeks alternate (every other
@@ -383,7 +385,8 @@
         const ho = Object.assign({}, b0, e.start != null ? { start: e.start } : {}, e.dur ? { dur: e.dur } : {}, { key: 'tpl:' + b0.id, base: 'tpl:' + b0.id, tpl: b0.id, handoff: String(e.by), name: b0.name, label: String(e.by) + ': ' + (e.name || b0.name), soft: true, free: true, fixed: false, cat: 'open' });
         delete ho.gone; delete ho.by; delete ho.daycare;
         const hc = clip([ho], wake, bed);
-        if (hc.length) put(hc[0], 1);
+        /* (it lies under the day's own routines, a layer below soft ones, so Work keeps its usual end beside it) */
+        if (hc.length) put(hc[0], 0.5);
         continue;
       }
       if (e && e.gone) continue;
@@ -486,9 +489,31 @@
   const awake = (t) => Object.keys(t).reduce((a, k) => a + (k === 'sleep' ? 0 : t[k]), 0);
 
   /* == placing == */
+  /* V11-2: meals keep their time. A meal is a Dinner block, anything that's Meals, or a template Breakfast, Lunch, or
+     Dinner ("Lunch, pack them up" too). Its window is its usual time, an hour either way: the template's start, or a
+     placed meal's own start. Making room never moves a meal further out than its window without a yes, the way a plan
+     never takes own time without one: pushInsert keeps the least moving way that keeps every meal in its window, and
+     when only a way that moves one out would do, it says so instead (reason 'meal', with meal: { name, key, fromDate,
+     from, date, to }, and the pushes it would make) so the app can ask "This moves Dinner to 4:45 pm. Move it?". The
+     yes is opts.meals on canPlace, placeAdd, moveAdd, moveTemplate, and resizeBlock, or withMeals(true, fn) around
+     any change (15 more minutes too). A stretch that would push a meal out stops where its window does. */
+  const MEAL_WINDOW = 60;
+  const mealBlock = (b) => !!b && !b.sleep && !b.soft && (!!b.dinner || b.cat === 'meals' || (!!b.tpl && /^(breakfast|lunch|dinner)\b/i.test(String(b.name || ''))));
+  let mealsOk = false;
+  function withMeals(on, fn) { const was = mealsOk; mealsOk = !!on; try { return fn(); } finally { mealsOk = was; } }
+  /* a meal's window in `date`'s minutes: { lo, hi, at } around its usual start; null for anything that isn't a meal */
+  function mealWindow(state, b, date) {
+    if (!mealBlock(b)) return null;
+    const src = b.sourceDate || date;
+    let at = null;
+    if (b.tpl) { const t = (templateFor(state, src).blocks || []).find((x) => x.id === b.tpl); if (t) at = windowTime(date, src, t.start); }
+    if (at == null) at = b.add && b.sourceStart != null ? windowTime(date, src, b.sourceStart) : b.start;
+    return { lo: at - MEAL_WINDOW, hi: at + MEAL_WINDOW, at };
+  }
   /* Put a hard block of length dur at start, sliding movable neighbors out of the way.
-     Fixed blocks are walls. Tries pushing right, left, and splitting, and keeps whatever moves least. */
-  function pushInsert(movable, walls, n, lo, hi, rightOnly) {
+     Fixed blocks are walls. Tries pushing right, left, and splitting, and keeps whatever moves least.
+     V11-2: a movable meal carries win ({ lo, hi, at }, mealWindow); meals: true is the person's yes */
+  function pushInsert(movable, walls, n, lo, hi, rightOnly, meals) {
     const locked = (t) => t.fixed;
     const all = movable.concat(walls).slice().sort(byStart).map((t) => Object.assign({}, t));
     for (const w of walls) if (overlaps(w, n)) return { ok: false, reason: 'fixed', blocker: w };
@@ -517,17 +542,27 @@
         if (cur < lo) ok = false;
       }
       if (!ok) continue;
-      tries.push({ arr, moved: arr.reduce((a, t, i) => a + Math.abs(t.start - all[i].start), 0) });
+      /* (a meal it moves further out than its window, if any: a way like that waits for a yes) */
+      let out = null;
+      arr.forEach((t, i) => {
+        const w = t.win;
+        if (out || !w || t.start === all[i].start) return;
+        if ((t.start < w.lo || t.start > w.hi) && Math.abs(t.start - w.at) > Math.abs(all[i].start - w.at)) out = { t, from: all[i].start };
+      });
+      tries.push({ arr, out, moved: arr.reduce((a, t, i) => a + Math.abs(t.start - all[i].start), 0) });
     }
     if (!tries.length) return { ok: false, reason: 'full' };
     tries.sort((a, b) => a.moved - b.moved);
-    const pushes = tries[0].arr.map((t, i) => ({ base: t.sourceKey || t.base, start: t.start, dur: t.dur, sourceDate: t.sourceDate, sourceStart: t.sourceStart, delta: t.start - all[i].start, fixed: t.fixed })).filter((p) => !p.fixed && p.delta).map(({ fixed, ...p }) => p);
-    return { ok: true, pushes };
+    const pushesOf = (tr) => tr.arr.map((t, i) => ({ base: t.sourceKey || t.base, start: t.start, dur: t.dur, sourceDate: t.sourceDate, sourceStart: t.sourceStart, delta: t.start - all[i].start, fixed: t.fixed })).filter((p) => !p.fixed && p.delta).map(({ fixed, ...p }) => p);
+    const best = meals || mealsOk ? tries[0] : tries.find((x) => !x.out);
+    if (!best) { const tr = tries[0], m = tr.out.t; return { ok: false, reason: 'meal', meal: { name: m.label || m.name, key: m.sourceKey || m.base, from: tr.out.from, to: m.start }, pushes: pushesOf(tr) }; }
+    return { ok: true, pushes: pushesOf(best) };
   }
 
   /* Can a block of `dur` minutes go at `start` on `date`? `key` is its own base key when moving it.
-     Returns { ok, start, pushes } where pushes are neighbors that slide to make room. */
-  function canPlace(state, date, dur, start, key, rightOnly) {
+     Returns { ok, start, pushes } where pushes are neighbors that slide to make room.
+     V11-2: opts.meals: the person said yes to moving a meal out of its window (else reason 'meal', above) */
+  function canPlace(state, date, dur, start, key, rightOnly, opts) {
     const windowStart = snap(start), at = dateTime(date, windowStart);
     if (!Number.isFinite(dur) || dur < STEP || dur > 1440) return { ok: false, reason: 'long', date: at.date, start: at.start };
     const day = resolveDay(state, at.date);
@@ -545,9 +580,11 @@
       if (seen.has(identity)) continue;
       seen.add(identity);
       if (b.start + b.dur > hi) walls.push(Object.assign({}, b, { fixed: true }));
-      else movable.push(b);
+      else { const w = mealWindow(state, b, at.date); movable.push(w ? Object.assign({}, b, { win: w }) : b); }
     }
-    const r = pushInsert(movable, walls, { start: at.start, dur }, lo, hi, rightOnly);
+    const r = pushInsert(movable, walls, { start: at.start, dur }, lo, hi, rightOnly, !!(opts && opts.meals));
+    /* (the meal it would move, said in its own date's minutes) */
+    if (r.meal) { const f = dateTime(at.date, r.meal.from), t = dateTime(at.date, r.meal.to); Object.assign(r.meal, { fromDate: f.date, from: f.start, date: t.date, to: t.start }); }
     return Object.assign(r, { date: at.date, start: at.start, windowStart });
   }
   /* Pull a drop to a nearby edge so it doesn't leave a sliver of open time behind. */
@@ -607,9 +644,9 @@
   /* Blocks on the board come in 15 minute steps, so a 5 minute step takes a 15 minute block. */
   const gridDur = (m) => Math.max(STEP, Math.ceil((m || STEP) / STEP) * STEP);
   /* Place a new block (from the tray) or move one already on the board. Mutates state. */
-  function placeAdd(state, date, add, start) {
+  function placeAdd(state, date, add, start, opts) {
     add = Object.assign({}, add, { dur: gridDur(add.dur) });
-    const r = canPlace(state, date, add.dur, start, add.id ? 'add:' + add.id : null);
+    const r = canPlace(state, date, add.dur, start, add.id ? 'add:' + add.id : null, false, opts);
     if (!r.ok) return r;
     applyPushes(state, r.date, r.pushes);
     const dd = dateRec(state, r.date);
@@ -639,23 +676,23 @@
   /* V11 goals: a goal session or a to-do's step that someone places or moves by hand is pinned, so
      planning it again (planGoal, reflowTask) leaves it where they put it */
   const pinnable = (a) => !!(a && a.src && (a.src.type === 'goal' || a.src.type === 'step'));
-  function moveAdd(state, id, date, start) {
+  function moveAdd(state, id, date, start, opts) {
     const f = findAdd(state, id);
     if (!f) return { ok: false };
     const add = Object.assign({}, f.add);
     const before = clone(state.dates);
     removeAdd(state, id);
-    const r = placeAdd(state, date, add, start);
+    const r = placeAdd(state, date, add, start, opts);
     if (!r.ok) state.dates = before;
     else if (pinnable(r.add)) r.add.pinned = true;
     return r;
   }
   /* Slide a template block (a routine) to a new start on its own date. */
-  function moveTemplate(state, date, tplId, start, dur) {
+  function moveTemplate(state, date, tplId, start, dur, opts) {
     const key = 'tpl:' + tplId, b = blockRecord(state, date, key);
     if (!b) return { ok: false };
     const d = dur || b.dur;
-    const r = canPlace(state, date, d, start, key);
+    const r = canPlace(state, date, d, start, key, false, opts);
     if (!r.ok) return r;
     applyPushes(state, r.date, r.pushes);
     const dd = dateRec(state, date);
@@ -664,19 +701,19 @@
     return r;
   }
   /* Change a block's length from its start, pushing later blocks. Shrinks the ask until it fits. */
-  function canResize(state, date, key, newDur) {
+  function canResize(state, date, key, newDur, opts) {
     const b = blockRecord(state, date, key);
     if (!b) return { ok: false };
     newDur = Math.max(STEP, snap(newDur));
     for (let d = newDur; d >= STEP; d -= STEP) {
-      const r = canPlace(state, date, d, b.start, key, true);
+      const r = canPlace(state, date, d, b.start, key, true, opts);
       if (r.ok) return Object.assign(r, { dur: d, recordStart: b.start });
       if (d <= b.dur) break;
     }
     return { ok: false };
   }
-  function resizeBlock(state, date, key, newDur) {
-    const r = canResize(state, date, key, newDur);
+  function resizeBlock(state, date, key, newDur, opts) {
+    const r = canResize(state, date, key, newDur, opts);
     if (!r.ok) return r;
     applyPushes(state, r.date, r.pushes);
     const dd = dateRec(state, date);
@@ -778,7 +815,10 @@
     let due = nextDue(t.due, t.repeat);
     for (let k = 0; today && due && due < today && k < 1000; k++) due = nextDue(due, t.repeat);
     nt.due = due;
-    nt.steps = (t.steps || []).map((s) => Object.assign({}, s, { id: newId('s'), done: false }));
+    /* (V11-2: a step's doneOn, the day it was checked, belongs to the copy that was done) */
+    nt.steps = (t.steps || []).map((s) => { const c = Object.assign({}, s, { id: newId('s'), done: false }); delete c.doneOn; return c; });
+    /* V11-2: the things inside the block (a packing list) come along, none of them ticked */
+    if (Array.isArray(t.list)) nt.list = t.list.map((x) => Object.assign({}, x, { done: false }));
     /* V11 goals: the next copy spreads the same way, toward its own due date */
     if (nt.spread) { nt.spread = Object.assign({}, nt.spread); delete nt.spread.by; }
     state.tasks.push(nt);
@@ -960,7 +1000,13 @@
      and when it should be done (by, days before). An event keeps its own list (ready: keys, or
      { k, lead, by }); one without a list gets what its kind and name suggest. What came of it is kept
      on the event, per date (prep: { 'gift@2026-10-21': a to-do's id, or 'skip' }), so a date that comes
-     every year asks again next year. */
+     every year asks again next year.
+     V11-2 (big moments, docs/BIG-MOMENTS.md): by is each one's last good day. More kinds: a heads-up for each
+     person you'll see there (who: its entry names the person, and its prep key is k:who@date,
+     'headsup:Aunt Lisa@2026-12-18'), hosting, a deadline, a move, and a fuzzy date's pick (fuzzy). Some come
+     after the date (after: they start the day after its end, a trip's last day, and by counts days after it).
+     msg: the step is a message the person sends; why: the line that says why it starts when it does, only where
+     a kind has one. No line here ever names a price or a fee. */
   const READY = {
     gift: { name: 'A gift', short: 'Gift', todo: 'Gift for {x}', lead: 21, by: 3, icon: 'gift', cat: 'family', dur: 45 },
     gifts: { name: 'Gifts', short: 'Gifts', todo: 'Gifts for {x}', lead: 56, by: 10, icon: 'gift', cat: 'family', dur: 90 },
@@ -969,17 +1015,64 @@
     pack: { name: 'Packing', short: 'Packing', todo: 'Pack for {x}', lead: 3, by: 1, icon: 'shirt', cat: 'home', dur: 45 },
     tickets: { name: 'Tickets', short: 'Tickets', todo: 'Tickets for {x}', lead: 28, by: 14, icon: 'film', cat: 'yours', dur: 15 },
     wear: { name: 'Something to wear', short: 'Something to wear', todo: 'Something to wear to {x}', lead: 21, by: 5, icon: 'shirt', cat: 'yours', dur: 60 },
-    costume: { name: 'Costumes', short: 'Costumes', todo: 'Costumes for {x}', lead: 28, by: 5, icon: 'shirt', cat: 'family', dur: 60 }
+    costume: { name: 'Costumes', short: 'Costumes', todo: 'Costumes for {x}', lead: 28, by: 5, icon: 'shirt', cat: 'family', dur: 60 },
+    headsup: { name: 'A heads-up', short: 'Heads-up', todo: 'Give {who} a heads-up', lead: 42, by: 28, icon: 'chat', cat: 'family', dur: 5, msg: true, who: true, why: 'A month’s notice' },
+    rsvp: { name: 'Your reply', short: 'Reply', todo: 'Reply to {x}', lead: 42, by: 28, icon: 'envelope', cat: 'family', dur: 5, msg: true },
+    stay: { name: 'A place to stay', short: 'Stay', todo: 'Book a place to stay for {x}', lead: 56, by: 28, icon: 'bed', cat: 'family', dur: 30 },
+    outfit: { name: 'The outfit', short: 'Outfit', todo: 'Get the outfit for {x}', lead: 56, by: 21, icon: 'shirt', cat: 'yours', dur: 60, why: 'Leaves time for tailoring and shipping' },
+    timeoff: { name: 'Time off', short: 'Time off', todo: 'Ask for time off for {x}', lead: 42, by: 28, icon: 'laptop', cat: 'work', dur: 10, work: true },
+    /* (V11-2: what a trip leaves behind that needs a person, {what} in plain words from those routines, coverOf) */
+    cover: { name: 'Someone to cover', short: 'Who’s covering', todo: 'Line up who’s covering {what} while you’re away', lead: 28, by: 14, icon: 'people', cat: 'family', dur: 10, msg: true, cover: true, why: 'Someone needs time to say yes' },
+    invites: { name: 'Invites', short: 'Invites', todo: 'Send the invites for {x}', lead: 35, by: 21, icon: 'envelope', cat: 'family', dur: 20, msg: true },
+    food: { name: 'The food', short: 'Food', todo: 'Plan the food for {x}', lead: 14, by: 5, icon: 'pot', cat: 'meals', dur: 30 },
+    shop: { name: 'Shopping', short: 'Shopping', todo: 'Shop for {x}', lead: 3, by: 1, icon: 'cart', cat: 'home', dur: 60 },
+    tidy: { name: 'The place', short: 'The place', todo: 'Get the place ready for {x}', lead: 2, by: 1, icon: 'broom', cat: 'home', dur: 60 },
+    papers: { name: 'What it needs', short: 'Papers', todo: 'Gather what {x} needs', lead: 28, by: 14, icon: 'note', cat: 'home', dur: 30 },
+    finish: { name: 'Finishing', short: 'Finish', todo: 'Finish {x}', lead: 14, by: 3, icon: 'check', cat: 'home', dur: 60 },
+    notice: { name: 'Notice', short: 'Notice', todo: 'Give notice for {x}', lead: 45, by: 30, icon: 'key', cat: 'home', dur: 15 },
+    movers: { name: 'Movers', short: 'Movers', todo: 'Book movers for {x}', lead: 56, by: 42, icon: 'car', cat: 'home', dur: 30 },
+    address: { name: 'Your address', short: 'Address', todo: 'Change your address for {x}', lead: 14, by: 7, icon: 'envelope', cat: 'home', dur: 20 },
+    packup: { name: 'Packing up', short: 'Packing up', todo: 'Pack up for {x}, a little each day', lead: 21, by: 2, icon: 'box', cat: 'home', dur: 30, spread: true },
+    pickdate: { name: 'The date', short: 'The date', todo: 'Pick the date for {x}', lead: 0, by: 0, icon: 'calendar', cat: 'yours', dur: 10, fuzzy: true },
+    unpack: { name: 'Unpacking', short: 'Unpack', todo: 'Unpack after {x}', lead: 0, by: 1, icon: 'box', cat: 'home', dur: 45, after: true },
+    groceries: { name: 'Groceries after', short: 'Groceries', todo: 'Groceries after {x}', lead: 0, by: 1, icon: 'cart', cat: 'meals', dur: 45, after: true, meals: true },
+    thanks: { name: 'Thank-you notes', short: 'Thanks', todo: 'Thank-you notes for {x}', lead: 0, by: 14, icon: 'heart', cat: 'family', dur: 30, msg: true, after: true }
   };
-  /* what each kind of date can get ready for, in the order a panel offers them */
-  const READY_FOR = { marker: ['gift', 'plans'], trip: ['travel', 'pack'], timed: [], occasion: ['gift', 'tickets', 'wear', 'travel'] };
+  /* the kinds version 8 had: a to-do already on the list counts for them the way it always did */
+  const READY8 = ['gift', 'gifts', 'plans', 'travel', 'pack', 'tickets', 'wear', 'costume'];
+  /* what each kind of date can get ready for, in the order a panel offers them. V11-2: hosting, a deadline, and a
+     move have lists of their own; a heads-up isn't in any, since it's one per person, added by name (addHeadsUp) */
+  const READY_FOR = {
+    marker: ['gift', 'plans'], trip: ['travel', 'stay', 'timeoff', 'pack', 'unpack', 'groceries'], timed: [],
+    occasion: ['gift', 'rsvp', 'outfit', 'tickets', 'wear', 'travel', 'stay', 'timeoff'],
+    host: ['invites', 'food', 'shop', 'tidy', 'thanks'], deadline: ['papers', 'finish'], move: ['notice', 'movers', 'address', 'packup', 'unpack']
+  };
   /* a line about getting ready shows a little before it starts: as long again as it takes, up to three
      weeks (packing from six days out, gifts for a holiday from eleven weeks out) */
   const headsUp = (r) => Math.min(21, r.lead);
   /* V11: the person whose board it is, said the way a date would name them (Alex's birthday) */
   const ownName = (state) => String((state && state.profile && state.profile.name) || '').trim().toLowerCase();
-  function readySuggest(e, state) {
-    const n = String(e.name || '').toLowerCase().replace(/’/g, '\'');
+  const lowName = (e) => String((e && e.name) || '').toLowerCase().replace(/’/g, '\'');
+  /* V11-2: the household shapes the list. Time off only on a board with work in it (a routine at work in any kind of
+     week, or a weekly meeting), and groceries after a trip only on a board that helps with meals (boardMeals: the
+     dinners module isn't off, the way the app's useDinners reads it) */
+  const boardMeals = (state) => !(state && state.settings && state.settings.modules && state.settings.modules.dinners === false);
+  function boardWorks(state) {
+    if (!state || !state.rhythm) return false;
+    if ((state.meetings || []).length) return true;
+    const sets = [state.rhythm.days || {}].concat(Object.values(state.rhythm.shapes || {}).map((sh) => (sh && sh.days) || {}));
+    return sets.some((set) => Object.values(set).some((t) => !!t && (t.blocks || []).some((b) => b.cat === 'work')));
+  }
+  /* V11-2: a fuzzy date, sometime in spring: a window ({ from, to }) and no date yet */
+  const isFuzzy = (e) => !!e && !e.date && !!e.window && !!e.window.from && !!e.window.to;
+  const MOVE_WORDS = /\b(move|moving|movers|relocat\w*)\b/, DEADLINE_WORDS = /\b(deadline|tax|taxes|renew|renewal|application|applications|expires|expiry|registration)\b/;
+  /* (by its name only on a day to remember, never a set time: a tax appointment isn't the deadline itself) */
+  const byName = (e) => (e.kind || 'marker') === 'marker';
+  const isMove = (e) => byName(e) && MOVE_WORDS.test(lowName(e));
+  const isDeadline = (e) => !!e.deadline || (byName(e) && DEADLINE_WORDS.test(lowName(e)));
+  /* what a date saved before version 9 gets ready for when it keeps no list of its own, as it always did */
+  function readySuggest8(e, state) {
+    const n = lowName(e);
     if (e.kind === 'trip') return ['travel', 'pack'];
     /* nobody needs a reminder to buy their own birthday gift, by any name */
     const me = ownName(state);
@@ -987,45 +1080,130 @@
     if (e.kind === 'timed' && e.occasion) return /wedding|shower|party|birthday|graduation|retire/.test(n) ? ['gift'] : /concert|show|game|match|play|theat|festival|tickets/.test(n) ? ['tickets'] : [];
     return [];
   }
-  const readyList = (e, state) => (Array.isArray(e.ready) ? e.ready : readySuggest(e, state)).map((r) => (typeof r === 'string' ? { k: r } : r)).filter((r) => r && READY[r.k]);
+  /* V11-2: what a new date offers, so nobody has to think of it; the person takes off what doesn't apply. A trip:
+     travel, a place to stay, time off, packing, and unpacking and groceries after (a heads-up for each person comes
+     from the question that asks who). Hosting: invites, the food, shopping, the place, and thank-you notes after.
+     Going to a wedding: the reply, the outfit, and the gift (four weeks out, done a week before); a party, a
+     birthday, or a graduation: the gift and the reply; a show: tickets; out of town (away), travel, a place to stay,
+     and time off too. A move: notice, movers, the address, packing up a little each day, and unpacking after. A
+     deadline (taxes, a renewal, an application, or marked as one): what it needs, then finishing it. A fuzzy date
+     picks its date first. No time off on a board without work. A trip or a date you travel to whose days leave
+     something behind that needs a person (coverOf) lines up who's covering it, after time off. An entry is a key or
+     { k, lead, by }. */
+  function readySuggest(e, state) {
+    const n = lowName(e), away = e.away ? ['travel', 'stay', 'timeoff'] : [];
+    let out;
+    if (e.kind === 'trip') out = ['travel', 'stay', 'timeoff', 'pack', 'unpack', 'groceries'];
+    else if (e.host) out = ['invites', 'food', 'shop', 'tidy', 'thanks'];
+    else if (e.kind === 'timed' && e.occasion) {
+      out = (/wedding/.test(n) ? ['rsvp', 'outfit', { k: 'gift', lead: 28, by: 7 }]
+        : /shower|party|birthday|graduation|retire/.test(n) ? ['gift', 'rsvp']
+        : /concert|show|game|match|play|theat|festival|tickets/.test(n) ? ['tickets'] : []).concat(away);
+    } else if (isMove(e)) out = ['notice', 'movers', 'address', 'packup', 'unpack'];
+    else if (isDeadline(e)) out = ['papers', 'finish'];
+    else out = readySuggest8(e, state).concat(away);
+    /* who's covering, after time off, when the days away leave something behind that needs a person */
+    if ((e.kind === 'trip' || e.away) && coverOf(state, e)) { const i = out.findIndex((r) => (typeof r === 'string' ? r : r.k) === 'timeoff'); out.splice(i >= 0 ? i + 1 : out.length, 0, 'cover'); }
+    if (!boardWorks(state)) out = out.filter((r) => (typeof r === 'string' ? r : r.k) !== 'timeoff');
+    if (!boardMeals(state)) out = out.filter((r) => !READY[typeof r === 'string' ? r : r.k].meals);
+    return isFuzzy(e) ? ['pickdate'].concat(out) : out;
+  }
+  /* An event's own list, or with none kept, a suggestion. V11-2: a date being made (a draft, with no id yet) or one
+     carrying a field only version 9 writes gets readySuggest's list; a date saved before keeps the list it always
+     had, so Look ahead on an older board reads the same. A heads-up needs its person, once each; only a fuzzy date
+     picks its date, and it does that first. */
+  const V9_EVENT = ['window', 'host', 'away', 'deadline'];
+  const freshEvent = (e) => !e.id || V9_EVENT.some((k) => e[k] != null && e[k] !== false);
+  function readyList(e, state) {
+    const fuzzy = isFuzzy(e), people = new Set();
+    const raw = Array.isArray(e.ready) ? e.ready : freshEvent(e) ? readySuggest(e, state) : readySuggest8(e, state);
+    const list = raw.map((r) => (typeof r === 'string' ? { k: r } : r)).filter((r) => {
+      if (!r || !READY[r.k]) return false;
+      if (r.k === 'pickdate') return fuzzy;
+      if (!READY[r.k].who) return true;
+      const who = String(r.who || '').trim().toLowerCase();
+      if (!who || people.has(who)) return false;
+      people.add(who);
+      return true;
+    });
+    return fuzzy && !list.some((r) => r.k === 'pickdate') ? [{ k: 'pickdate' }].concat(list) : list;
+  }
   /* the keys an event gets ready for, the ones it keeps or the ones it would be offered */
   const readyKeys = (e, state) => readyList(e, state).map((r) => r.k);
+  /* V11-2: whether a kind belongs in a panel's choices for this board: time off only with work, groceries only where
+     the board helps with meals, and never a heads-up (added by name), a fuzzy date's pick (it comes by itself), or who's
+     covering (it comes when a trip leaves something behind, coverOf). READY_FOR[kind].filter((k) => readyFits(k, state)) */
+  const readyFits = (k, state) => !!READY[k] && !READY[k].who && !READY[k].fuzzy && !READY[k].cover && (!READY[k].work || boardWorks(state)) && (!READY[k].meals || boardMeals(state));
   /* a holiday that begins at sundown is named for its beginning; what you get ready for is the holiday */
   const readyName = (e) => String(e.name || '').replace(/ begins$/, '');
   /* V11: a to-do already on the list for it counts: one that says what it is (a gift, packing) and
      names the date's person, place, or holiday, due between the day to start and the date. A holiday
      also takes one that says what it is and names no other date coming up (Family gifts before
      Christmas). Booking travel only asks until four weeks out; after that it's likely done. */
-  const READY_WORDS = { gift: /\bgifts?\b|present/, gifts: /\bgifts?\b|present/, plans: /\bplan/, travel: /\bbook|flight|hotel|travel|train|ticket/, pack: /\bpack/, tickets: /ticket/, wear: /\bwear|outfit|dress|suit/, costume: /costume/ };
-  const READY_LATE = { travel: false };
+  const READY_WORDS = { gift: /\bgifts?\b|present/, gifts: /\bgifts?\b|present/, plans: /\bplan/, travel: /\bbook|flight|hotel|travel|train|ticket/, pack: /\bpack/, tickets: /ticket/, wear: /\bwear|outfit|dress|suit/, costume: /costume/,
+    /* V11-2: the new kinds a person might have put on the list themselves (a heads-up, a pick, and what comes after
+       count only when made for the date) */
+    stay: /\b(hotel|airbnb|motel|lodging|place to stay)\b/, outfit: /\b(outfit|suit|dress|tux|tuxedo)\b/, rsvp: /\b(rsvp|reply)\b/, timeoff: /\b(time off|day off|days off|pto|vacation day)/,
+    invites: /\binvit/, notice: /\bnotice\b/, movers: /\bmovers?\b/, address: /\baddress\b/ };
+  /* (V11-2: a place to stay is booked like travel) */
+  const READY_LATE = { travel: false, stay: false };
   const STOP = ['the', 'and', 'for', 'with', 'from', 'weekend', 'trip', 'visit', 'birthday', 'anniversary', 'begins', 'day', 'party', 'night'];
   const plainWords = (s) => String(s || '').toLowerCase().replace(/[’']s\b/g, '').replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !STOP.includes(w));
-  function readyTask(state, e, r, on, start, others) {
-    const words = READY_WORDS[r.k];
+  function readyTask(state, e, r, on, start, others, cov) {
+    /* (who's covering: a to-do that says so and names the trip or someone it's for, Find someone to check on Dad) */
+    const words = r.k === 'cover' ? COVER_WORDS : READY_WORDS[r.k];
     if (!words) return null;
-    const mine = plainWords(readyName(e));
-    const hit = state.tasks.filter((t) => !t.archived && t.due && t.due >= addDays(start, -14) && t.due <= on && words.test(String(t.name || '').toLowerCase())).find((t) => {
+    const mine = plainWords(readyName(e)).concat(r.k === 'cover' && cov ? cov.people.map((n) => n.toLowerCase()) : []);
+    /* (V11-2: a new kind never takes a to-do the date already keeps for another one) */
+    const kept = READY8.includes(r.k) ? null : new Set(Object.values(e.prep || {}));
+    const hit = state.tasks.filter((t) => !t.archived && t.due && t.due >= addDays(start, -14) && t.due <= on && words.test(String(t.name || '').toLowerCase()) && !(kept && kept.has(t.id))).find((t) => {
       const tw = plainWords(t.name);
       if (mine.some((w) => tw.includes(w))) return true;
       return !!(e.holiday || e.readyFrom) && !others.some((w) => tw.includes(w));
     });
     return hit || null;
   }
+  /* a to-do's words: {x} the date's name, {who} the person, {what} what needs covering (coverOf) */
+  const readyTodo = (R, e, r, cov) => R.todo.replace('{x}', readyName(e)).replace('{who}', String((r && r.who) || '').trim()).replace('{what}', cov ? cov.what : 'things at home');
+  /* V11-2: each item also says who (a heads-up's person), why (or null), msg (it's a message to send), after (it
+     comes after the date), place (where that person is, or null), and what (what a cover step covers, or null). A
+     fuzzy date (on: null) counts from its window's first day: its pick is due early enough for the longest lead of
+     what waits on it, and every other step waits (when: 'waiting'), with start and ideal counted from that first day. */
   function readyFor(state, e, on, today, tasks, others) {
-    if (on < today) return [];
+    const fuzzy = isFuzzy(e);
+    if (!fuzzy && !on) return [];
+    const list = readyList(e, state);
+    const base = fuzzy ? e.window.from : on, end = fuzzy ? base : e.kind === 'trip' && e.end && e.end > on ? e.end : on;
+    /* a date that has gone by gets ready for nothing (V11-2: but what comes after it, while it's due) */
+    if (!fuzzy && on < today && !list.some((r) => READY[r.k].after)) return [];
     tasks = tasks || new Map(state.tasks.map((t) => [t.id, t]));
-    return readyList(e, state).map((r) => {
-      const R = READY[r.k], lead = r.lead != null ? r.lead : R.lead, by = r.by != null ? r.by : R.by;
-      const key = r.k + '@' + on, got = e.prep && e.prep[key];
-      const start = addDays(on, -lead), ideal = addDays(on, -by);
-      const task = got && got !== 'skip' ? tasks.get(got) || null : !got ? readyTask(state, e, r, on, start, others || []) : null;
-      /* a to-do made for it is due by the day it should be done; if that's gone by, before the date */
-      const due = ideal >= today ? ideal : addDays(on, -1) >= today ? addDays(on, -1) : today;
+    const longest = list.reduce((m, r) => (READY[r.k].after || READY[r.k].fuzzy ? m : Math.max(m, r.lead != null ? r.lead : READY[r.k].lead)), 0);
+    const pickBy = addDays(base, -(longest || 14));
+    const out = [];
+    for (const r of list) {
+      const R = READY[r.k], after = !!R.after;
+      if (!fuzzy && on < today && !after) continue;
+      const lead = r.lead != null ? r.lead : R.lead, by = r.by != null ? r.by : R.by;
+      const who = R.who ? String(r.who).trim() : null;
+      const key = r.k + (who ? ':' + who : '') + '@' + base, got = e.prep && e.prep[key];
+      const start = R.fuzzy ? (pickBy < today ? pickBy : today) : after ? addDays(end, 1) : addDays(base, -lead);
+      const ideal = R.fuzzy ? pickBy : after ? addDays(end, by) : addDays(base, -by);
+      /* (who's covering asks only while the days away leave something behind: the kids going too, or new days with
+         nothing on them, and it waits unasked, unless its to-do is already made) */
+      const cov = R.cover && !fuzzy ? coverOf(state, e) : null;
+      const task = got && got !== 'skip' ? tasks.get(got) || null : !got && !fuzzy && !after ? readyTask(state, e, r, on, start, others || [], cov) : null;
+      if (R.cover && !cov && !task) continue;
+      /* a to-do made for it is due by the day it should be done; if that's gone by, before the date (after the date,
+         or for a pick: today) */
+      const due = after || fuzzy ? (ideal >= today ? ideal : today) : ideal >= today ? ideal : addDays(on, -1) >= today ? addDays(on, -1) : today;
       /* well past when it should be done (booking a trip that's days away), it's likely handled: gone */
       const late = READY_LATE[r.k] !== false;
-      const when = task ? (task.done ? 'done' : 'added') : got === 'skip' ? 'skip' : today < start ? 'later' : today <= ideal ? 'now' : !late || diffDays(today, on) < Math.ceil(by / 2) ? 'past' : 'soon';
-      return { k: r.k, key, name: R.name, short: R.short, todo: R.todo.replace('{x}', readyName(e)), icon: R.icon, cat: R.cat, dur: R.dur, lead, by, start, ideal, due, when, task, on };
-    });
+      const when = task ? (task.done ? 'done' : 'added') : got === 'skip' ? 'skip'
+        : fuzzy ? (R.fuzzy ? (today <= ideal ? 'now' : 'soon') : 'waiting')
+        : today < start ? 'later' : today <= ideal ? 'now' : after || !late || diffDays(today, on) < Math.ceil(by / 2) ? 'past' : 'soon';
+      out.push({ k: r.k, key, name: R.name, short: R.short, todo: readyTodo(R, e, r, cov), icon: R.icon, cat: R.cat, dur: R.dur, lead, by, start, ideal, due, when, task, on, who, why: R.why || null, msg: !!R.msg, after, place: (r.place && String(r.place).trim()) || null, what: cov ? cov.what : null });
+    }
+    return out;
   }
   /* The dates coming up, each with what to get ready and when. Everything in the days from `from`, and
      past them (up to farDays) only what needs a head start now or soon (headsUp): Christmas shows
@@ -1038,20 +1216,32 @@
     const keeps = [].concat(keep || []);
     const out = [];
     /* the words that name each date, so a to-do for one isn't taken for another's */
-    const named = liveEvents(state).filter((e) => e.kind === 'marker' || e.kind === 'trip' || e.big || e.occasion).map((e) => ({ id: e.id, words: plainWords(readyName(e)) }));
+    const named = liveEvents(state).filter((e) => e.kind === 'marker' || e.kind === 'trip' || e.big || e.occasion || e.host).map((e) => ({ id: e.id, words: plainWords(readyName(e)) }));
     const othersOf = (e) => named.filter((x) => x.id !== e.id).reduce((a, x) => a.concat(x.words), []);
-    const push = (e, on, extra) => {
+    /* (V11-2) mode 'after': a date that went by, shown only while something after it is due; 'fuzzy': a date with no
+       day yet, shown under its window. A step that waits on a fuzzy date's pick isn't listed until it has a day */
+    const push = (e, on, extra, mode) => {
       const all = readyFor(state, e, on, today, tasks, othersOf(e));
-      const far = on > to, near = (r) => diffDays(today, r.start) <= headsUp(r);
-      const ready = all.filter((r) => r.when !== 'skip' && r.when !== 'past' && (r.when !== 'later' || near(r)) && (!far || (r.when !== 'done' && (r.when !== 'added' || near(r)))));
+      const at = mode === 'fuzzy' ? e.window.from : on;
+      const far = at > to, near = (r) => diffDays(today, r.start) <= headsUp(r);
+      const ready = all.filter((r) => r.when !== 'skip' && r.when !== 'past' && r.when !== 'waiting' && (r.when !== 'later' || near(r)) && (!far || (r.when !== 'done' && (r.when !== 'added' || near(r)))));
+      if (mode === 'after' && !ready.some((r) => r.after && r.when !== 'done')) return;
       if (far && !ready.length && !(keeps.includes(e.id) && !out.some((x) => x.id === e.id))) return;
-      out.push(Object.assign({ date: on, kind: e.kind, name: e.name, icon: e.icon || (e.kind === 'trip' ? 'plane' : 'star'), id: e.id, holiday: e.holiday || e.readyFrom || null, occasion: !!e.occasion, yearly: !!e.yearly, off: !!e.off, ready, far }, extra || {}));
+      out.push(Object.assign({ date: at, kind: e.kind, name: e.name, icon: e.icon || (e.kind === 'trip' ? 'plane' : 'star'), id: e.id, holiday: e.holiday || e.readyFrom || null, occasion: !!e.occasion, yearly: !!e.yearly, off: !!e.off, ready, far }, extra || {}));
     };
     for (const d of range(from, diffDays(from, farTo) + 1)) {
       for (const m of markersOn(state, d)) push(m, d);
-      for (const e of timedOn(state, d)) if (e.big || e.occasion) push(e, d, { start: e.start, dur: e.dur });
+      for (const e of timedOn(state, d)) if (e.big || e.occasion || e.host) push(e, d, { start: e.start, dur: e.dur });
     }
     for (const e of liveEvents(state)) if (e.kind === 'trip' && e.end >= from && e.date <= farTo) push(e, e.date, { end: e.end, shown: e.date < from ? from : e.date });
+    /* V11-2: the two weeks before `from`, for what comes after a date (unpacking, thank-you notes); shown at `from` */
+    for (const d of range(addDays(from, -15), 15)) {
+      for (const m of markersOn(state, d)) push(m, d, { shown: from, over: true }, 'after');
+      for (const e of timedOn(state, d)) if (e.big || e.occasion || e.host) push(e, d, { start: e.start, dur: e.dur, shown: from, over: true }, 'after');
+    }
+    for (const e of liveEvents(state)) if (e.kind === 'trip' && e.date && e.end && e.end < from && e.end >= addDays(from, -15)) push(e, e.date, { end: e.end, shown: from, over: true }, 'after');
+    /* V11-2: a fuzzy date shows under its window (window, fuzzy), asking for its date */
+    for (const e of liveEvents(state)) if (isFuzzy(e)) push(e, null, { window: { from: e.window.from, to: e.window.to }, fuzzy: true, shown: e.window.from < from ? from : e.window.from }, 'fuzzy');
     const rank = { trip: 0, marker: 1, timed: 2 };
     const at = (x) => x.shown || x.date;
     return out.sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : rank[a.kind] - rank[b.kind]));
@@ -1370,7 +1560,7 @@
     if (end + mins > hi) return { ok: false, reason: 'late' };
     const others = line.filter((b) => !b.sleep && !own(b) && b.start >= lo && b.start + b.dur <= hi);
     const walls = range(addDays(date, -7), 9).flatMap((owner) => calendarRecords(state, owner).map((b) => Object.assign({}, b, { start: windowTime(date, owner, b.start) }))).filter((b) => b.fixed && !b.sleep && !own(b) && b.start < hi && b.start + b.dur > lo);
-    const r = pushInsert(others.filter((b) => !b.fixed && !b.soft), walls, { start: end, dur: mins }, lo, hi, true);
+    const r = pushInsert(others.filter((b) => !b.fixed && !b.soft).map((b) => { const w = mealWindow(state, b, date); return w ? Object.assign({}, b, { win: w }) : b; }), walls, { start: end, dur: mins }, lo, hi, true);
     if (!r.ok) return r;
     /* open time right after gives up the minutes instead of sliding, so its end stays put */
     const took = [];
@@ -1501,8 +1691,16 @@
      asked until its whole time is over; the kind of day is asked from this morning's wake to four hours after it
      (ownDay), so never at 1 am on the way to bed. seen.quietWeekdays (three Your usual answers in a row, or Don't
      ask on weekdays) leaves weekdays alone, except one unlike the rest (dayDiffers). */
-  function momentFor(state, date, min, seen, resolved) {
-    const s = seen || {};
+  /* V11-2 (big moments): two more, asked only when opts asks for them ({ big: true }, or { yesterday, headsup }), so
+     a version that doesn't know them never sees one. The morning after, from wake until noon (or four hours after a
+     late wake), the things from yesterday whose time went by with no check (yesterdayLoose): { kind: 'yesterday',
+     items, count, words }, after dinner and before the kind of day; seen.yesterday puts it off. Last of all, while
+     the person is up, a heads-up whose time to ask has come and isn't done (the one with the nearest last good day):
+     { kind: 'headsup', key, event, task, who, place, date, start, words, text }, words the question ('Your aunt would
+     love some notice about LA. Text her this week?') and text the suggested message. seen.headsup: true puts off
+     every one today, or { [key]: true } (or a list of keys) one by one. */
+  function momentFor(state, date, min, seen, resolved, opts) {
+    const s = seen || {}, o = opts || {};
     const d = resolved || resolveDay(state, date);
     const din = d.blocks.find((b) => b.dinner && (b.sourceDate || date) === date);
     if (din && !din.planned && !s.dinnerNo) {
@@ -1511,7 +1709,15 @@
       if (min >= from && min < end) return { kind: 'dinner', block: din, again: s.dinnerAt != null };
     }
     const dd = state.dates[date] || {}, own = ownDay(state, date);
+    if ((o.big || o.yesterday) && !s.yesterday && min >= own.wake && min < Math.max(720, own.wake + 240)) {
+      const items = yesterdayLoose(state, date, min);
+      if (items.length) return { kind: 'yesterday', items, count: items.length, words: items.length + (items.length === 1 ? ' thing' : ' things') + ' from yesterday didn’t get a check.' };
+    }
     if (weekday(date) !== 0 && !s.kind && !dd.preset && min >= own.wake && min < own.wake + 240 && !(s.quietWeekdays && !dayDiffers(state, date))) return { kind: 'kind' };
+    if ((o.big || o.headsup) && s.headsup !== true && min >= own.wake && min < own.bed) {
+      const h = headsUpDue(state, date, s.headsup);
+      if (h) return Object.assign({ kind: 'headsup' }, h);
+    }
     return null;
   }
 
@@ -1689,11 +1895,165 @@
   const MON = { jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12 };
   /* words that mean one of your blocks, when its own name isn't typed */
   const QUICK_WORDS = { gym: 'workout', lift: 'workout', lifting: 'workout', train: 'workout', workout: 'workout', run: 'run', jog: 'run', walk: 'walk', read: 'reading', reading: 'reading', nap: 'nap', call: 'call', phone: 'call', meeting: 'meeting', standup: 'meeting', sync: 'meeting', groceries: 'groceries', grocery: 'groceries', shopping: 'groceries', laundry: 'laundry', clean: 'clean', cleaning: 'clean', errand: 'errand', errands: 'errand', coffee: 'coffee-friend', lunch: 'lunch', stretch: 'stretch', yoga: 'stretch', write: 'project', writing: 'project', draw: 'creative', paint: 'creative', create: 'creative', study: 'study', studying: 'study', homework: 'study', revise: 'study' };
+  /* == V11-2: quick add's big things (docs/BIG-MOMENTS.md, B) ==
+     With opts.big, three more things a line can be, read before anything else:
+     - a move: "move in spring", "moving to Austin next month", "move Apr 10". A date of its own, named Moving day (or
+       Moving to Austin), with a window and no date when it's only a season, a month, this month or next, or a few
+       months away (a fuzzy date).
+     - a trip: "trip to Denver Dec 3 to 6", "flying to Japan this summer". Named for the place; a season or a month
+       makes it fuzzy, and with no days yet it has neither (the app asks for them).
+     - a message: "text Aunt Lisa about LA", "give Grandma a heads-up about the lake". { kind: 'message', name, who,
+       about }: the app finds the trip it's about (tripFor) and adds a heads-up there, or makes a to-do with msg when
+       there's none.
+     A date is { kind: 'date', name, event }, event { kind, name, icon, date, end (a trip's), window (a fuzzy one) },
+     ready for the app's New date. Anything else is null, and the line reads as it always did. */
+  const QB_MONTHS = 'jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december';
+  const QB_DAYS = 'sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday';
+  /* a name as a person means it: typed all in small letters, each word gets its capital (aunt lisa, new york) */
+  const quickCaps = (v) => { const s = String(v || '').trim(); return s && s === s.toLowerCase() ? s.replace(/(^|[\s-])([a-zà-ÿ])/g, (x, a, b) => a + b.toUpperCase()) : s; };
+  /* "sometime" as it's said: this month, next month, a few months, a season (this, next, or in the spring), or a month
+     (March, next March). { from, to }, whole months, or null */
+  function quickWindow(words, today) {
+    const w = String(words || '').toLowerCase().replace(/[.!?,]+$/, '').replace(/^(?:sometime|some time)\s+/, '').trim();
+    if (/^(?:this\s+month|later\s+this\s+month)$/.test(w)) return windowFor('this-month', today);
+    if (/^next\s+month$/.test(w)) return windowFor('next-month', today);
+    if (/^(?:in\s+)?(?:a\s+few|the\s+next\s+few|a\s+couple(?:\s+of)?)\s+months$/.test(w)) return windowFor('few-months', today);
+    let m = w.match(/^(?:in\s+(?:the\s+)?|this\s+|next\s+)?(spring|summer|fall|autumn|winter)$/);
+    if (m) {
+      const k = m[1] === 'autumn' ? 'fall' : m[1];
+      let win = windowFor(k, today);
+      /* next spring is the one after the spring under way */
+      if (win && /^next\s/.test(w) && win.from <= today) win = windowFor(k, addDays(win.to, 1));
+      return win;
+    }
+    m = w.match(new RegExp('^(?:in\\s+|this\\s+|(next)\\s+)?(' + QB_MONTHS + ')$'));
+    if (m) {
+      const p = parts(today), mo = MON[m[2]];
+      let y = mo < p.m ? p.y + 1 : p.y;
+      if (m[1] && mo <= p.m) y = p.y + 1;
+      return { from: iso(y, mo, 1), to: iso(y, mo, daysInMonth(y, mo)) };
+    }
+    return null;
+  }
+  /* the days a trip is: Dec 3 to 6, Dec 3 to Dec 6, Dec 30 to Jan 2, 12/3 to 12/6 (with its hyphen too), Fri to Sun,
+     this weekend, next weekend, or one day (Dec 3). { date, end } from today on, or null */
+  function quickRange(words, today, dayFirst) {
+    const w = String(words || '').toLowerCase().replace(/[.!?,]+$/, '').replace(/^(?:from|on)\s+/, '').replace(/(\d)(?:st|nd|rd|th)\b/g, '$1').trim();
+    const y0 = +today.slice(0, 4);
+    const at = (y, mo, dd) => (mo >= 1 && mo <= 12 && dd >= 1 && dd <= daysInMonth(y, mo) ? iso(y, mo, dd) : null);
+    /* the first one from today on, and an end that comes after it (into the next year when it has to) */
+    const first = (mo, dd) => { const a = at(y0, mo, dd); return a && a >= today ? a : at(y0 + 1, mo, dd); };
+    const after = (from, mo, dd) => { const y = +from.slice(0, 4), a = at(y, mo, dd); return a && a >= from ? a : at(y + 1, mo, dd); };
+    const TO = '\\s*(?:-|\\u2013|\\u2014|to|through|thru|until|till)\\s*';
+    let m = w.match(new RegExp('^(' + QB_MONTHS + ')\\.?\\s+(\\d{1,2})(?:' + TO + '(?:(' + QB_MONTHS + ')\\.?\\s+)?(\\d{1,2}))?$'));
+    if (m) {
+      const mo = MON[m[1]], date = first(mo, +m[2]);
+      if (!date) return null;
+      if (!m[4]) return { date, end: date };
+      const end = after(date, m[3] ? MON[m[3]] : mo, +m[4]);
+      return end ? { date, end } : null;
+    }
+    m = w.match(new RegExp('^(\\d{1,2})/(\\d{1,2})(?:' + TO + '(?:(\\d{1,2})/)?(\\d{1,2}))?$'));
+    if (m) {
+      const a = +m[1], b = +m[2], mo = dayFirst ? b : a, dd = dayFirst ? a : b, date = first(mo, dd);
+      if (!date) return null;
+      if (!m[4]) return { date, end: date };
+      const c = m[3] != null ? +m[3] : null, d = +m[4];
+      const mo2 = c == null ? mo : dayFirst ? d : c, dd2 = c == null ? d : dayFirst ? c : d;
+      const end = after(date, mo2, dd2);
+      return end ? { date, end } : null;
+    }
+    m = w.match(new RegExp('^(?:this\\s+|next\\s+)?(' + QB_DAYS + ')(?:' + TO + '(' + QB_DAYS + '))?$'));
+    if (m) {
+      const a = WD[m[1]], date = addDays(today, (a - weekday(today) + 7) % 7 + (/^next\s/.test(w) ? 7 : 0));
+      if (!m[2]) return { date, end: date };
+      const b = WD[m[2]];
+      return { date, end: addDays(date, (b - a + 7) % 7) };
+    }
+    if (/^this\s+weekend$/.test(w)) { const sat = addDays(today, (6 - weekday(today) + 7) % 7), d0 = weekday(today) === 0 ? today : sat; return { date: d0, end: weekday(today) === 0 ? today : addDays(sat, 1) }; }
+    if (/^next\s+weekend$/.test(w)) { const sat = addDays(sundayOf(today), 13); return { date: sat, end: addDays(sat, 1) }; }
+    return null;
+  }
+  /* the words before a when and the when itself: the first place the rest reads as one ({ head, when, how }), or the
+     whole of it with no when */
+  function quickSplit(words, read) {
+    const t = String(words || '').trim().split(/\s+/).filter(Boolean);
+    for (let k = 1; k < t.length; k++) { const when = t.slice(k).join(' '), r = read(when); if (r) return { head: t.slice(0, k).join(' '), when: r }; }
+    return { head: t.join(' '), when: null };
+  }
+  function quickBig(text, today, opts) {
+    const dayFirst = !!(opts && opts.dayFirst);
+    const s = String(text || '').replace(/\s+/g, ' ').trim().replace(/[.!?]+$/, '');
+    if (!s) return null;
+    let m = s.match(/^(?:text|message|msg)\s+(.+?)\s+about\s+(.+)$/i) || s.match(/^(?:give|send)\s+(.+?)\s+a\s+heads?[\s-]?up\s+(?:about|for|on)\s+(.+)$/i);
+    if (m) {
+      const who = quickCaps(m[1]), about = String(m[2]).trim();
+      if (who && about) return { kind: 'message', name: 'Text ' + who + ' about ' + about, who, about, date: null, due: null, start: null, dur: 5, cat: 'family', icon: 'chat', pal: null };
+    }
+    /* a when: a fuzzy window, or days */
+    const when = (w) => { const win = quickWindow(w, today); if (win) return { window: win }; const r = quickRange(w, today, dayFirst); return r ? { range: r } : null; };
+    m = s.match(/^(?:(?:we(?:'|’)re|we\s+are|i(?:'|’)m|i\s+am)\s+)?(?:move|moving)\s+(.+)$/i);
+    if (m) {
+      const to = m[1].match(/^(?:to|into)\s+(.+)$/i);
+      const sp = to ? quickSplit(to[1], when) : { head: '', when: when(m[1]) };
+      if (sp.when && (!to || sp.head)) {
+        const name = to ? 'Moving to ' + quickCaps(sp.head) : 'Moving day';
+        const event = { kind: 'marker', name, icon: 'house', cat: 'home', date: sp.when.range ? sp.when.range.date : null };
+        if (sp.when.window) event.window = sp.when.window;
+        return { kind: 'date', name, event, date: event.date, due: null, start: null, dur: null, cat: 'home', icon: 'house', pal: null };
+      }
+    }
+    m = s.match(/^(?:(?:a|an|our|my|the)\s+)?(?:road\s+)?trip\s+to\s+(.+)$/i) || s.match(/^(?:fly|flying|fly\s+out)\s+to\s+(.+)$/i);
+    if (m) {
+      const sp = quickSplit(m[1], when), name = quickCaps(sp.head);
+      if (name) {
+        const r = sp.when && sp.when.range;
+        const event = { kind: 'trip', name, icon: 'plane', date: r ? r.date : null, end: r ? r.end : null, leave: 450, back: 1020 };
+        if (sp.when && sp.when.window) event.window = sp.when.window;
+        return { kind: 'date', name, event, date: event.date, due: null, start: null, dur: null, cat: 'away', icon: 'plane', pal: null };
+      }
+    }
+    return null;
+  }
+  /* V11-2: the trip a message is about: one coming up (or a fuzzy one) whose name is the words, holds them, or is held
+     by them (the California trip), or where a heads-up already names that place (LA, on the California trip). A trip,
+     or a date you travel to (away). { event, place } (place: the words, when they aren't the trip's own name, so the
+     text says where the person is), or null. Nearest first; an exact name before one that only holds the words. */
+  function tripFor(state, about, today) {
+    const norm = (v) => String(v || '').toLowerCase().replace(/[’']s\b/g, '').replace(/[^a-z0-9à-ÿ\s]/g, ' ').split(/\s+/).filter((x) => x && !['the', 'a', 'an', 'my', 'our', 'trip', 'visit', 'to'].includes(x));
+    const want = norm(about);
+    if (!want.length) return null;
+    const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+    const holds = (a, b) => b.length > 0 && b.every((x) => a.includes(x));
+    /* the words as the trip's own name writes them (LA in Trip to LA), when it holds them as they are; else none */
+    const asNamed = (name, words) => { const w = String(words).trim(), i = name.toLowerCase().indexOf(w.toLowerCase()); return w && i >= 0 ? name.slice(i, i + w.length) : null; };
+    let best = null;
+    for (const e of liveEvents(state)) {
+      if (!(e.kind === 'trip' || e.away)) continue;
+      const on = isFuzzy(e) ? e.window.from : e.end || e.date;
+      if (!on || (!isFuzzy(e) && on < today)) continue;
+      const name = readyName(e), nm = norm(name), own = placeOf(e), pl = own ? norm(own) : [];
+      const places = (Array.isArray(e.ready) ? e.ready : []).filter((r) => r && r.k === 'headsup' && r.place).map((r) => String(r.place));
+      const kept = places.find((p) => same(norm(p), want));
+      const rank = same(nm, want) || (pl.length && same(pl, want)) ? 0 : kept ? 1 : holds(nm, want) ? 2 : holds(want, nm) ? 3 : -1;
+      if (rank < 0) continue;
+      /* where the person is: the trip's own name needs no place, and neither does the place in it (placeOf, which a
+         heads-up's text uses anyway); a heads-up's place as it was kept; other words the name holds, as it writes them */
+      const exact = name.trim().toLowerCase() === String(about).trim().toLowerCase();
+      let place = rank === 1 ? kept : rank === 3 || exact ? null : asNamed(name, about);
+      if (place && pl.length && same(norm(place), pl)) place = null;
+      const at = isFuzzy(e) ? e.window.from : e.date;
+      if (!best || rank < best.rank || (rank === best.rank && at < best.at)) best = { rank, at, e, place };
+    }
+    return best ? { event: best.e, place: best.place } : null;
+  }
   /* Read a line like "Gym Tue 6pm 45m" into a block, or a to do when there's no time.
-     Returns { kind: 'block' | 'task', name, date, start, dur, cat, icon, pal, bits } or null when empty. */
+     Returns { kind: 'block' | 'task', name, date, start, dur, cat, icon, pal, bits } or null when empty.
+     V11-2: with opts.big, a move, a trip, or a message first (quickBig): { kind: 'date' | 'message', ... } */
   function parseQuick(text, today, palette, nowMin, opts) {
     /* opts.dayFirst: in this place 6/10 is the sixth of October */
     const dayFirst = !!(opts && opts.dayFirst);
+    if (opts && opts.big) { const big = quickBig(text, today, opts); if (big) return big; }
     let s = ' ' + String(text || '').replace(/\s+/g, ' ').trim() + ' ';
     if (!s.trim()) return null;
     const bits = {};
@@ -1832,9 +2192,27 @@
   const partOf = (start) => (start < 720 ? 'morning' : start < 1080 ? 'afternoon' : 'evening');
 
   /* == V11 goals: quiet time ==
-     A soft block that's yours or open (Creative projects, Breathing room, a Free evening) makes room
-     without moving; Work, an evening with someone, and everything hard don't. */
-  const quietBlock = (b) => !!b.soft && !b.sleep && (b.cat === 'yours' || b.cat === 'open');
+     Russell's rule for V11-2: your own time stays yours. Quiet time, what a plan uses without asking, is the open
+     time between blocks and time a handoff frees (it was someone else's job, so it's open now). Own time is a soft
+     block the person kept for themselves: a Yours block (Creative time), free time (a Free evening), Breathing room,
+     Open time. Nothing lands there on its own; a plan the person says yes to may use it (withOwn). Work, time with
+     people, locked blocks, a meal, and sleep are never offered. */
+  const quietBlock = (b) => !!b.soft && !b.sleep && !!b.handoff;
+  const ownBlock = (b) => !!b.soft && !b.sleep && !b.fixed && !b.handoff && !b.dinner && (b.cat === 'yours' || b.cat === 'open' || !!b.free);
+  /* own time a plan may use, after the open time, while the person's yes is being placed (spreadPlan, applySpread,
+     moveStep, and reflowTask with opts.own); set only inside withOwn */
+  let ownOk = false;
+  function withOwn(on, fn) { const was = ownOk; ownOk = !!on; try { return fn(); } finally { ownOk = was; } }
+  /* the own time a stretch of a date takes: { min, name } (name: the first own block it's in, Creative time) */
+  function ownTimeOf(state, date, start, dur) {
+    let min = 0, name = '';
+    for (const b of calendarDay(state, date).blocks) {
+      if (!ownBlock(b)) continue;
+      const m = Math.max(0, Math.min(start + dur, b.start + b.dur) - Math.max(start, b.start));
+      if (m > 0) { min += m; if (!name) name = b.label || b.name; }
+    }
+    return { min, name };
+  }
   /* A date's blocks, the way calendarDay has them, for quiet time. When nothing from the days around it
      reaches into the date and nothing of its own runs past midnight, its own records laid alone are
      exactly those blocks, at a fraction of the work; otherwise calendarDay works them out. */
@@ -1868,7 +2246,9 @@
     for (const b of blocks.filter((x) => x.start < hi && x.start + x.dur > lo).sort(byStart)) {
       const s = Math.max(lo, b.start), e = Math.min(hi, b.start + b.dur);
       if (s > c) pieces.push({ start: c, end: s, free: false });
-      if (quietBlock(b) && e > Math.max(s, c)) pieces.push({ start: Math.max(s, c), end: e, free: !!b.free && !b.handoff });
+      /* (own time, when a yes allows it, is used after the open time, the way time kept free was) */
+      const own = ownOk && ownBlock(b);
+      if ((quietBlock(b) || own) && e > Math.max(s, c)) pieces.push({ start: Math.max(s, c), end: e, free: own });
       c = Math.max(c, e);
     }
     if (c < hi) pieces.push({ start: c, end: hi, free: false });
@@ -2296,6 +2676,8 @@
     return 'This needs ' + more + (n === 1 ? ' than is' : ' than are') + ' left before ' + dayWord(by, today) + '.';
   }
   function spreadPlan(state, taskId, opts, today, nowMin) {
+    /* (a plan the person said yes to may use own time: worked out with it allowed) */
+    if (opts && opts.own && !ownOk) return withOwn(true, () => spreadPlan(state, taskId, opts, today, nowMin));
     const t = state.tasks.find((x) => x.id === taskId);
     const o = t ? spreadOpts(t, opts, today) : null;
     const res = { ok: false, days: [], unplaced: [], need: 0, room: 0, by: o ? o.by : null, message: '', opts: o, today, nowMin: nowMin == null ? null : nowMin };
@@ -2378,6 +2760,14 @@
     items.forEach((it) => it.takes.forEach((x) => { gave[x.goal] = (gave[x.goal] || 0) + x.min; }));
     res.gave = Object.keys(gave).map((id) => ({ goal: id, name: (goalOf(state, id) || {}).name || '', min: gave[id] }));
     res.ok = !res.unplaced.length;
+    /* the own time it takes, by day, for the question that asks first: { min, days: [{ date, min, part, name }] } */
+    if (opts && opts.own) {
+      const by = {};
+      items.forEach((it) => { const x = ownTimeOf(state, it.date, it.start, it.dur); if (!x.min) return; const d = by[it.date] || (by[it.date] = { date: it.date, min: 0, part: partOf(it.start), name: x.name }); d.min += x.min; });
+      const list = Object.keys(by).sort().map((k) => by[k]);
+      res.own = { min: list.reduce((a, x) => a + x.min, 0), days: list };
+      res.opts.own = true;
+    }
     const total = items.reduce((a, x) => a + x.dur, 0), last = res.days.length ? res.days[res.days.length - 1].date : null;
     if (res.ok) {
       const steps = items.length === 1 ? 'One step' : items.length + ' steps';
@@ -2401,6 +2791,8 @@
      step takes the place of comes off, and its goal plans again. Returns how many steps were placed;
      out (optional) gets goals: [{ id, name, min, shortMin, message }] for the goals that gave time. */
   function applySpread(state, taskId, plan, opts, out) {
+    /* (placed the way it was worked out: with own time when the person said yes to it) */
+    if (((opts && opts.own) || (plan && plan.opts && plan.opts.own)) && !ownOk) return withOwn(true, () => applySpread(state, taskId, plan, opts, out));
     const t = state.tasks.find((x) => x.id === taskId);
     if (!t || !plan) return 0;
     const today = plan.today || todayIso(), now = plan.nowMin == null ? 0 : plan.nowMin;
@@ -2463,6 +2855,7 @@
      A step you pinned stays put. Calling it again moves nothing: nothing is missed any more.
      opts.preview: work it out without changing the board. */
   function reflowTask(state, taskId, today, nowMin, opts) {
+    if (opts && opts.own && !ownOk) return withOwn(true, () => reflowTask(state, taskId, today, nowMin, opts));
     const st = opts && opts.preview ? clone(state) : state;
     const res = { moved: [], unplaced: [], message: '' };
     const t = st.tasks.find((x) => x.id === taskId);
@@ -2575,6 +2968,9 @@
     };
     /* (kept only when it's said: a goal without it mixes when it's an exam) */
     if (f.mix != null) g.mix = !!f.mix;
+    /* V11-2: a goal with no date runs on how many times a week (rhythm.n, 1 to 7), kept only when it's said */
+    const n = Math.round(Number(r.n));
+    if (n >= 1) g.rhythm.n = Math.min(7, n);
     return g;
   }
   /* an exam's parts, or a race's, take turns; a project's or a skill's go in order */
@@ -2583,6 +2979,9 @@
   const TAPER = 3;
   const tapers = (g, date) => mixes(g) && !!g.date && date < g.date && diffDays(date, g.date) <= TAPER;
   const goalOf = (state, goal) => (goal && typeof goal === 'object' ? goal : (state.goals || []).find((g) => g.id === goal) || null);
+  /* V11-2: a goal's first week, the seven days from its start (or before it starts): nothing says Behind then, since
+     the plan has only begun (goalProgress gives it as firstWeek) */
+  const goalFirstWeek = (g, today) => !g.start || diffDays(g.start, today) < 7;
   /* every session of a goal, in time order: [{ date, add }] */
   function goalSessions(state, goalId) {
     const out = [];
@@ -2654,11 +3053,23 @@
       if (x.date >= ws && x.date <= we) { week.plannedMin += x.add.dur; if (tl.ended(x)) { if (tl.confirmed(x)) week.doneMin += x.add.dur; else week.unconfirmedMin += x.add.dur; } }
       if (!next && !tl.ended(x)) next = { date: x.date, start: x.add.start, dur: x.add.dur, name: x.add.name, part: x.add.src.part || null, add: x.add.id };
     }
+    /* V11-2: a goal with no date has no total and is never behind: a quiet week is a quiet week. done is every
+       minute someone said happened; perWeek is this week's sessions against how many times a week it runs:
+       { n, done (sessions someone said happened), planned (sessions on the week, skipped ones left out) } */
+    if (!g.date) {
+      const wk = tl.sessions.filter((x) => !x.add.skipped && x.date >= ws && x.date <= we), sum = (o) => Object.values(o).reduce((a, m) => a + m, 0);
+      return {
+        totalMin: 0, doneMin: sum(tl.doneBy), unconfirmedMin: sum(tl.unconfBy), leftMin: 0, daysLeft: null, capacityMin: 0, behindMin: 0, onTrack: true,
+        week, nextSession: next, partsLeft: 0, perDay: 0,
+        parts: (g.parts || []).map((p) => ({ id: p.id, name: p.name, min: p.min, done: !!p.done, doneMin: tl.doneBy[p.id] || 0, unconfirmedMin: tl.unconfBy[p.id] || 0, leftMin: 0 })),
+        perWeek: { n: weekTimes(g), done: wk.filter((x) => tl.confirmed(x)).length, planned: wk.length }, firstWeek: goalFirstWeek(g, today)
+      };
+    }
     const behindMin = Math.max(0, leftMin - capacityMin);
     return {
       totalMin, doneMin, unconfirmedMin, leftMin, daysLeft: g.date ? Math.max(0, diffDays(today, g.date)) : null, capacityMin, behindMin, onTrack: behindMin === 0,
       week, nextSession: next, partsLeft: parts.filter((p) => !p.done && p.leftMin > 0).length, parts,
-      perDay: days.length ? Math.round(leftMin / days.length) : 0
+      perDay: days.length ? Math.round(leftMin / days.length) : 0, firstWeek: goalFirstWeek(g, today)
     };
   }
   /* Spread `total` minutes over days in proportion to each day's weight (its cap), never over a day's
@@ -2685,7 +3096,9 @@
      running when another has time left. Nothing goes on a trip day, an easy day, or the goal's own date.
      Returns { placed, removed, shortMin, message }. */
   /* opts: { horizon: 14, day } (day as goalProgress has it, used only past the horizon, which planning
-     doesn't change) */
+     doesn't change). V11-2: own (true, or the last date it may) lets the plan use the person's own time after the open
+     time, once they said yes: a session that takes some is pinned, so planning again keeps it, and the result gives
+     own: { min, days: [{ date, min, part, name }] }, the way spreadPlan does */
   function planGoal(state, goalId, today, nowMin, opts) {
     return withRecMemo(state, () => planGoalNow(state, goalId, today, nowMin, opts || {}));
   }
@@ -2704,7 +3117,8 @@
     }
     if (g.archived) return res;
     if (g.paused) return Object.assign(res, { message: 'Paused. Nothing new goes on the board.' });
-    if (!g.date) return Object.assign(res, { message: 'Give it a date to plan toward.' });
+    /* V11-2: a goal with no date plans by the week (planWeekly) */
+    if (!g.date) return planWeekly(state, g, today, nowMin, H, held, res);
     if (g.date <= today) return Object.assign(res, { message: g.date === today ? 'Today’s the day.' : 'Its date has gone by.' });
     const tl = goalTally(state, g, today, nowMin);
     /* each part's minutes still to place: what's done, unconfirmed, or already ahead counts as had */
@@ -2726,12 +3140,28 @@
     const toPlace = queue.reduce((a, x) => a + x.left, 0);
     if (!toPlace) return Object.assign(res, { message: (g.parts || []).every((p) => p.done) ? 'Every part is done.' : weekLine(state, g, today, nowMin) || 'Everything left already has a time.' });
     const when = (g.rhythm || {}).when, chunk = Math.max(STEP, floorGrid((g.rhythm || {}).chunk || 60));
+    /* V11-2: own time where the person said yes (opts.own), after the open time; what each session takes of it */
+    const ownOn = (d) => !!opts.own && (opts.own === true || d <= opts.own);
+    const q = (d, fn) => (opts.own ? withOwn(ownOn(d), fn) : fn());
+    const ownBy = {};
+    const tookOwn = (d, s, len) => {
+      if (!ownOn(d)) return false;
+      const x = ownTimeOf(state, d, s, len);
+      if (!x.min) return false;
+      const e = ownBy[d] || (ownBy[d] = { date: d, min: 0, part: partOf(s), name: x.name });
+      e.min += x.min;
+      return true;
+    };
     const days = goalDays(state, g, today).map((d) => {
       const room = held.has(d) ? 0 : Math.max(0, goalCap(g, d) - (tl.spent[d] || 0) - (tl.own[d] || 0));
-      return { d, w: goalCap(g, d), c: room ? floorGrid(Math.min(room, quietMinutes(state, d, when, d === today ? ceilGrid(now) : 0, d > hEnd ? opts.day : null))) : 0 };
+      return { d, w: goalCap(g, d), c: room ? floorGrid(Math.min(room, q(d, () => quietMinutes(state, d, when, d === today ? ceilGrid(now) : 0, d > hEnd ? opts.day : null)))) : 0 };
     });
     const share = evenShares(toPlace, days);
     res.shortMin = Math.round(share.short);
+    /* V11-2: an exam's practice Saturdays (examStages), and the part a practice exam counts toward: one whose name
+       says practice, a mock, a performance test, or essays, with the most left, else the next part as usual */
+    const practiceOn = new Set(examStages(state, g).practice);
+    const practicePart = () => queue.filter((x) => x.left >= 1 && /practice|mock|performance test|essay/i.test(x.p.name || '')).sort((a, b) => b.left - a.left)[0] || nextPart();
     /* each day's share on the grid, carrying what rounding leaves to the next day */
     let acc = 0, given = 0;
     for (let i = 0; i < days.length; i++) {
@@ -2742,14 +3172,35 @@
       /* sessions in the day's quiet windows, earliest first, free time last */
       let left = give;
       const d = days[i].d;
-      for (const w of windowsInOrder(state, d, when || 'any', d === today ? ceilGrid(now) : 0)) {
+      /* V11-2: on a practice Saturday the day's first session is a practice exam, in one sitting of up to four hours
+         (an hour at least), in the first quiet window that holds the day's share, else the longest; practice: true */
+      const hasPractice = ((state.dates[d] && state.dates[d].adds) || []).some((a) => a.practice && !a.skipped && a.src && a.src.type === 'goal' && a.src.id === g.id);
+      if (practiceOn.has(d) && !hasPractice) {
+        const pp = practicePart(), wins = q(d, () => windowsInOrder(state, d, when || 'any', d === today ? ceilGrid(now) : 0));
+        const want = pp ? floorGrid(Math.min(left, PRACTICE_MAX, ceilGrid(pp.left))) : 0;
+        const fit = want >= 60 ? wins.find((w) => w.end - w.start >= want) || wins.slice().sort((a, b) => (b.end - b.start) - (a.end - a.start))[0] : null;
+        for (let s = fit ? fit.start : 0; fit && s + 60 <= fit.end; s += STEP) {
+          const len = floorGrid(Math.min(want, fit.end - s));
+          if (len < 60) break;
+          const r = canPlace(state, d, len, s);
+          if (!r.ok || (r.pushes || []).length) continue;
+          const mineOwn = tookOwn(d, s, len);
+          putAdd(state, d, Object.assign({ name: 'Practice exam', cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: pp.p.id }, practice: true }, mineOwn ? { pinned: true } : {}), s);
+          res.placed++;
+          pp.left -= len; pp.had += len; left -= len;
+          prev = pp;
+          break;
+        }
+      }
+      for (const w of q(d, () => windowsInOrder(state, d, when || 'any', d === today ? ceilGrid(now) : 0))) {
         let s = w.start, cur = nextPart();
         while (left >= STEP && w.end - s >= STEP && cur) {
           const len = floorGrid(Math.min(left, chunk, w.end - s, ceilGrid(cur.left)));
           if (len < STEP) break;
           const r = canPlace(state, d, len, s);
           if (!r.ok || (r.pushes || []).length) { s += STEP; continue; }
-          putAdd(state, d, { name: cur.p.name || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: cur.p.id } }, s);
+          const mineOwn = tookOwn(d, s, len);
+          putAdd(state, d, Object.assign({ name: cur.p.name || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: cur.p.id } }, mineOwn ? { pinned: true } : {}), s);
           res.placed++;
           cur.left -= len; cur.had += len; left -= len; s += len;
           prev = cur;
@@ -2760,6 +3211,7 @@
       /* room that turned out to be in pieces too small goes on the shortfall */
       if (left >= STEP && nextPart()) res.shortMin += left;
     }
+    if (opts.own) { const list = Object.keys(ownBy).sort().map((k) => ownBy[k]); res.own = { min: list.reduce((a, x) => a + x.min, 0), days: list }; }
     res.message = res.shortMin >= STEP ? behindText(g, res.shortMin)
       : weekLine(state, g, today, nowMin) || (g.start && g.start > today ? 'It starts ' + dayWord(g.start, today) + '.' : '');
     return res;
@@ -2984,6 +3436,7 @@
      it, so it isn't pinned. Returns { ok, date, start, goals, message } (goals as applySpread's out has
      them, message what giving that time did to them); opts.preview works it out and changes nothing. */
   function moveStep(state, addId, today, nowMin, opts) {
+    if (opts && opts.own && !ownOk) return withOwn(true, () => moveStep(state, addId, today, nowMin, opts));
     const o = opts || {}, st = o.preview ? clone(state) : state, now = nowMin == null ? 0 : nowMin;
     const f = findAdd(st, addId);
     if (!f || !f.add.src || f.add.src.type !== 'step') return { ok: false };
@@ -3017,7 +3470,7 @@
         const to = g.moved.find((s) => same(s) && s.date === x.date) || g.moved.find((s) => same(s) && s.dur === x.dur) || null;
         if (to && to.dur >= x.dur) lines.push(x.name + ' moved to ' + when(to.date, x.date, to.start) + '.');
         else if (to) lines.push(x.name + ' moved to ' + when(to.date, x.date, to.start) + ', for ' + hoursText(to.dur) + '.' + (worse ? '' : ' The rest goes to the days ahead.'));
-        else if (!worse) lines.push(x.name + '’s ' + hoursText(x.dur) + ' goes to the days before ' + dateText(g.date) + '.');
+        else if (!worse) lines.push(x.name + '’s ' + hoursText(x.dur) + ' goes to the days ' + (g.date ? 'before ' + dateText(g.date) : 'ahead') + '.');
         else lines.push(x.name + ' is off that time.');
       } else if (g.left.length > 1) lines.push(g.name + ': ' + hoursText(g.min) + ' moved ' + (g.left.every((x) => x.trip) ? 'off the trip days' : 'to other times') + '.');
       if (worse) lines.push(behind);
@@ -3234,6 +3687,740 @@
     return { meals, block };
   }
 
+  /* == V11-2: big moments ==
+     A big thing is something with a date, a window, or no date at all, with a few steps, each on its last good day
+     (docs/BIG-MOMENTS.md). Some steps come after the date, some are messages to people, and some blocks carry a
+     list. Only the next step is loud. Here: a goal with no date planned by the week (planWeekly), an exam's stages
+     (examStages), fuzzy dates (windowFor, windowWords, pickDate), a heads-up for each person (addHeadsUp), the to-do
+     a step becomes (prepTodo, packList), suggested texts (suggestText, msgFor), what the two new questions ask about
+     (yesterdayLoose, headsUpDue), and the countdown that draws all of it (countdown). The API block below has the
+     contract. Everything is worked out on the device; nothing here sends anything. */
+  /* the longest practice exam the plan puts down in one sitting */
+  const PRACTICE_MAX = 240;
+  const eventOf = (state, id) => (state.events || []).find((e) => e.id === id) || null;
+
+  /* how many times a week a goal with no date runs: rhythm.n, or one on each of its days that has time */
+  const weekTimes = (g) => {
+    const r = (g && g.rhythm) || {}, n = Math.round(Number(r.n));
+    return n >= 1 ? Math.min(7, n) : (r.days || []).filter((d) => ((d === 0 || d === 6) ? r.we : r.wd) > 0).length;
+  };
+  /* a session of a goal with no date on `date`: its chunk, never more than the day's time; 0 on a day it doesn't use */
+  const weekLen = (g, date) => {
+    const r = g.rhythm || {}, wd = weekday(date), cap = (r.days || []).includes(wd) ? ((wd === 0 || wd === 6 ? r.we : r.wd) || 0) : 0;
+    return cap > 0 ? floorGrid(Math.min(Math.max(STEP, r.chunk || 60), cap)) : 0;
+  };
+  /* Plan a goal with no date by the week, from today (or its start) through the horizon. Each week gets its sessions
+     (weekTimes), one a day at most, each weekLen long, aimed at days spread over the week, in the quiet time of the
+     part of the day it likes; never on a trip day, an easy day, or a day left as it is (held). What the week already
+     has counts (pinned, done, or already started; a skipped one doesn't, so its slot can come back). Parts take turns.
+     It's never behind: a week that can't hold them all says so plainly. Fills planGoal's res. */
+  function planWeekly(state, g, today, nowMin, H, held, res) {
+    const now = nowMin == null ? 0 : nowMin, n = weekTimes(g), when = (g.rhythm || {}).when || 'any';
+    const first = g.start && g.start > today ? g.start : today, hEnd = addDays(today, H - 1);
+    if (!n) return Object.assign(res, { message: 'Pick the days it runs on.' });
+    const open = (g.parts || []).filter((p) => !p.done), parts = open.length ? open : (g.parts || []).slice(0, 1);
+    let turn = goalSessions(state, g.id).filter((x) => !x.add.skipped).length;
+    for (let ws = weekStart(first); ws <= hEnd; ws = addDays(ws, 7)) {
+      const we = addDays(ws, 6);
+      const on = goalSessions(state, g.id).filter((x) => !x.add.skipped && x.date >= ws && x.date <= we);
+      const need = n - on.length;
+      if (need <= 0) continue;
+      const taken = new Set(on.map((x) => x.date));
+      /* the week's days with room for a session (the whole week, so a week the horizon cuts spreads the same way) */
+      const cand = range(ws, 7).filter((d) => d >= first && weekLen(g, d) >= STEP && !taken.has(d) && !held.has(d) && !tripOn(state, d) && !easyDay(state, d))
+        .map((d) => ({ d, len: weekLen(g, d), at: quietSlot(state, d, weekLen(g, d), { when, strict: true, after: d === today ? ceilGrid(now) : 0 }) }))
+        .filter((x) => x.at != null);
+      for (let k = 0; k < need && cand.length; k++) {
+        /* the k-th of `need` sessions aims at its share of the week (three in five days: the first, third, and fifth);
+           one aimed past the horizon waits for a later plan */
+        const t = Math.min(cand.length - 1, Math.max(0, Math.round((k + 0.5) * cand.length / need - 0.5)));
+        if (cand[t].d > hEnd) continue;
+        for (const x of cand.slice(t).concat(cand.slice(0, t).reverse())) {
+          if (taken.has(x.d) || x.d > hEnd) continue;
+          const p = parts.length ? parts[turn % parts.length] : null;
+          putAdd(state, x.d, { name: (p && p.name) || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: x.len, src: { type: 'goal', id: g.id, part: p ? p.id : null } }, x.at);
+          taken.add(x.d); turn++; res.placed++;
+          break;
+        }
+      }
+    }
+    /* the words: this week's days, or how many of them fit */
+    const ws0 = weekStart(today), we0 = addDays(ws0, 6);
+    const mine = goalSessions(state, g.id).filter((x) => !x.add.skipped && x.date >= ws0 && x.date <= we0);
+    const days = Array.from(new Set(mine.map((x) => x.date))).sort().map((d) => DAY_LONG[weekday(d)]);
+    res.message = first > we0 ? 'It starts ' + dayWord(first, today) + '.'
+      : !mine.length ? 'Nothing fits this week.'
+      : (mine.length >= n ? 'This week: ' : mine.length + ' of ' + n + ' fit this week: ') + joinWords(days) + '.';
+    return res;
+  }
+
+  /* An exam's stages, from its start and its date, worked out and never saved: Learn from the start to about half the
+     time; Practice to about the last six weeks (a third of a shorter run); Review to three days out; then the lighter
+     last days the plan already has (the taper, Lighter days). On a run of eight weeks or more the stages turn at the
+     start of a week. A run under two weeks is Review and the last days. A practice exam every other Saturday through
+     Practice and Review, on a Saturday the goal uses and not on a trip. Gives { stages: [{ from, to, name }], practice:
+     [dates] }; nothing for a goal that isn't an exam or has no date. */
+  function examStages(state, goal) {
+    const g = goalOf(state, goal), none = { stages: [], practice: [] };
+    if (!g || g.kind !== 'exam' || !g.date || !g.start || g.start >= g.date) return none;
+    const start = g.start, R = diffDays(start, g.date), eve = addDays(g.date, -1);
+    const light = addDays(g.date, -TAPER), body = addDays(g.date, -TAPER - 1), stages = [];
+    const put = (from, to, name) => { if (from <= to) stages.push({ from, to, name }); };
+    if (R <= TAPER) { put(start, eve, 'Lighter days'); return { stages, practice: [] }; }
+    if (R < 14) { put(start, body, 'Review'); put(maxDate(start, light), eve, 'Lighter days'); return { stages, practice: [] }; }
+    const snap = R >= 56 ? (d) => { const w = weekStart(d), nx = addDays(w, 7); return diffDays(w, d) <= diffDays(d, nx) ? w : nx; } : (d) => d;
+    const practiceFrom = snap(addDays(start, Math.round(R / 2)));
+    const reviewFrom = maxDate(practiceFrom, snap(addDays(g.date, -Math.min(42, Math.round(R / 3)))));
+    put(start, addDays(practiceFrom, -1), 'Learn');
+    put(practiceFrom, minDate(addDays(reviewFrom, -1), body), 'Practice');
+    put(reviewFrom, body, 'Review');
+    put(light, eve, 'Lighter days');
+    const practice = [], p0 = stages.find((s) => s.name === 'Practice' || s.name === 'Review');
+    if (p0) for (let sat = addDays(p0.from, (6 - weekday(p0.from) + 7) % 7); sat <= body; sat = addDays(sat, 14)) if (goalCap(g, sat) > 0 && !(state && tripOn(state, sat))) practice.push(sat);
+    return { stages, practice };
+  }
+
+  /* == V11-2: fuzzy dates ==
+     "Not sure yet", in the words a person picks: 'this-month', 'next-month', a season ('spring' is March to May,
+     'summer' June to August, 'fall' September to November, 'winter' December to February; the next one to come, or
+     the one under way), or 'few-months' (the next three, from next month). Gives { from, to }, whole months, or null. */
+  const SEASONS = { spring: [3, 5], summer: [6, 8], fall: [9, 11], winter: [12, 2] };
+  function windowFor(choice, today) {
+    const p = parts(today), lastOf = (s) => { const q = parts(s); return iso(q.y, q.m, daysInMonth(q.y, q.m)); };
+    const m0 = iso(p.y, p.m, 1);
+    if (choice === 'this-month') return { from: m0, to: lastOf(m0) };
+    if (choice === 'next-month') { const a = addMonths(m0, 1); return { from: a, to: lastOf(a) }; }
+    if (choice === 'few-months') { const a = addMonths(m0, 1); return { from: a, to: lastOf(addMonths(a, 2)) }; }
+    const s = SEASONS[choice];
+    if (!s) return null;
+    for (const y of [p.y - 1, p.y, p.y + 1]) {
+      const from = iso(y, s[0], 1), to = lastOf(iso(s[1] < s[0] ? y + 1 : y, s[1], 1));
+      if (to >= today) return { from, to };
+    }
+    return null;
+  }
+  /* a window as it's said inside a sentence, and the months it spans: { lead: 'sometime in spring', span: 'Mar to May' } */
+  function windowParts(win, today) {
+    const a = parts(win.from), b = parts(win.to), t = parts(today || win.from);
+    const whole = a.d === 1 && b.d === daysInMonth(b.y, b.m);
+    /* the year, when it isn't this one's or the next twelve months' */
+    const yr = diffDays(today || win.from, win.from) > 300 ? ' ' + a.y : '';
+    const span = MONTH_SHORT[a.m - 1] + ' to ' + MONTH_SHORT[b.m - 1];
+    if (whole) {
+      for (const k of Object.keys(SEASONS)) {
+        const s = SEASONS[k];
+        if (a.m === s[0] && b.m === s[1] && b.y === (s[1] < s[0] ? a.y + 1 : a.y)) return { lead: 'sometime in ' + k + yr, span };
+      }
+      if (a.y === b.y && a.m === b.m) {
+        const k = (a.y - t.y) * 12 + a.m - t.m;
+        return { lead: k === 0 ? 'sometime this month' : k === 1 ? 'sometime next month' : 'sometime in ' + MONTH_LONG[a.m - 1] + yr, span: '' };
+      }
+      return { lead: 'sometime between ' + MONTH_SHORT[a.m - 1] + ' and ' + MONTH_SHORT[b.m - 1] + yr, span: '' };
+    }
+    return { lead: 'sometime between ' + dateText(win.from) + ' and ' + dateText(win.to), span: '' };
+  }
+  /* 'Sometime in spring · Mar to May', 'Sometime next month', 'Sometime between Nov and Jan' */
+  function windowWords(win, today) {
+    if (!win || !win.from || !win.to) return '';
+    const w = windowParts(win, today);
+    return capFirst(w.lead) + (w.span ? ' · ' + w.span : '');
+  }
+  /* the date an event is on next, from today: its date, or a yearly one's next day on or after today; null for a
+     fuzzy date */
+  function nextOn(e, today) {
+    if (!e || !e.date) return null;
+    if (!e.yearly || e.date >= today) return e.date;
+    const md = e.date.slice(5), y = +today.slice(0, 4);
+    for (const yy of [y, y + 1]) { const d = md === '02-29' && !isLeap(yy) ? yy + '-02-28' : yy + '-' + md; if (d >= today) return d; }
+    return e.date;
+  }
+  /* how far a date is: 'today', 'tomorrow', 'in 5 days', 'in 8 weeks', 'in 4 months', 'now' (inside a trip), '3 days ago' */
+  function awayWords(date, today, end) {
+    if (end && date < today && today <= end) return 'now';
+    const n = diffDays(today, date);
+    if (n === 0) return 'today';
+    if (n === 1) return 'tomorrow';
+    if (n === -1) return 'yesterday';
+    if (n < 0) return -n < 14 ? -n + ' days ago' : -n < 182 ? Math.round(-n / 7) + ' weeks ago' : Math.round(-n / 30.44) + ' months ago';
+    if (n < 14) return 'in ' + n + ' days';
+    if (n < 182) return 'in ' + Math.round(n / 7) + ' weeks';
+    if (n < 730) return 'in ' + Math.round(n / 30.44) + ' months';
+    return 'in ' + Math.round(n / 365.25) + ' years';
+  }
+  /* Give a fuzzy date its day: date (and a trip's end; the date again when there's none), and the window goes, so it's
+     an ordinary date from then on. What was kept for its steps while they waited moves to the new date, and the
+     to-do to pick it, if there was one, is done. Returns the event, or null. */
+  function pickDate(state, id, date, end, today) {
+    const e = eventOf(state, id);
+    if (!e || !/^\d{4}-\d\d-\d\d$/.test(String(date || ''))) return null;
+    const was = isFuzzy(e) ? e.window.from : null;
+    /* what it gets ready for is written down first: without its window, a saved date with no list of its own would
+       read the way version 8 did */
+    e.ready = readyList(e, state).filter((r) => r.k !== 'pickdate').map((r) => Object.assign({}, r));
+    e.date = date;
+    if (e.kind === 'trip') e.end = end && end >= date ? end : date;
+    delete e.window;
+    /* (with its days known, a trip that leaves something behind lines up who's covering it) */
+    if ((e.kind === 'trip' || e.away) && !e.ready.some((r) => r.k === 'cover') && coverOf(state, e)) e.ready.push({ k: 'cover' });
+    if (was && e.prep) {
+      const prep = {};
+      Object.keys(e.prep).forEach((k) => {
+        const at = k.lastIndexOf('@'), v = e.prep[k];
+        if (k.startsWith('pickdate')) { const t = (state.tasks || []).find((x) => x.id === v); if (t && !t.done) completeTask(state, t.id, today || date); prep[k] = v; return; }
+        prep[at >= 0 && k.slice(at + 1) === was ? k.slice(0, at + 1) + date : k] = v;
+      });
+      e.prep = prep;
+    }
+    return e;
+  }
+
+  /* == V11-2: people, messages, and lists ==
+     A heads-up for one person you'll see there: a trip asks "Anyone you want to see there?", and each name becomes
+     one. The event keeps its list from then on: what it gets ready for, written down, and this. place: where that
+     person is, when it isn't the date's own name (optional). Returns the entry ({ k: 'headsup', who, place? }), the one
+     already there for the same person (any capitals), or null with no name. */
+  function addHeadsUp(state, id, who, place) {
+    const e = id && typeof id === 'object' ? id : eventOf(state, id), name = String(who || '').trim();
+    if (!e || !name) return null;
+    const had = (Array.isArray(e.ready) ? e.ready : []).find((r) => !!r && r.k === 'headsup' && String(r.who || '').trim().toLowerCase() === name.toLowerCase());
+    if (had) return had;
+    const entry = Object.assign({ k: 'headsup', who: name }, place && String(place).trim() ? { place: String(place).trim() } : {});
+    if (Array.isArray(e.ready)) e.ready.push(entry);
+    else e.ready = (freshEvent(e) ? readySuggest(e, state) : readySuggest8(e, state)).map((r) => (typeof r === 'string' ? { k: r } : Object.assign({}, r))).concat([entry]);
+    return entry;
+  }
+
+  /* == V11-2: who's going, and who's covering ==
+     Who's going (an event's going: 'me', 'us', 'family', or a list of names; optional, version 9, no migration): when
+     more than the person is going, every suggested text for it says we (We'll be in LA, Count us in), and with the
+     whole family going, the kids' drop-offs and pick-ups go with them. A trip or a date you travel to asks once, on a
+     board with someone else in it, and its countdown's More changes it (setGoing).
+     Who's covering (READY.cover, coverOf): what the days away leave behind that needs a person. The kids' drop-offs
+     and pick-ups (the locked family routines) while the kids stay home, and a kid's appointment then too; care for
+     someone who doesn't live with you, an appointment, groceries, meds, or a visit to look after them that names them
+     (Dad’s cardiology, Groceries for Dad, Check on Walter); and a pet's walks and meals. A trip's first day counts from
+     when you leave and its last until you're back; a date you travel to, its whole day. With nothing like that on
+     those days (someone with no one to look after, a weekend away from weekday routines), nothing to cover. */
+  const goingNames = (g) => (Array.isArray(g) ? g.map((n) => String(n || '').trim()).filter(Boolean) : []);
+  function goingMore(state, e) {
+    const g = e && e.going;
+    if (g === 'us' || g === 'family') return true;
+    const me = ownName(state);
+    return goingNames(g).some((n) => n.toLowerCase() !== me);
+  }
+  /* the kids who live at home, by name */
+  function homeKids(state) {
+    const pr = (state && state.profile) || {};
+    return (pr.kids || []).concat((pr.people || []).filter((x) => x && x.group === 'kids' && x.home).map((x) => x.name)).map((k) => String(k || '').trim()).filter((k, i, all) => k && all.indexOf(k) === i);
+  }
+  /* (the kids are going too: the whole family, or each of them by name) */
+  function kidsGoing(state, e) {
+    const g = e && e.going, kids = homeKids(state);
+    if (g === 'family') return true;
+    const names = goingNames(g).map((n) => n.toLowerCase());
+    return !!kids.length && kids.every((k) => names.includes(k.toLowerCase()));
+  }
+  const CARE_KIN = ['mom', 'mum', 'mother', 'dad', 'father', 'grandma', 'granny', 'nana', 'grandmother', 'grandpa', 'granddad', 'grandfather', 'papa'];
+  const CARE_APPT = /\b(doctor|doctors|dr|dentist|dental|orthodontist|pediatrician|appointment|appointments|appt|therapy|therapist|cardiology|cardiologist|checkup|check-up|clinic|hospital|surgery|infusion|dialysis|chemo|labs?|bloodwork|blood work|scan|mri|x-ray|optometrist|physio|eye doctor)\b/;
+  const CARE_MEDS = /\b(meds|medicine|medication|medications|prescriptions?|pharmacy)\b/;
+  const CARE_FOOD = /\bgrocer(y|ies)\b/;
+  const CARE_VERB = /\b(check on|checking on|check in on|drive|driving|take|taking|help|helping|care|caring|sit with|stay with|meals? for)\b/;
+  const CARE_PET = /\b(dog|dogs|puppy|cat|cats|kitten|pet|pets)\b/;
+  const COVER_WORDS = /\b(cover|covering|check on|checking on|look after|looking after|sitter|babysit\w*|someone to|line up who)\b/;
+  /* 'A', 'A and B', 'A, B, and C'; two parts where the first already says and get a comma between them */
+  const andWords = (list) => (list.length <= 1 ? list[0] || '' : list.length === 2 ? list[0] + (/ and /.test(list[0]) ? ', and ' : ' and ') + list[1] : list.slice(0, -1).join(', ') + ', and ' + list[list.length - 1]);
+  /* What a trip (or a date you travel to) leaves behind that needs a person: { what, parts, people, days } or null.
+     what: the words, Robin’s drop-offs and pick-ups, the kids’ drop-offs, Dad’s appointments and groceries, the
+     dog’s walks; parts: each one's words; people: who or what they're for (Robin, kids, Dad, dog), for a to-do that's
+     already on the list; days: how many days it's away */
+  function coverOf(state, e) {
+    if (!state || !e || !(e.kind === 'trip' || e.away) || isFuzzy(e) || !/^\d{4}-\d\d-\d\d$/.test(String(e.date || ''))) return null;
+    const pr = state.profile || {}, trip = e.kind === 'trip';
+    const kids = kidsGoing(state, e) ? [] : homeKids(state), lowKids = kids.map((k) => k.toLowerCase());
+    const along = goingNames(e.going).map((n) => n.toLowerCase());
+    /* the people someone looks after: a parent or grandparent by what the family calls them, and anyone on the board
+       who doesn't live there (never a partner); never one who's going along */
+    const theirs = (pr.people || []).filter((x) => x && x.name && !x.home && !['kids', 'partner', 'dating'].includes(x.group)).map((x) => String(x.name).trim().toLowerCase());
+    const cared = CARE_KIN.concat(theirs).filter((p, i, all) => p && all.indexOf(p) === i && !along.includes(p));
+    const last = trip && e.end && e.end > e.date ? e.end : e.date;
+    const leave = trip ? (e.leave != null ? e.leave : 450) : 0, back = trip ? (e.back != null ? e.back : 1020) : 1440;
+    let drops = 0, picks = 0;
+    const kidsSeen = new Set(), care = new Map(), pet = { animal: null, walks: 0, meals: 0, other: 0 };
+    /* who an item looks after: someone it names (Dad’s, for Dad, check on Dad), as the item spells them, when it's
+       care (an appointment, groceries, meds, or a visit to look after them); or a kid, at an appointment */
+    const careFor = (low, raw) => {
+      if (!(CARE_APPT.test(low) || CARE_FOOD.test(low) || CARE_MEDS.test(low) || CARE_VERB.test(low))) return null;
+      for (const p of cared) {
+        const own = new RegExp('\\b' + reEsc(p) + '\'s\\b').test(low), aim = new RegExp('\\b(?:for|on|with|drive|driving|take|taking|help|helping)\\s+' + reEsc(p) + '\\b').test(low);
+        if (own || aim) { const m = raw.match(new RegExp('\\b' + reEsc(p) + '\\b', 'i')); return capFirst(m ? m[0] : p); }
+      }
+      if (CARE_APPT.test(low)) for (const k of kids) if (new RegExp('\\b' + reEsc(k.toLowerCase()) + '\\b').test(low)) return k;
+      return null;
+    };
+    const look = (name, daycare) => {
+      const raw = String(name || '').replace(/’/g, '\''), low = raw.toLowerCase();
+      if (daycare) {
+        if (!kids.length) return;
+        const m = low.match(/^(?:drop off|drop-off|pick up|pick-up)\s+(.+)$/);
+        const named = m ? m[1].split(/\s*(?:,|\band\b)\s*/).map((x) => x.trim()).filter(Boolean) : [];
+        const who = named.map((n) => kids[lowKids.indexOf(n)]).filter(Boolean);
+        (who.length ? who : kids).forEach((k) => kidsSeen.add(k));
+        if (/\bdrop/.test(low)) drops++; else picks++;
+        return;
+      }
+      const p = careFor(low, raw);
+      if (p) {
+        const c = care.get(p) || { appts: 0, food: 0, meds: 0, other: 0 };
+        if (CARE_APPT.test(low)) c.appts++; else if (CARE_FOOD.test(low)) c.food++; else if (CARE_MEDS.test(low)) c.meds++; else c.other++;
+        care.set(p, c);
+        return;
+      }
+      const a = low.match(CARE_PET);
+      if (a) {
+        const animal = /dog|puppy/.test(a[1]) ? 'dog' : /cat|kitten/.test(a[1]) ? 'cat' : 'pets';
+        pet.animal = pet.animal && pet.animal !== animal ? 'pets' : animal;
+        if (/\bwalk/.test(low)) pet.walks++; else if (/\b(feed|food|meal|breakfast|dinner)/.test(low)) pet.meals++; else pet.other++;
+      }
+    };
+    for (const d of range(e.date, Math.min(diffDays(e.date, last) + 1, 62))) {
+      const from = d === e.date ? leave : 0, to = d === last ? back : 1440;
+      const inside = (start, dur) => start != null && start < to && start + (dur || 0) > from;
+      const tpl = templateFor(state, d);
+      for (const b of (tpl && tpl.blocks) || []) if (!b.sleep && inside(b.start, b.dur)) look(b.name, !!b.daycare || /^(dropoff|pickup)\d*$/.test(String(b.id || '')));
+      for (const x of timedOn(state, d)) if (x.id !== e.id && inside(x.start, x.dur)) look(x.name, false);
+      for (const m of state.meetings || []) if ((m.days || []).includes(weekday(d)) && inside(m.start, m.dur)) look(m.name, false);
+    }
+    const parts = [], people = [];
+    if (kidsSeen.size && (drops || picks)) {
+      const ks = kids.filter((k) => kidsSeen.has(k));
+      const whose = ks.length === 1 ? ks[0] + '’s' : ks.length === 2 ? ks[0] + ' and ' + ks[1] + '’s' : 'the kids’';
+      parts.push(whose + ' ' + [drops ? (drops === 1 ? 'drop-off' : 'drop-offs') : '', picks ? (picks === 1 ? 'pick-up' : 'pick-ups') : ''].filter(Boolean).join(' and '));
+      people.push(...(ks.length > 2 ? ['kids'] : ks));
+    }
+    care.forEach((c, p) => {
+      parts.push(p + '’s ' + andWords([c.appts ? (c.appts === 1 ? 'appointment' : 'appointments') : '', c.food ? 'groceries' : '', c.meds ? 'meds' : '', c.other ? 'care' : ''].filter(Boolean)));
+      people.push(p);
+    });
+    if (pet.animal) {
+      parts.push((pet.animal === 'pets' ? 'the pets’ ' : 'the ' + pet.animal + '’s ') + andWords([pet.walks ? 'walks' : '', pet.meals ? 'meals' : '', pet.other ? 'care' : ''].filter(Boolean)));
+      people.push(pet.animal);
+    }
+    return parts.length ? { what: andWords(parts), parts, people, days: diffDays(e.date, last) + 1 } : null;
+  }
+  /* Who's going, set or changed ('me', 'us', 'family', a list of names, or null to take it off), with what it means for
+     covering, in the same change: a date whose days away now leave something behind gets ready for who's covering it
+     (cover joins its list), and one that no longer does takes off its cover to-do if nobody has touched it yet (not
+     done, on no day, its text never edited). Gives { going, cover, removed } (removed: that to-do's id) or null. */
+  function setGoing(state, id, going) {
+    const e = id && typeof id === 'object' ? id : eventOf(state, id);
+    if (!e) return null;
+    const names = goingNames(going), g = going === 'me' || going === 'us' || going === 'family' ? going : names.length ? names : null;
+    if (g) e.going = g; else delete e.going;
+    const cov = coverOf(state, e), keyOf = (r) => (typeof r === 'string' ? r : r && r.k);
+    let removed = null;
+    if (cov && !readyList(e, state).some((r) => r.k === 'cover')) {
+      const list = Array.isArray(e.ready) ? e.ready : (freshEvent(e) ? readySuggest(e, state) : readySuggest8(e, state)).map((r) => (typeof r === 'string' ? r : Object.assign({}, r)));
+      if (!list.some((r) => keyOf(r) === 'cover')) list.push('cover');
+      e.ready = list;
+    } else if (!cov) {
+      const key = Object.keys(e.prep || {}).find((k) => k.split('@')[0] === 'cover');
+      const t = key ? (state.tasks || []).find((x) => x.id === e.prep[key]) : null;
+      if (t && !t.done && !(t.msg && typeof t.msg.text === 'string' && t.msg.text.trim()) && !(placements(state).get(t.id) || []).length) {
+        state.tasks.splice(state.tasks.indexOf(t), 1);
+        const prep = Object.assign({}, e.prep);
+        delete prep[key];
+        e.prep = prep;
+        removed = t.id;
+      }
+    }
+    return { going: e.going || null, cover: !!cov, removed };
+  }
+  /* A trip's packing list, the things inside its Pack block: clothes for each day of the trip, toiletries, meds,
+     chargers, ID and wallet, and each kid at home's bag by name. [{ id, name, done }] with new ids. */
+  function packList(state, e) {
+    const days = e && e.kind === 'trip' && e.date && e.end ? diffDays(e.date, e.end) + 1 : 0;
+    const pr = (state && state.profile) || {};
+    const kids = (pr.kids || []).concat((pr.people || []).filter((x) => x && x.group === 'kids' && x.home).map((x) => x.name)).map((k) => String(k || '').trim()).filter(Boolean);
+    const names = [days ? 'Clothes for ' + days + (days === 1 ? ' day' : ' days') : 'Clothes', 'Toiletries', 'Meds', 'Chargers', 'ID and wallet'].concat(kids.map((k) => k + '’s bag'));
+    return names.filter((x, i, all) => all.indexOf(x) === i).map((name) => ({ id: newId('li'), name, done: false }));
+  }
+  /* The to-do a getting-ready step becomes, put on the list and kept on the event (prep), in one change: { id, name,
+     icon, cat, dur, due, repeat: null, done: false, steps: [], of }, with msg ({ to }) for a message, a trip's
+     packing list for Pack, and spread (daily, 30 minutes, from when it starts) for packing up a little each day.
+     extra (group, steps, dur) is laid over it. r is an item from readyFor or lookAhead. Returns the to-do, or null. */
+  function prepTodo(state, id, r, extra) {
+    const e = id && typeof id === 'object' ? id : eventOf(state, id);
+    if (!e || !r || !READY[r.k]) return null;
+    const t = { id: newId('t'), name: r.todo, icon: r.icon, cat: r.cat, dur: r.dur, due: r.due, repeat: null, done: false, steps: [], of: e.id };
+    if (READY[r.k].msg) t.msg = { to: r.who || '' };
+    if (r.k === 'pack' && e.kind === 'trip') t.list = packList(state, e);
+    if (READY[r.k].spread) t.spread = { days: 'daily', cap: 30, when: 'any', from: r.start };
+    Object.assign(t, extra || {});
+    state.tasks.push(t);
+    e.prep = Object.assign({}, e.prep, { [r.key]: t.id });
+    return t;
+  }
+  /* The days of a trip with the most open time on the board (time the trip's own block keeps open, free time, and
+     the gaps around them), up to n (2), in date order; a day with none isn't one. For "Ask about a day". */
+  function tripOpenDays(state, e, n) {
+    if (!e || e.kind !== 'trip' || !e.date || !e.end) return [];
+    const scored = range(e.date, diffDays(e.date, e.end) + 1).map((d) => {
+      const day = calendarDay(state, d);
+      let open = 0;
+      for (const b of day.blocks) if (!b.sleep && (b.tpl === 'trip' || (b.soft && b.free))) open += b.dur;
+      for (const g of gaps(day)) open += g[1] - g[0];
+      return { d, open };
+    }).filter((x) => x.open > 0);
+    return scored.sort((a, b) => b.open - a.open || (a.d < b.d ? -1 : 1)).slice(0, n || 2).map((x) => x.d).sort();
+  }
+
+  /* == V11-2: suggested texts ==
+     Made on the device; the app never sends anything, the person does, from Messages. kind: 'headsup', 'rsvp',
+     'invites', 'thanks', or 'cover'. facts: { who, place, dates (words: 'Dec 18 to 22', 'on Dec 18'), name, date
+     (words, or 'YYYY-MM-DD'), days ('YYYY-MM-DD's, for 'day'), we (more than the person is going: We'll be in LA, Count
+     us in), what and span (who's covering: Robin's pick-ups, and how many days away) }; from and to can stand in for
+     dates. style: none for the suggestion, 'shorter', 'warmer', or 'day' (a heads-up only: names two of the trip's
+     days with the most open time; with none it's the suggestion). */
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  /* 'the 19th or 20th', 'Dec 31 or Jan 1', 'the 19th' */
+  function dayChoices(days) {
+    const ds = (days || []).filter((d) => /^\d{4}-\d\d-\d\d$/.test(String(d))).slice(0, 2);
+    if (!ds.length) return '';
+    const p = ds.map(parts);
+    if (ds.length === 1) return 'the ' + ordinal(p[0].d);
+    return p[0].m === p[1].m && p[0].y === p[1].y ? 'the ' + ordinal(p[0].d) + ' or ' + ordinal(p[1].d) : dateText(ds[0]) + ' or ' + dateText(ds[1]);
+  }
+  /* a date's name inside a sentence: a leading The, A, An, My, or Our in small letters (come to the block party),
+     everything else as it was typed */
+  const inSentence = (s) => String(s || '').trim().replace(/^(The|A|An|My|Our)\b/, (w) => w.toLowerCase());
+  function suggestText(kind, facts, style) {
+    const f = facts || {}, who = String(f.who || '').trim(), hey = who ? 'Hey ' + who + '!' : 'Hey!', hi = who ? 'Hi ' + who + '!' : 'Hi!';
+    const dates = f.dates ? String(f.dates).trim() : f.from ? (f.to && f.to !== f.from ? spanText(f.from, f.to) : 'on ' + dateText(f.from)) : '';
+    const where = (String(f.place || '').trim() || 'town') + (dates ? ' ' + dates : '');
+    const name = inSentence(f.name) || 'it', d = String(f.date || '').trim(), on = d ? ' on ' + (/^\d{4}-\d\d-\d\d$/.test(d) ? dateText(d) : d) : '';
+    /* (more than the person going: we, us) */
+    const we = !!f.we, Ill = we ? 'We\'ll' : 'I\'ll', Im = we ? 'We\'re' : 'I\'m', Id = we ? 'We\'d' : 'I\'d', me = we ? 'us' : 'me', im = we ? 'we\'re' : 'I\'m';
+    if (kind === 'headsup') {
+      if (style === 'shorter') return hey + ' In ' + where + '. Free to meet up?';
+      if (style === 'warmer') return hi + ' ' + Im + ' coming to ' + where + ' and it would mean a lot to see you. Any day work for you?';
+      const pick = style === 'day' ? dayChoices(f.days) : '';
+      if (pick) return hey + ' ' + Ill + ' be in ' + where + '. Could we get together on ' + pick + '?';
+      return hey + ' ' + Ill + ' be in ' + where + ' and would love to see you. Are you around?';
+    }
+    if (kind === 'rsvp') {
+      if (style === 'shorter') return 'Hi! Count ' + me + ' in for ' + name + on + '.';
+      if (style === 'warmer') return 'Hi! Thank you for thinking of ' + me + '. ' + Id + ' love to come to ' + name + on + '. Count ' + me + ' in.';
+      return 'Hi! ' + Id + ' love to come to ' + name + on + '. Count ' + me + ' in.';
+    }
+    if (kind === 'invites') {
+      if (style === 'shorter') return 'Hey! ' + Im + ' having ' + name + on + '. Can you make it?';
+      if (style === 'warmer') return 'Hey! ' + Im + ' having ' + name + on + ', and it wouldn\'t be the same without you. Can you make it?';
+      return 'Hey! ' + Im + ' having ' + name + on + '. Would love for you to come. Can you make it?';
+    }
+    if (kind === 'thanks') {
+      if (style === 'shorter') return 'Thank you for ' + name + '!';
+      if (style === 'warmer') return 'Thank you so much for ' + name + '. It meant a lot, and ' + im + ' so glad you were there.';
+      return 'Thank you so much for ' + name + '. It meant a lot.';
+    }
+    /* who's covering: what needs a person while you're away (f.what), for the days away (f.span: one, a week or less,
+       or more) */
+    if (kind === 'cover') {
+      const what = String(f.what || '').trim().replace(/’/g, '\'') || 'things at home', span = Number(f.span) || 0;
+      const when = span === 1 ? 'that day' : span && span <= 7 ? 'that week' : 'while ' + im + ' away', gone = dates ? ' ' + dates : '';
+      if (style === 'shorter') return hey + ' Away' + gone + '. Could you cover ' + what + '?';
+      if (style === 'warmer') return hi + ' ' + Ill + ' be away' + gone + ', and it would mean a lot if you could cover ' + what + ' ' + when + '. Would that work?';
+      return hey + ' ' + Ill + ' be away' + gone + '. Could you cover ' + what + ' ' + when + '?';
+    }
+    return '';
+  }
+  /* The place in a date's name, for words that name it ("I'll be in Denver"). A name that's a place stays as it is
+     (Denver, California, LA). Otherwise the place after to, in, or at ("Visit to Denver", "Trip to Chicago", "Weekend
+     in Napa", "Drive to Portland in June": Portland), or before a word for a trip ("Denver trip", "Napa weekend"). A
+     name with no place in it gives '': a person ("Visit Mom", "Thanksgiving at Mom’s"), or only words about the trip
+     ("Family weekend", "Weekend at the lake", "Ski trip", "October trip"). Typed all in small letters, it gets its
+     capitals. e: an event, or a name. */
+  const TRIP_WORDS = new Set(['trip', 'trips', 'visit', 'visiting', 'weekend', 'week', 'vacation', 'vacay', 'getaway', 'holiday', 'holidays', 'journey', 'drive', 'flight', 'cruise', 'tour', 'retreat', 'reunion', 'staycation', 'break', 'honeymoon', 'babymoon']);
+  const NOT_PLACE = new Set(['the', 'a', 'an', 'our', 'my', 'his', 'her', 'their', 'family', 'families', 'girls', 'guys', 'boys', 'kids', 'friends', 'friend', 'couples', 'solo', 'date', 'work', 'business', 'team', 'company', 'ski', 'skiing', 'beach', 'lake', 'mountain', 'mountains', 'cabin', 'cottage', 'camp', 'camping', 'road', 'fishing', 'golf', 'hiking', 'home', 'house', 'birthday', 'anniversary', 'christmas', 'thanksgiving', 'easter', 'spring', 'summer', 'fall', 'autumn', 'winter', 'long', 'quick', 'day', 'days', 'annual', 'big', 'little', 'first', 'last', 'next', 'this', 'that', 'away', 'out', 'of', 'and',
+    'new', 'old', 'place', 'apartment', 'condo', 'flat', 'town', 'city', 'there', 'somewhere',
+    'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'].concat(Array.from(TRIP_WORDS)));
+  /* people, said the way a family says them, and the verbs that start "to see Grandma": never a place */
+  const PERSON_WORDS = new Set(['mom', 'mum', 'mother', 'dad', 'father', 'parents', 'folks', 'grandma', 'granny', 'nana', 'grandmother', 'grandpa', 'granddad', 'grandfather', 'grandparents', 'papa', 'aunt', 'auntie', 'uncle', 'cousin', 'cousins', 'sister', 'brother', 'sis', 'bro', 'family', 'in-laws', 'see', 'visit', 'meet', 'help', 'pick', 'bring', 'take']);
+  function placeOf(e) {
+    const words = (x) => x.toLowerCase().replace(/[’']s\b/g, '').split(/[^a-z0-9-]+/).filter(Boolean);
+    const isPlace = (x) => { const w = words(x); return !!w.length && !PERSON_WORDS.has(w[0]) && w.some((t) => !NOT_PLACE.has(t)); };
+    const tidy = (x) => {
+      const t = x.replace(/\s+/g, ' ').replace(/[.,;:!?]+$/, '').trim();
+      if (n !== n.toLowerCase()) return t;
+      return t.split(' ').map((w, i) => ((i === 0 ? /^(the|a)$/ : /^(of|the|and|de|la|on)$/).test(w) ? w : capFirst(w))).join(' ');
+    };
+    /* what it's for or who with isn't the place: "Denver for Thanksgiving", "Napa with Sam" */
+    const n = String((e && typeof e === 'object' ? readyName(e) : e) || '').replace(/[.!?]+$/, '').trim().replace(/\s+(?:for|with|over)\s+.*$/i, '').trim();
+    if (!n) return '';
+    const bits = n.split(/\s+(to|in|at)\s+/i);
+    if (bits.length > 1) {
+      for (let i = bits.length - 1; i >= 2; i -= 2) if (isPlace(bits[i])) return tidy(bits[i]);
+      return '';
+    }
+    const w = n.split(/\s+/), last = w[w.length - 1].toLowerCase();
+    if (w.length > 1 && TRIP_WORDS.has(last)) { const x = w.slice(0, -1).join(' '); return isPlace(x) ? tidy(x) : ''; }
+    if (words(n).some((t) => TRIP_WORDS.has(t))) return '';
+    return isPlace(n) ? tidy(n) : '';
+  }
+  /* the facts a message for one of a date's steps needs, from the board: who, where, and when in words, and (with
+     days) a trip's open days, which only Ask about a day uses. on: the date it's for (null for a fuzzy one); r: its
+     ready entry or item, for a heads-up's place */
+  function msgFacts(state, e, kind, who, on, r, today, days) {
+    const f = { who: who || '' };
+    if (!e) return f;
+    const nm = readyName(e), day = on || e.date;
+    /* (V11-2: who's going says I or we) */
+    if (goingMore(state, e)) f.we = true;
+    if (kind === 'headsup' || kind === 'cover') {
+      if (kind === 'headsup') f.place = (r && r.place) || placeOf(e);
+      f.dates = isFuzzy(e) ? windowParts(e.window, today || e.window.from).lead
+        : e.kind === 'trip' && e.date && e.end && e.end !== e.date ? spanText(e.date, e.end) : day ? 'on ' + dateText(day) : '';
+      if (kind === 'headsup' && days) f.days = tripOpenDays(state, e, 2);
+      if (kind === 'cover') { const cov = coverOf(state, e); f.what = cov ? cov.what : ''; f.span = cov ? cov.days : e.kind === 'trip' && e.date && e.end ? diffDays(e.date, e.end) + 1 : 1; }
+    } else {
+      /* thank-you notes for a date you hosted thank people for coming to it */
+      f.name = kind === 'thanks' && e.host ? 'coming to ' + inSentence(nm) : nm;
+      if (day) f.date = dateText(day);
+    }
+    return f;
+  }
+  /* which message a to-do with no getting-ready key is, from its words */
+  const msgKindOf = (t) => (/^reply to\b/i.test(t.name || '') ? 'rsvp' : /^send the invites\b/i.test(t.name || '') ? 'invites' : /^thank-you notes\b/i.test(t.name || '') ? 'thanks' : /^line up who/i.test(t.name || '') ? 'cover' : 'headsup');
+  /* Everything a message step shows, worked out from the board: { kind, to, text, suggested, versions }. kind is
+     headsup, rsvp, invites, thanks, or cover; to the name; text the person's own words when they saved some (msg.text),
+     else the suggestion; suggested always the plain suggestion; versions [{ id: 'shorter' | 'warmer' | 'day', name:
+     'Shorter' | 'Warmer' | 'Ask about a day', text }], the ones that apply (Ask about a day only for a heads-up whose
+     trip has open days). The date it belongs to comes from of, or from the date that keeps it (prep). null for a
+     to-do that isn't a message. */
+  function msgFor(state, taskId, today) {
+    const t = (state.tasks || []).find((x) => x.id === taskId);
+    if (!t) return null;
+    const keeps = (x) => !!x.prep && Object.keys(x.prep).some((k) => x.prep[k] === t.id);
+    const e = (t.of && eventOf(state, t.of)) || (state.events || []).find(keeps) || null;
+    const key = e && e.prep ? Object.keys(e.prep).find((k) => e.prep[k] === t.id) || null : null;
+    const k0 = key ? key.split(/[:@]/)[0] : null, keyed = !!(k0 && READY[k0] && READY[k0].msg);
+    if (!t.msg && !keyed) return null;
+    const kind = keyed ? k0 : msgKindOf(t);
+    const at = key ? key.lastIndexOf('@') : -1, colon = key ? key.indexOf(':') : -1;
+    const who = String((t.msg && t.msg.to) || (colon >= 0 && colon < at ? key.slice(colon + 1, at) : '')).trim();
+    const on = at >= 0 && /^\d{4}-\d\d-\d\d$/.test(key.slice(at + 1)) && !(e && isFuzzy(e)) ? key.slice(at + 1) : e ? nextOn(e, today || todayIso()) : null;
+    const entry = e ? readyList(e, state).find((r) => r.k === kind && (!READY[kind].who || String(r.who || '').trim().toLowerCase() === who.toLowerCase())) || null : null;
+    const facts = msgFacts(state, e, kind, who, on, entry, today, true);
+    const suggested = suggestText(kind, facts);
+    const versions = [{ id: 'shorter', name: 'Shorter', text: suggestText(kind, facts, 'shorter') }, { id: 'warmer', name: 'Warmer', text: suggestText(kind, facts, 'warmer') }];
+    if (kind === 'headsup' && (facts.days || []).length) versions.push({ id: 'day', name: 'Ask about a day', text: suggestText(kind, facts, 'day') });
+    const own = t.msg && typeof t.msg.text === 'string' && t.msg.text.trim() ? t.msg.text : '';
+    return { kind, to: who, text: own || suggested, suggested, versions };
+  }
+
+  /* == V11-2: the two new questions ==
+     The heads-up to ask about today, if any: one whose time to ask has come (its start) and isn't done or put off,
+     the nearest last good day first. skip: { [key]: true } or a list of keys put off. For momentFor. */
+  const KIN = { aunt: 'her', auntie: 'her', uncle: 'him', mom: 'her', mum: 'her', mother: 'her', dad: 'him', father: 'him', grandma: 'her', granny: 'her', nana: 'her', grandmother: 'her', grandpa: 'him', granddad: 'him', grandfather: 'him', papa: 'him', sister: 'her', brother: 'him' };
+  /* 'Your aunt would love some notice about LA. Text her this week?', 'Sam would love some notice about LA. Text Sam this week?' */
+  function noticeWords(who, place) {
+    const w = String(who || '').trim(), first = w.split(/\s+/)[0].toLowerCase(), kin = KIN[first], about = place ? ' about ' + place : '';
+    return kin ? 'Your ' + first + ' would love some notice' + about + '. Text ' + kin + ' this week?' : (w || 'Someone') + ' would love some notice' + about + '. Text ' + (w || 'them') + ' this week?';
+  }
+  function headsUpDue(state, today, skip) {
+    if (skip === true) return null;
+    const off = Array.isArray(skip) ? new Set(skip) : new Set(Object.keys(skip || {}).filter((k) => skip[k]));
+    const tasks = new Map(state.tasks.map((t) => [t.id, t]));
+    let best = null;
+    for (const e of liveEvents(state)) {
+      const on = nextOn(e, today);
+      if (!on) continue;
+      for (const r of readyFor(state, e, on, today, tasks)) {
+        if (r.k !== 'headsup' || off.has(r.key) || r.start > today || !['now', 'soon', 'added'].includes(r.when) || (r.task && r.task.done)) continue;
+        if (!best || r.ideal < best.r.ideal) best = { e, r };
+      }
+    }
+    if (!best) return null;
+    const { e, r } = best, place = r.place || placeOf(e) || null, t = r.task;
+    return { key: r.key, event: e.id, task: t ? t.id : null, who: r.who, place, date: r.ideal, start: r.start, words: noticeWords(r.who, place),
+      text: (t && t.msg && typeof t.msg.text === 'string' && t.msg.text.trim()) || suggestText('headsup', msgFacts(state, e, 'headsup', r.who, r.on, r, today)) };
+  }
+  /* What from yesterday went by with no check: placed to-dos and steps not done (and with no time still ahead), and
+     goal sessions nobody said anything about, in time order. [{ kind: 'task' | 'step' | 'goal', add, date, start,
+     dur, name, task, step, goal, cat, icon }]. The sheet that asks offers Done, Move, or Let go; Let go takes the add
+     off and leaves the to-do on the list, never done. */
+  function yesterdayLoose(state, today, nowMin) {
+    const y = addDays(today, -1), now = nowMin == null ? 0 : nowMin, out = [];
+    const dd = state.dates[y];
+    if (!dd || !(dd.adds || []).length) return out;
+    const tasks = taskIndex(state), pl = placements(state);
+    const ahead = (id, step) => (pl.get(id) || []).some((p) => (step == null || p.step === step) && windowTime(today, p.date, p.add.start) + p.add.dur > now);
+    for (const a of (dd.adds || []).slice().sort((p, q) => p.start - q.start)) {
+      const s = a.src;
+      if (a.skipped || !s || windowTime(today, y, a.start) + a.dur > now) continue;
+      const base = { add: a.id, date: y, start: a.start, dur: a.dur, cat: a.cat || 'yours', icon: a.icon || 'star', task: null, step: null, goal: null };
+      if (s.type === 'task') {
+        const t = tasks.get(s.id);
+        if (!t || t.done || t.archived || ahead(t.id, null)) continue;
+        out.push(Object.assign(base, { kind: 'task', name: t.name, task: t.id }));
+      } else if (s.type === 'step') {
+        const t = tasks.get(s.task), st = t && (t.steps || []).find((x) => x.id === s.id);
+        if (!t || !st || st.done || t.done || t.archived || ahead(t.id, st.id)) continue;
+        out.push(Object.assign(base, { kind: 'step', name: st.name, task: t.id, step: st.id }));
+      } else if (s.type === 'goal') {
+        const g = goalOf(state, s.id);
+        if (!g || g.archived || g.paused || a.done || a.partial || (g.answers && g.answers[y]) || tripOn(state, y)) continue;
+        out.push(Object.assign(base, { kind: 'goal', name: a.name, goal: g.id }));
+      }
+    }
+    return out;
+  }
+
+  /* == V11-2: quick add on a full day ==
+     When the time asked for has no room that day, quick add says the ask back with what's in the way, and offers real
+     ways on (Grok's audit of V11): the same time on the nearest day where it fits and nothing moves, and the longest
+     it can be at or near that time that day. roomFor gives all three: { way, day, shorter } (way from inTheWay, day
+     { date, start } or null, shorter { start, dur } or null). When day and shorter are both null, nothing this week
+     has room at that time. Never anything that's already over. */
+  /* what a stretch of a day runs into: the hard blocks there (soft ones make room), and bed or wake when it runs past
+     them: { blocks: [{ name, start, end, fixed, meal }], bed (minute) or null, wake (minute) or null } */
+  function inTheWay(state, date, start, dur) {
+    const end = start + dur, own = ownDay(state, date);
+    const blocks = calendarDay(state, date).blocks.filter((b) => !b.sleep && !b.soft && !b.free && b.start < end && start < b.start + b.dur).sort(byStart)
+      .map((b) => ({ name: b.label || b.name, start: b.start, end: b.start + b.dur, fixed: !!b.fixed, meal: mealBlock(b) }));
+    return { blocks, bed: end > own.bed ? own.bed : null, wake: start < own.wake ? own.wake : null };
+  }
+  /* where a stretch fits on a date and nothing moves, from the person's wake to bed, from now on today: a quick check
+     against the day's hard blocks and what a suggestion keeps clear of (keep, from keptBy), then canPlace to be sure */
+  function openOn(state, date, today, nowMin, keep) {
+    const own = ownDay(state, date), walls = calendarDay(state, date).blocks.filter((b) => !b.sleep && ((!b.soft && !b.free) || (!!keep && keep(b))));
+    const lo = Math.max(own.wake, date === today ? ceilGrid(nowMin || 0) : 0), hi = Math.min(own.bed, 1440);
+    return (s, len) => {
+      if (date < today || s < lo || s + len > hi || walls.some((b) => b.start < s + len && s < b.start + b.dur)) return false;
+      const r = canPlace(state, date, len, s);
+      return r.ok && !(r.pushes || []).length && r.date === date;
+    };
+  }
+  /* What a suggestion keeps clear of (V11-2). At the hour the person asked for, any soft block makes room, as an
+     explicit placement always could (Evening with Sam, a free evening, Yours, soft Work): the ask, the shorter way at
+     that hour, and the same hour on another day. Walls there are hard and locked blocks, events and meetings, sleep from
+     bed on, and meals (they keep their window or ask). A time the board picks on its own (the closest time, a nudge more
+     than an hour off, a shorter way at another hour) keeps out of work hours unless the thing is work (workThing: its
+     kind of time is Work, or it's a to-do in a work group), the person's own time (ownBlock), and time with people
+     (peopleBlock), each unless the ask itself reaches into that kind of time: a call asked for at 2 pm in Work can go
+     later in Work. keptBy(state, date, start, minutes, thing) gives the test for a block of any day: true when a
+     suggestion keeps clear of it */
+  const workBlock = (b) => !!b && !!b.soft && !b.sleep && !b.fixed && b.cat === 'work';
+  const peopleBlock = (b) => !!b && !!b.soft && !b.sleep && !b.fixed && !b.free && (b.cat === 'us' || b.cat === 'family' || b.cat === 'friends');
+  const workGroup = (g) => !!g && (g.cat === 'work' || /\bwork\b/i.test(String(g.name || '')));
+  function workThing(state, x) {
+    if (!x) return false;
+    if (x.cat === 'work') return true;
+    /* (a to-do itself, or a block placed from a to-do or one of its steps) */
+    const src = x.src || {}, tid = src.type === 'step' ? src.task : src.type === 'task' ? src.id : null;
+    const t = x.group != null ? x : tid != null ? (state.tasks || []).find((y) => y.id === tid) : null;
+    return !!t && (t.cat === 'work' || workGroup((state.groups || []).find((g) => g.id === t.group)));
+  }
+  function keptBy(state, date, start, dur, thing) {
+    /* (what the ask reaches into, as the day was asked for: a free evening a party covers is still the free evening) */
+    const there = calendarRecords(state, date).concat(calendarDay(state, date).blocks).filter((b) => b.start < start + dur && start < b.start + b.dur);
+    const work = workThing(state, thing) || there.some(workBlock), own = there.some(ownBlock), people = there.some(peopleBlock);
+    return (b) => (!work && workBlock(b)) || (!own && ownBlock(b)) || (!people && peopleBlock(b));
+  }
+  function roomFor(state, date, start, dur, today, nowMin, thing) {
+    const len = gridDur(dur), way = inTheWay(state, date, start, len), keep = keptBy(state, date, start, len, thing);
+    /* the same hour on the nearest day where nothing moves, a day either way at a time, up to six days, from today on:
+       the person picked that hour, so any soft block there makes room */
+    let day = null;
+    for (let k = 1; k <= 6 && !day; k++) for (const d of [addDays(date, k), addDays(date, -k)]) if (!day && d >= today && openOn(state, d, today, nowMin)(start, len)) day = { date: d, start };
+    /* the longest it can be that day, shorter than asked and half the ask at least, on the grid (a 3 h movie can be
+       1 h 30 min, never 45 min): at the hour asked first, where any soft block makes room, then as close as two hours
+       either way, keeping clear of what keep says; none when nothing that long fits */
+    let shorter = null;
+    const there = openOn(state, date, today, nowMin), near = openOn(state, date, today, nowMin, keep), least = Math.max(STEP, ceilGrid(len / 2));
+    for (let l = len - STEP; l >= least && !shorter; l -= STEP) if (there(start, l)) shorter = { start, dur: l };
+    for (let l = len - STEP; l >= least && !shorter; l -= STEP) {
+      for (let k = 1; k <= 8 && !shorter; k++) for (const s of [start + k * STEP, start - k * STEP]) if (!shorter && near(s, l)) shorter = { start: s, dur: l };
+    }
+    return { way, day, shorter };
+  }
+
+  /* == V11-2: the countdown ==
+     Everything the countdown panel and sheet draw, for a date (ref { event: id }) or a goal (ref { goal: id }), as of
+     today and nowMin. The API block below has the shape. */
+  function countdown(state, ref, today, nowMin) {
+    const r = ref || {};
+    if (r.event != null) { const e = eventOf(state, r.event); return e ? eventCountdown(state, e, today, nowMin) : null; }
+    if (r.goal != null) { const g = goalOf(state, r.goal); return g ? goalCountdown(state, g, today, nowMin) : null; }
+    return null;
+  }
+  function eventCountdown(state, e, today, nowMin) {
+    const fuzzy = isFuzzy(e), trip = e.kind === 'trip', on = fuzzy ? null : nextOn(e, today);
+    const end = trip && e.end ? e.end : null, now = nowMin == null ? 0 : nowMin;
+    const tasks = new Map(state.tasks.map((t) => [t.id, t])), pl = placements(state);
+    /* every step but one put off, or one well past asking that never became a to-do (it's likely handled) */
+    const list = readyFor(state, e, on, today, tasks).filter((x) => x.when !== 'skip' && !(x.when === 'past' && !x.task));
+    list.sort((a, b) => (a.ideal < b.ideal ? -1 : a.ideal > b.ideal ? 1 : a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    const placedOf = (t) => {
+      if (!t) return null;
+      const where = (pl.get(t.id) || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.add.start - b.add.start));
+      const p = where.find((x) => windowTime(today, x.date, x.add.start) + x.add.dur > now) || where[where.length - 1];
+      return p ? { date: p.date, start: p.add.start } : null;
+    };
+    let gotNext = false;
+    const items = list.map((x) => {
+      const t = x.task, done = !!(t && t.done);
+      let status = done ? 'done' : x.when === 'waiting' ? 'waiting' : null;
+      if (!status) { status = gotNext ? (x.after ? 'after' : 'later') : 'next'; gotNext = true; }
+      const msg = x.msg ? { to: (t && t.msg && t.msg.to) || x.who || '', text: (t && t.msg && typeof t.msg.text === 'string' && t.msg.text.trim()) || suggestText(x.k, msgFacts(state, e, x.k, x.who, x.on, x, today)) } : null;
+      return { id: x.key, name: t ? t.name : x.todo, icon: x.icon, cat: x.cat, date: x.ideal, start: x.start, dur: t ? taskDur(t) : x.dur, status, why: x.why, msg, task: t ? t.id : null, placed: placedOf(t) };
+    });
+    const next = items.find((it) => it.status === 'next') || null;
+    const icon = e.icon || (trip ? 'plane' : 'star'), cat = e.cat || (trip ? 'away' : 'family');
+    const win = fuzzy ? { from: e.window.from, to: e.window.to } : null;
+    const spans = on ? [{ from: on, to: end && end > on ? end : on, name: e.name, cat }] : [];
+    const pins = items.filter((it) => it.status !== 'waiting').map((it) => ({ date: it.date, name: it.name, icon: it.icon, cat: it.cat, status: it.status, id: it.id }));
+    const dates = [today].concat(pins.map((p) => p.date), spans.reduce((a, s) => a.concat([s.from, s.to]), []), win ? [win.from, win.to] : []).sort();
+    const words = fuzzy ? windowWords(e.window, today) : on ? (end && end > on ? spanText(on, end) : dateText(on)) + ' · ' + awayWords(on, today, end) : '';
+    return {
+      shape: fuzzy ? 'window' : 'date', title: e.name, icon, cat, date: on, end: trip ? end : null, window: win, words, stand: null,
+      road: { from: dates[0], to: dates[dates.length - 1], now: today, spans, window: win, stages: [], marks: [], pins },
+      next, rest: items.filter((it) => it !== next), week: null, weeks: null
+    };
+  }
+  function goalCountdown(state, g, today, nowMin) {
+    const now = nowMin == null ? 0 : nowMin, rhythm = !g.date, p = goalProgress(state, g, today, nowMin);
+    const ws = weekStart(today), we = addDays(ws, 6), icon = g.icon || GOAL_ICON[g.kind] || 'flag', cat = g.cat || 'yours';
+    const list = goalSessions(state, g.id).filter((x) => !x.add.skipped);
+    const ended = (x) => windowTime(today, x.date, x.add.start) + x.add.dur <= now;
+    const item = (x, status) => ({ id: x.add.id, name: x.add.name, icon: x.add.icon || icon, cat: x.add.cat || cat, date: x.date, start: x.date, dur: x.add.dur, status, why: null, msg: null, task: null, placed: { date: x.date, start: x.add.start } });
+    const nx = list.find((x) => !ended(x) && !x.add.done) || null;
+    const next = nx ? item(nx, 'next') : null;
+    const inWeek = list.filter((x) => x.date >= ws && x.date <= we);
+    const rest = inWeek.filter((x) => x !== nx && !ended(x) && !x.add.done).map((x) => item(x, 'later'));
+    let words, stand, road, week = null, weeks = null;
+    if (rhythm) {
+      const n = weekTimes(g), part = (g.parts || []).find((q) => !q.done) || (g.parts || [])[0] || null, len = Math.max(STEP, floorGrid((g.rhythm || {}).chunk || 60));
+      /* the week's slots nothing is on yet: Not on your week yet */
+      for (let k = inWeek.length; k < n; k++) rest.push({ id: g.id + ':' + ws + ':' + k, name: (part && part.name) || g.name, icon, cat, date: we, start: ws < today ? today : ws, dur: len, status: 'later', why: null, msg: null, task: null, placed: null });
+      words = (n === 7 ? 'Every day' : n + (n === 1 ? ' time' : ' times') + ' a week') + ' · no end date';
+      stand = g.paused ? 'Paused' : null;
+      weeks = [];
+      for (let k = 7; k >= 0; k--) { const from = addDays(ws, -7 * k), to = addDays(from, 6); weeks.push({ from, done: list.filter((x) => x.date >= from && x.date <= to && confirmed(g, x)).length, of: n }); }
+      road = { from: addDays(ws, -49), to: we, now: today, spans: [], window: null, stages: [], marks: [], pins: [] };
+    } else {
+      const st = examStages(state, g);
+      words = dateText(g.date) + ' · ' + awayWords(g.date, today);
+      /* (its first week never says Behind: what its days hold, calmly; whole hours past 20 h) */
+      const holds = p.totalMin - p.behindMin, about = holds >= 1200 ? Math.round(holds / 60) * 60 : holds;
+      stand = g.paused ? 'Paused' : g.date < today ? 'Its date has gone by' : g.date === today ? 'Today’s the day' : p.behindMin < STEP ? 'On track' : p.firstWeek ? 'Days hold about ' + hoursText(about) : 'Behind by ' + hoursText(p.behindMin);
+      const marks = st.practice.map((d) => ({ date: d, name: 'Practice exam' })).concat([{ date: g.date, name: g.kind === 'exam' ? 'Exam day' : g.name }]);
+      road = { from: g.start && g.start < today ? g.start : today, to: g.date > today ? g.date : today, now: today, spans: [], window: null, stages: st.stages, marks, pins: [] };
+      /* this week's share: what's planned and what someone said happened, and the sessions done or still ahead */
+      week = { planned: p.week.plannedMin, done: p.week.doneMin, items: inWeek.filter((x) => confirmed(g, x) || !ended(x)).map((x) => item(x, x === nx ? 'next' : confirmed(g, x) ? 'done' : 'later')) };
+    }
+    return { shape: rhythm ? 'rhythm' : 'goal', title: g.name, icon, cat, date: g.date || null, end: null, window: null, words, stand, road, next, rest, week, weeks };
+  }
+
   /* == V11 goals: the API ==
      The contract for the screens that use it. Dates are 'YYYY-MM-DD', times are minutes after midnight,
      today is the board's today, and nowMin is the minute it is now (null: the start of the day). A
@@ -3260,6 +4447,10 @@
        quietWindows(state, date, when, after, day) gives [{ start, end, free }]; when: 'any' | 'morning' | 'afternoon' | 'evening';
          day (optional): the app's cached calendarDay(state, date) for the board as it is now.
        quietSlot(state, date, minutes, { when, strict, after }) gives the first start where it fits and nothing moves, or null.
+       Quiet time is open time and time a handoff frees; own time (Yours blocks, free time, Breathing room, Open time:
+       ownBlock) is used only when the person says yes: spreadPlan, applySpread, moveStep, and reflowTask with
+       { own: true }, after the open time. spreadPlan then gives own: { min, days: [{ date, min, part, name }] }.
+       ownTimeOf(state, date, start, minutes) gives { min, name }: the own time a stretch would take.
        stepSpot(state, date, minutes, { when, after }, today, nowMin) gives { start, gives } or null: quietSlot, or, when a
          goal's own sessions hold the quiet time, where a to-do's step goes in their place (gives: the sessions it takes).
          To-dos come first; the goal plans that time again.
@@ -3331,7 +4522,71 @@
        prepPlan(state, weekStart, { today, nowMin, days, cover, cook }, Data) gives { week, batches, fresh, list, block, message },
          not applied: 'Two batch cooks, Sunday and Wednesday, cover 5 more meals, with 5 fresh nights.'
        applyPrepPlan(state, plan, { block }) gives { meals, block }. A Meal prep block is an add with
-         src { type: 'prep', week } and makes: [{ date, slot, name }]. */
+         src { type: 'prep', week } and makes: [{ date, slot, name }].
+
+     Big moments (V11-2, docs/BIG-MOMENTS.md; tests/big-moments-model.test.mjs)
+       Saved, version 9, every field optional: an event's window { from, to } with date null (a fuzzy date), host, away,
+         and deadline; a ready entry's who and place; a to-do's msg { to, text } (text only once the person edits it),
+         list [{ id, name, done }], and of (the event's id); a step's doneOn; a goal's rhythm.n (times a week, for a goal
+         with no date); practice: true on a practice exam session.
+       READY has the new kinds: headsup, rsvp, stay, outfit, timeoff, invites, food, shop, tidy, papers, finish, notice,
+         movers, address, packup, pickdate, unpack, groceries, thanks; each { name, short, todo, lead, by, icon, cat, dur },
+         with msg, who, why, after, fuzzy, spread, or work where they apply. READY_FOR adds host, deadline, and move.
+       readySuggest(e, state) gives a new date's defaults (keys, or { k, lead, by }: a wedding's gift starts four weeks
+         out); keep it as the event's ready when the date is made. readyList(e, state) gives the entries an event gets
+         ready for: its own, or a suggestion (a saved event without a list keeps version 8's). readyFits(k, state): a
+         kind for a panel's choices (time off only with work, groceries only with meals; never headsup or pickdate).
+         boardWorks(state), boardMeals(state).
+       readyFor(state, e, on, today) items also carry who, why, msg, after, and place, and when can be 'waiting' (a fuzzy
+         date's step before its date is picked; on is null there). A heads-up's prep key is 'headsup:' + who + '@' + date.
+       lookAhead: a fuzzy date has fuzzy: true and window, at its window's first day (shown); a date that went by shows
+         at `from` (over: true) while something after it is due.
+       addHeadsUp(state, eventId, who, place) gives the entry. prepTodo(state, eventId, item, extra) puts the to-do on the
+         list and in prep and gives it. packList(state, trip) gives [{ id, name, done }]. tripOpenDays(state, trip, n).
+       windowFor('this-month' | 'next-month' | 'spring' | 'summer' | 'fall' | 'winter' | 'few-months', today) gives
+         { from, to }; windowWords(window, today): 'Sometime in spring · Mar to May'; isFuzzy(e); pickDate(state, id,
+         date, end, today) makes it an ordinary date; awayWords(date, today, end): 'in 8 weeks'.
+       examStages(state, goal) gives { stages: [{ from, to, name: 'Learn' | 'Practice' | 'Review' | 'Lighter days' }],
+         practice: [Saturdays] }; planGoal puts a practice exam (practice: true, one sitting of up to 4 h) on each one in
+         its horizon. A goal with no date plans by the week (rhythm.n times, rhythm.chunk long); goalProgress gives it
+         perWeek: { n, done, planned } and behindMin 0.
+       suggestText(kind, facts, style) gives a message's text; msgFor(state, taskId, today) gives { kind, to, text,
+         suggested, versions }. placeOf(event or name) gives the place in a date's name ('Visit to Denver': Denver), or ''
+         when it names none ('Visit Mom'); a heads-up then says in town, and its question names no place. yesterdayLoose(state, today, nowMin) gives [{ kind, add, date, start, dur, name, task,
+         step, goal, cat, icon }]. headsUpDue(state, today, skip) gives the heads-up to ask about, or null.
+       momentFor(state, date, min, seen, day, { big: true }) can also give { kind: 'yesterday', items, count, words } and
+         { kind: 'headsup', key, event, task, who, place, date, start, words, text }.
+       countdown(state, { event: id } | { goal: id }, today, nowMin) gives { shape, title, icon, cat, date, end, window,
+         words, stand, road: { from, to, now, spans, window, stages, marks, pins }, next, rest, week, weeks }; an item is
+         { id, name, icon, cat, date, start, dur, status, why, msg, task, placed }.
+       parseQuick(text, today, palette, nowMin, { big: true }) also reads a move ("move in spring"), a trip ("trip to
+         Denver Dec 3 to 6"), and a message ("text Aunt Lisa about LA"): { kind: 'date', name, event } and { kind:
+         'message', name, who, about }. tripFor(state, about, today) gives { event, place } or null.
+       Who's going and who's covering (tests/going-cover.test.mjs): an event's going is 'me', 'us', 'family', or a list
+         of names (optional, version 9, no migration). goingMore(state, e): more than the person is going, so every
+         suggested text for it says we (msgFacts gives we). setGoing(state, eventId, going) sets it in one change with
+         who's covering and gives { going, cover, removed }. READY.cover ({ cover: true, msg: true }, lead 28, by 14):
+         'Line up who’s covering {what} while you’re away'; readySuggest offers it for a trip or a date you travel to
+         whose days leave something behind that needs a person, pickDate when a fuzzy one gets its days, and readyFor
+         asks it only while that holds (items carry what). coverOf(state, e) gives { what, parts, people, days } or null:
+         the kids' drop-offs and pick-ups while they stay home, care for someone by name, a pet's walks and meals.
+
+     Meals keep their time (tests/meal-window.test.mjs): mealBlock(b) is a Dinner block, anything that's Meals, or a
+       template Breakfast, Lunch, or Dinner; mealWindow(state, b, date) gives { lo, hi, at }, its usual start an hour
+       either way. canPlace, placeAdd, moveAdd, moveTemplate, resizeBlock, and previewExtend never move a meal further
+       out than its window without a yes: canPlace picks a way that keeps it in (pushInsert), else gives { ok: false,
+       reason: 'meal', meal: { name, key, fromDate, from, date, to }, pushes } for the question "This moves Dinner to
+       4:45 pm. Move it?"; a stretch stops short. The yes is opts.meals (the last argument of each), or withMeals(true,
+       fn) around any change.
+     Quick add on a full day (tests/quick-add-full.test.mjs): roomFor(state, date, start, minutes, today, nowMin, thing)
+       gives { way, day, shorter }: inTheWay's { blocks: [{ name, start, end, fixed, meal }], bed, wake }, the same hour on
+       the nearest day where nothing moves ({ date, start } or null), and the longest it can be that day, half the ask at
+       least on the grid, at the hour asked first ({ start, dur } or null). thing is what's being added (an add, or a
+       to-do). At the hour asked (the ask, the shorter way there, the same hour on another day) any soft block makes
+       room. keptBy(state, date, start, minutes, thing) gives (block) => true for what a time the board picks on its own
+       keeps clear of: soft Work unless the thing is work (workThing(state, thing): Work, or a to-do in a work group), the
+       person's own time (ownBlock), and time with people, each unless the ask itself reaches into it. roomFor's shorter
+       way at another hour and the app's closest time more than an hour off (nearestStart) use it. */
 
   const api = {
     parseIcs, liveEvents, zoneToUtc, inZone,
@@ -3341,6 +4596,7 @@
     dateText, spanText, relText, clock, setClock24, span, dur, hours,
     markersOn, tripOn, timedOn, shapeOf, templateFor, resolveDay, calendarRecords, calendarDay, resolveWindow, gaps, totals, awake,
     canPlace, magnet, firstFit, gridDur, placeAdd, findAdd, removeAdd, moveAdd, moveTemplate, canResize, resizeBlock, setWake, setBed, applyPushes, dateRec,
+    withMeals, mealBlock, mealWindow, pushInsert,
     placements, taskDur, taskPlan, taskStatus, dueSoon, REPEATS, nextDue, completeTask, reopenTask, suggestSteps, clashes, clashesIn, capacity,
     presetSlot, applyPreset, presetFromDay,
     groceries, groceryProgress, dinnerFromItems, upcoming, dayCard,
@@ -3351,7 +4607,7 @@
   /* V11 goals: breaking it down, spreading it out, finding new times, goals, and cook once, eat twice */
   Object.assign(api, {
     breakdown, looksLikeGoal, goalForExam,
-    quietWindows, quietSlot, spreadCap, spreadPlan, applySpread, missedSteps, reflowTask, moveStep, stepSpot,
+    quietWindows, quietSlot, spreadCap, spreadPlan, applySpread, missedSteps, reflowTask, moveStep, stepSpot, ownBlock, ownTimeOf,
     newGoal, goalSessions, goalProgress, planGoal, skipGoalSession, goalCheckIn, answerCheckIn, endSessionEarly, behindText, giveWay,
     cookExtra, servingsOf, leftoversOf, syncLeftovers, prepPlan, applyPrepPlan
   });
@@ -3361,6 +4617,18 @@
   /* V11, the Planner walk (Oct 15): a hand-off's outline on the board (setHandoffs), and a block made part of the usual
      week on its weekday (addToUsual) */
   Object.assign(api, { setHandoffs, addToUsual, findFree });
+  /* V11-2, big moments (Oct 20): getting ready for more kinds of dates, fuzzy dates, heads-ups and message steps,
+     lists inside a block, exam stages, goals with no date, the two new questions, and the countdown */
+  Object.assign(api, {
+    readySuggest, readyList, readyFits, boardWorks, boardMeals, isFuzzy, windowFor, windowWords, awayWords, pickDate,
+    addHeadsUp, prepTodo, packList, tripOpenDays, examStages, suggestText, msgFor, headsUpDue, yesterdayLoose, countdown, placeOf,
+    inTheWay, roomFor, keptBy, workThing
+  });
+  /* V11-2, quick add's big things: parseQuick(..., { big: true }) reads a move, a trip, and a message; tripFor finds
+     the trip a message is about */
+  Object.assign(api, { tripFor });
+  /* V11-2, who's going (we in its texts) and who's covering what a trip leaves behind */
+  Object.assign(api, { goingMore, setGoing, coverOf, homeKids });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Model = api;
 })(typeof window !== 'undefined' ? window : globalThis);

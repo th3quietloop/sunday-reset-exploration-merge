@@ -1,0 +1,132 @@
+/* == V11: the reset's People and Moving steps (peopleBody and moveBody in board/src/app.js) ==
+   People: what's already in the week with people, then who (one group at a time, and Add someone),
+   then that group's ideas. Moving: a goal for the week, what's on it so far, then moves to drag on.
+   Spacing on 4 px steps; words at 12 px or more on the surface tokens; targets 44 px. */
+body.c-resetting .rack.resetting .rack-body > .pp-week,
+body.c-resetting .rack.resetting .rack-body > .pp-groups,
+body.c-resetting .rack.resetting .rack-body > .pp-who,
+body.c-resetting .rack.resetting .rack-body > .mv-goal,
+body.c-resetting .rack.resetting .rack-body > .mv-sug { flex: 1 1 100%; min-width: 0; width: 100%; }
+
+/* what's already in the week: things and days, never a count */
+.pp-week, .mv-goal { padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.pp-week { padding: 12px 16px; }
+.pp-h { margin: 0 0 8px; font: 600 12px/16px var(--k-font, var(--font)); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3); }
+/* V11: one short flowing list, two or three to a line, so the ideas below stay in reach */
+.pp-flow { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 8px; }
+.pp-it { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 24px; }
+.pp-it .pp-mark { width: 20px; height: 20px; border-radius: 6px; flex: none; }
+.pp-it .pp-mark canvas { width: 12px !important; height: 12px !important; }
+.pp-it .pp-name { font-size: 14px; }
+.pp-it .pp-days { font-size: 13px; }
+.pp-it.pp-more { margin: 0; font-size: 13px; color: var(--tx-3); }
+.pp-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pp-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; column-gap: 12px; min-height: 28px; }
+.pp-mark { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; }
+.pp-mark canvas { width: 14px !important; height: 14px !important; }
+/* names of things are Gabarito, the words around them Onest */
+.pp-name { font-family: var(--name); font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-days { font-size: 14px; line-height: 1.3; color: var(--tx-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pp-more { margin: 8px 0 0 36px; font-size: 13px; line-height: 1.4; color: var(--tx-3); }
+.pp-line { margin: 0; font-size: 16px; line-height: 1.4; color: var(--tx-2); }
+
+/* who: a chip for each group, white when picked, and Add someone as a raised button */
+.pp-groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.rack .pp-chip { min-height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx-2); font: 500 14px var(--k-font, var(--font)); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background-color 0.12s ease-out, color 0.12s ease-out, transform 0.06s ease-out; }
+.rack .pp-chip:hover { background: var(--sf-hover); color: var(--tx); }
+.rack .pp-chip:active { transform: translateY(1px); }
+.rack .pp-chip[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); font-weight: 600; }
+.rack .pp-chip:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* the group's people by name, then Add someone as a raised button; someone added here has a way off
+   beside their name */
+.pp-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.pp-person { display: inline-flex; align-items: center; gap: 0; min-height: 44px; padding: 0 4px 0 0; border-radius: 22px; box-shadow: inset 0 0 0 1px var(--sf-edge); font-family: var(--name); font-size: 14px; font-weight: 700; color: var(--tx); transition: background-color 0.12s ease-out; }
+.pp-pn { padding: 0 4px 0 16px; }
+/* V11: with two or more in a group, each name picks that person; white means picked */
+.rack .pp-pname { min-height: 44px; padding: 0 8px 0 16px; border: 0; border-radius: 22px; background: transparent; color: var(--tx); font: 700 14px var(--name); cursor: pointer; }
+.rack .pp-pname.pp-all { padding: 0 16px; box-shadow: inset 0 0 0 1px var(--sf-edge); font: 500 14px var(--k-font, var(--font)); color: var(--tx-2); }
+.rack .pp-pname:hover { color: var(--tx); }
+.rack .pp-pname.pp-all[aria-pressed="true"], .pp-person.on { background: #FFFFFF; box-shadow: none; }
+.rack .pp-pname.pp-all[aria-pressed="true"], .pp-person.on .pp-pname { color: var(--sf-ink); }
+.pp-person.on .pp-x canvas { filter: brightness(0.35); }
+.rack .pp-pname:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+/* the second tap removes: the x becomes a word, so a slip never takes someone off */
+.pp-x.armed { width: auto; height: 32px; padding: 0 12px; border-radius: 16px; background: rgba(229, 115, 115, 0.18); color: #FFB4A8; font: 600 13px var(--k-font, var(--font)); }
+.pp-x.armed:hover { background: rgba(229, 115, 115, 0.28); }
+.pp-x.armed::after { inset: -6px -4px; }
+/* V11 (consistency): a raised neutral button; Next is the step's one gold call */
+.rack .pp-add { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border: 0; border-radius: 22px; background: var(--sf-raised); color: var(--tx); box-shadow: inset 0 0 0 1px var(--sf-edge); font: 600 14px var(--k-font, var(--font)); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.rack .pp-add:hover { background: var(--sf-hover); }
+.rack .pp-add:active { transform: translateY(1px); }
+.rack .pp-add:focus-visible { outline: 2.5px solid var(--k-gold); outline-offset: 2px; }
+.pp-add canvas { width: 14px !important; height: 14px !important; }
+.pp-x { position: relative; width: 28px; height: 28px; border: 0; border-radius: 14px; background: transparent; display: grid; place-items: center; cursor: pointer; padding: 0; }
+/* a 28 px mark with a 44 px reach */
+.pp-x::after { content: ''; position: absolute; inset: -8px; }
+.pp-x:hover { background: var(--sf-hover); }
+.pp-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 0; }
+.pp-x canvas { width: 12px !important; height: 12px !important; }
+body.c-resetting .rack.resetting .rsec.pp-ideas:first-of-type { margin-top: 16px; }
+body.c-resetting .rack.resetting .rack-body > .pp-who + .rsec.pp-ideas,
+body.c-resetting .rack.resetting .rack-body > .pp-groups + .rsec.pp-ideas { margin-top: 16px; }
+
+/* Moving: the goal as Times or Minutes and a stepper, then how the week stands */
+.mv-control { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.mv-units { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(0, 0, 0, 0.2); }
+.rack .mv-unit, .drawer .mv-unit, #drawer .mv-unit { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: var(--tx-2); font: 500 14px var(--k-font, var(--font)); cursor: pointer; }
+.rack .mv-unit:hover, .drawer .mv-unit:hover, #drawer .mv-unit:hover { background: var(--sf-hover); color: var(--tx); }
+/* white means picked, in the reset and in Settings alike */
+.rack .mv-unit[aria-pressed="true"], .drawer .mv-unit[aria-pressed="true"], #drawer .mv-unit[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); font-weight: 600; }
+#drawer .mv-unit:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.mv-stepper { flex: 1 1 180px; min-width: 180px; }
+.mv-stepper output { font-size: 16px; }
+.mv-stepper button:disabled { opacity: 1; background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); cursor: default; }
+.mv-stepper button:disabled canvas { opacity: 0.45; }
+.mv-line { margin: 12px 0 0; font-size: 16px; line-height: 1.4; color: var(--tx-2); }
+.mv-line b { color: var(--tx); font-weight: 700; font-variant-numeric: tabular-nums; }
+.mv-goal .pp-rows { margin-top: 12px; }
+/* one place a move fits, the same card as Your time's: words, then Add as a raised button */
+.mv-sug { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; background: var(--sf-raised); }
+.mv-sug > canvas { width: 22px !important; height: 22px !important; flex: none; }
+.mv-sugw { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mv-sugw b { font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--tx); }
+.mv-sugw small { font-size: 13px; line-height: 1.4; color: var(--tx-2); }
+/* V11 (consistency): Add is a raised neutral button, as in Your time */
+.rack .mv-add { flex: none; min-width: 64px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); box-shadow: inset 0 0 0 1px var(--sf-edge); font: 600 14px var(--k-font, var(--font)); cursor: pointer; transition: background-color 0.12s ease-out, transform 0.06s ease-out; }
+.rack .mv-add:hover { background: var(--sf-hover); }
+.rack .mv-add:active { transform: translateY(1px); }
+.rack .mv-add:focus-visible { outline: 2.5px solid var(--k-gold); outline-offset: 2px; }
+body.c-resetting .rack.resetting .rack-body > .rsec.mv-moves { margin-top: 16px; }
+
+/* Settings, You and home: more people, a row each */
+.pp-slist .pp-srow { display: flex; align-items: center; gap: 12px; }
+.pp-sgroup { font-size: 13px; color: var(--tx-3); }
+
+/* Add someone (in a side panel and in Settings): Add them and the Who they are to you chips reach 44 px */
+#side .pp-go, #drawer .pp-go, .drawer .pp-go { min-height: 44px; padding-left: 20px; padding-right: 20px; }
+.pp-pickc .chip-btn { min-height: 44px; padding-left: 16px; padding-right: 16px; }
+
+/* the phone and a narrow window: the same, a little tighter */
+@media (max-width: 759px) {
+  .pp-week, .mv-goal { padding: 12px; }
+  .pp-days { font-size: 13px; }
+}
+/* V11: where the panel is short (a sheet along the bottom, or a short window), who and their ideas come
+   first and what's already in the week follows them, so an idea to drop is in view without scrolling */
+@media (max-width: 759px), (max-height: 760px) {
+  body.c-resetting .rack.resetting .rack-body > .pp-week { order: 5; margin-top: 16px; }
+  body.c-resetting .rack.resetting .rack-body > .pp-groups { margin-top: 0; }
+}
+/* on a phone, who and their names each keep to one row that slides sideways, so the ideas show too */
+@media (max-width: 599px) {
+  body.c-resetting .rack.resetting .rack-body > .pp-groups,
+  body.c-resetting .rack.resetting .rack-body > .pp-who { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; margin-left: -6px; margin-right: -6px; padding: 2px 6px; }
+  body.c-resetting .rack.resetting .rack-body > .pp-groups::-webkit-scrollbar,
+  body.c-resetting .rack.resetting .rack-body > .pp-who::-webkit-scrollbar { display: none; }
+  .rack .pp-chip, .pp-person, .rack .pp-add, .rack .pp-pname.pp-all { flex: none; }
+}
+body.calm .rack .pp-chip, body.calm .rack .pp-add, body.calm .rack .mv-unit, body.calm .rack .mv-add, body.calm .pp-person { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rack .pp-chip, .rack .pp-add, .rack .mv-unit, .rack .mv-add, .pp-person { transition: none; }
+}

@@ -261,7 +261,7 @@
      Pieces in your rack (piece) share one type size, with their mark above the name. */
   function faceTex(sp) {
     const dU = sp.dU || BLOCK_D;
-    const key = [sp.label, sp.sub, sp.icon, sp.ink, sp.wU.toFixed(2), dU, sp.done ? 1 : 0, sp.soft ? 1 : 0, sp.grip ? 1 : 0, sp.stack ? 1 : 0, sp.piece ? sp.pieceS || 1 : 0, sp.contL ? 1 : 0, sp.contR ? 1 : 0, sp.floorU ? sp.floorU.toFixed(3) : 0].join('|');
+    const key = [sp.label, sp.sub, sp.icon, sp.ink, sp.wU.toFixed(2), dU, sp.done ? 1 : 0, sp.soft ? 1 : 0, sp.grip ? 1 : 0, sp.stack ? 1 : 0, sp.piece ? sp.pieceS || 1 : 0, sp.contL ? 1 : 0, sp.contR ? 1 : 0, sp.floorU ? sp.floorU.toFixed(3) : 0, sp.big ? 1 : 0].join('|');
     if (faceCache.has(key)) { const t = faceCache.get(key); faceCache.delete(key); faceCache.set(key, t); return t; }
     const k = dU > 1.5 ? 0.8 : 1;
     /* one scale across and down, so a long block's name is never stretched: a face too wide for a
@@ -310,9 +310,12 @@
     const pad = H * 0.1, padX = Math.min(pad, W * 0.1);
     const iconRoom = W - H * 0.78 - pad;
     const cand = [];
+    /* V11, the Planner walk (7.1): a week block's name may stand taller in its face (sp.big), since the week is
+       framed small: up to 0.44 of its depth where the day's stop at 0.28, so a name reads at 12 px where it fits */
+    const capN = FEEL && sp.big ? 0.44 : 0.28, cap2 = FEEL && sp.big ? 0.34 : 0.24;
     if (W > H * 1.3) {
-      cand.push({ k: 'icon1', s: sizeFor(g, label, iconRoom, H * 0.28), bonus: 1.12 });
-      if (two) cand.push({ k: 'icon2', s: size2(iconRoom, H * 0.24), bonus: 1.06 });
+      cand.push({ k: 'icon1', s: sizeFor(g, label, iconRoom, H * capN), bonus: 1.12 });
+      if (two) cand.push({ k: 'icon2', s: size2(iconRoom, H * cap2), bonus: 1.06 });
     }
     /* stacked: the name with its time printed under it, preferred on the day board whenever it fits */
     /* V11: a block marked done carries its check (the mark beside the name) from a shorter width */
@@ -323,8 +326,8 @@
       const subS = Math.min(H * 0.19, sizeFor(g, sp.sub, room, H * 0.19, 700, true));
       if (subS >= Math.max(14, minS) && ns >= H * 0.14) cand.push({ k: withIcon ? 'stackI' : 'stack', s: ns, subS, bonus: 1.5 });
     }
-    cand.push({ k: 'text1', s: sizeFor(g, label, W - 2 * pad, H * 0.28), bonus: 1 });
-    if (two) cand.push({ k: 'text2', s: size2(W - 2 * pad, H * 0.24), bonus: 0.97 });
+    cand.push({ k: 'text1', s: sizeFor(g, label, W - 2 * pad, H * capN), bonus: 1 });
+    if (two) cand.push({ k: 'text2', s: size2(W - 2 * pad, H * cap2), bonus: 0.97 });
     /* wrapped: the name in up to three lines across a narrow block, with its time under it if there's room */
     if (W < H * 1.3 && W > H * 0.3) {
       const room = W - 2 * padX;
@@ -445,6 +448,19 @@
       setFont(g, ns, 800);
       if (subS >= 12) { g.fillText(label, x0 + iconS + gap, H * 0.4); setFont(g, subS, 700, true); g.fillText(sp.sub, x0 + iconS + gap, H * 0.68); }
       else g.fillText(label, x0 + iconS + gap, H / 2);
+    } else if (FEEL && /^[^:]{1,24}: /.test(label) && W > H * 0.55) {
+      /* V11, the Planner walk (7.2): a hand-off too narrow for "Sam: Pick up Robin" keeps its mark and says who has
+         it under it ("Sam"), when that prints at the size it reads */
+      const who = label.split(': ')[0], ws = Math.min(H * 0.2, sizeFor(g, who, W * 0.86, H * 0.2));
+      if (ws >= Math.max(minS, H * 0.11)) {
+        Icons.draw(g, sp.icon || 'moon', W / 2, H * 0.36, Math.min(W, H) * 0.34, pen);
+        setFont(g, ws, 800); g.textAlign = 'center'; g.fillText(who, W / 2, H * 0.72);
+      } else Icons.draw(g, sp.icon || 'moon', W / 2, H / 2, Math.min(W, H) * 0.42, pen);
+    } else if (FEEL && /^[^:]{1,24}: /.test(label)) {
+      /* (narrower still, the quarter hour a hand-off leaves when a routine takes back the rest: who has it, along it,
+         the way a narrow block prints its name, when that prints at the size it reads) */
+      const who = label.split(': ')[0], ws = Math.min(W * 0.62, sizeFor(g, who, H * 0.8, W * 0.62));
+      if (ws >= Math.max(minS, 8)) { g.save(); g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); setFont(g, ws, 800); g.textAlign = 'center'; g.fillText(who, 0, 0); g.restore(); }
     } else if (W > H * 0.55) {
       Icons.draw(g, sp.icon || 'moon', W / 2, H / 2, Math.min(W, H) * 0.42, pen);
     }
@@ -588,7 +604,8 @@
     const w = Math.max(0.05, wU - GAP * 2);
     const sub = b.sub != null ? b.sub : '';
     /* V11: a day board block prints nothing smaller than it reads (dayPrintU, from the camera) */
-    const floorU = FEEL && u.kind === 'dblock' ? dayPrintU : 0;
+    /* (the Planner walk, 7.1: and a week block, while the week is what's on the desk, by weekPrintU) */
+    const floorU = FEEL && u.kind === 'dblock' ? dayPrintU : FEEL && u.kind === 'block' && !b.piece && zoomName === 'week' ? weekPrintU : 0;
     const sig = [themeV, b.label || b.name, sub, b.icon, lk.base, lk.ink, h, w.toFixed(3), dU, b.fixed && !b.sleep ? 1 : 0, b.done ? 1 : 0, b.soft ? 1 : 0, opts.grip ? 1 : 0, b.stack ? 1 : 0, b.free ? 1 : 0, b.piece ? b.pieceS || 1 : 0, b.contL ? 1 : 0, b.contR ? 1 : 0, floorU].join('|');
     u.block = b; u.h = h; u.hMul = hMul; u.wU = wU; u.gripOpt = !!opts.grip;
     /* a version can dim every block a moment isn't about (setFocus): plain darker wood, no print, same size */
@@ -631,7 +648,7 @@
     /* V11: a dimmed block still says what it is, in a quiet brown on its plain wood (4.9 to 1), so you can
        aim between blocks while a moment is about something else */
     const ink = FEEL && dim ? DIM_INK : lk.ink;
-    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip: grip && !dim, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR, floorU });
+    const tex = faceTex({ label: thin ? '' : b.label || b.name, sub: thin ? '' : sub, icon: b.icon, ink, wU: Math.round(w * 20) / 20, dU, done: b.done, soft: !!b.soft && !b.done, grip: grip && !dim, stack: !!b.stack, piece: !!b.piece, pieceS: b.pieceS, contL: !!b.contL, contR: !!b.contR, floorU, big: FEEL && u.kind === 'block' && !b.piece && !!floorU });
     if (face.material.map !== tex) { face.material.map = tex; face.material.needsUpdate = true; }
     u.canGrip = grip && w > dU * 0.9;
     if (u.canGrip) {
@@ -666,13 +683,20 @@
     g.fillText(String(r.num), 34 + wdW + 18, 110);
     /* feel: a day that isn't your usual says what kind it is, when nothing more pressing is there */
     const kindLine = !r.trip && !(r.markers && r.markers.length) && !r.due && r.kind;
-    const line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : r.due ? r.due + (FEEL ? (r.due === 1 ? ' to-do due' : ' to-dos due') : r.due === 1 ? ' thing due' : ' things due') : kindLine ? r.kind : '';
+    /* V11, the Planner walk (7.3): an overlap says so on its day's tab, in the gold of an open question, after a trip or
+       a date (which are the day), before what's due */
+    const overLine = FEEL && !r.trip && !(r.markers && r.markers.length) && r.overlap;
+    let line = r.trip ? r.trip : r.markers && r.markers.length ? r.markers[0] : overLine ? r.overlap : r.due ? r.due + (FEEL ? (r.due === 1 ? ' to-do due' : ' to-dos due') : r.due === 1 ? ' thing due' : ' things due') : kindLine ? r.kind : '';
     if (line) {
-      const col = r.today ? '#FFE3A6' : r.trip ? '#2A4B90' : r.markers && r.markers.length ? '#983A5E' : kindLine ? '#5C4426' : '#963A28';
-      const icon = r.trip ? 'plane' : r.markers && r.markers.length ? r.markerIcon || 'cake' : kindLine ? r.kindIcon || 'calendar' : 'flag';
-      Icons.draw(g, icon, 56, 186, 50, col);
-      g.fillStyle = col; setFont(g, 42, 700, true);
-      g.fillText(ellipsize(g, line, W - 110), 92, 202);
+      const col = r.today ? '#FFE3A6' : r.trip ? '#2A4B90' : r.markers && r.markers.length ? '#983A5E' : overLine ? '#7A4E00' : kindLine ? '#5C4426' : '#963A28';
+      const icon = r.trip ? 'plane' : r.markers && r.markers.length ? r.markerIcon || 'cake' : overLine ? 'overlap' : kindLine ? r.kindIcon || 'calendar' : 'flag';
+      /* (the Planner walk, 7.1: the line prints at 12 screen pixels or more, the tab's face being about 210 to a unit;
+         that big, what's due and an overlap say it in short words, "2 due", "5:30 pm", beside their marks) */
+      const lineS = FEEL && weekPrintU ? Math.max(42, Math.min(72, Math.ceil(weekPrintU * 210))) : 42;
+      if (lineS > 50 && !r.trip && !(r.markers && r.markers.length)) line = overLine ? r.overlap.replace(/^Overlap /, '') : r.due && !overLine ? r.due + ' due' : line;
+      Icons.draw(g, icon, 56, 186, Math.max(50, lineS * 1.05), col);
+      g.fillStyle = col; setFont(g, lineS, 700, true);
+      g.fillText(ellipsize(g, line, W - 34 - Math.max(92, lineS * 1.6)), Math.max(92, lineS * 1.6), 202 + Math.max(0, lineS - 42) * 0.3);
     }
     return canvasTex(cv);
   }
@@ -713,17 +737,21 @@
     const g = cv.getContext('2d');
     const pxu = W / railUnits();
     g.fillStyle = ink.hours; g.textAlign = 'center'; g.textBaseline = 'middle';
+    /* V11, the Planner walk (7.1): the hours print at 12 screen pixels or more (weekPrintU: the plank is 0.75 deep
+       on the board and 150 tall here); where an hour between the threes can't, only every third prints */
+    const need = FEEL && weekPrintU ? Math.ceil(weekPrintU / 0.75 * H) : 0;
+    const minorS = Math.max(44, need), majorS = Math.min(104, Math.max(56, need)), minorOn = minorS <= 60;
     for (let hr = Math.ceil(RAIL0 / 60); hr <= RAIL1 / 60; hr++) {
       const x = (hr - RAIL0 / 60) * pxu;
       const major = hr % 3 === 0;
       cutRect(g, x - 3, H - (major ? 40 : 24), 6, major ? 40 : 24, 3);
       const lab = clock24 && hr < 24 ? (major ? hourLabel(hr) : String(hr)) : hourLabel(hr, major || hr === RAIL0 / 60 || hr >= 24);
-      if (hr > RAIL0 / 60 && hr < RAIL1 / 60) {
+      if (hr > RAIL0 / 60 && hr < RAIL1 / 60 && (major || minorOn)) {
         if (hr >= 24) {
-          fitFont(g, lab.replace(' +1 day', ''), 185, major ? 56 : 44, major ? 800 : 700, true);
+          fitFont(g, lab.replace(' +1 day', ''), 185, major ? majorS : minorS, major ? 800 : 700, true);
           cutText(g, lab.replace(' +1 day', ''), x, H * 0.24, 3.5);
-          setFont(g, 28, 700, true); cutText(g, '+1 day', x, H * 0.56, 2);
-        } else { setFont(g, major ? 56 : 44, major ? 800 : 700, true); cutText(g, lab, x, H * 0.36, 3.5); }
+          setFont(g, Math.max(28, need), 700, true); cutText(g, '+1 day', x, H * 0.56, 2);
+        } else { fitFont(g, lab, major ? 3 * pxu - 16 : pxu - 12, major ? majorS : minorS, major ? 800 : 700, true); cutText(g, lab, x, H * 0.36, 3.5); }
       }
     }
     return canvasTex(cv);
@@ -824,7 +852,7 @@
     setFont(g, 70, 900); g.fillText(m.name, 34, 86);
     const nw = g.measureText(m.name).width;
     /* the year steps back in a real color, never faded */
-    setFont(g, 34, 800); g.fillStyle = '#6E5E4A'; g.fillText(String(m.year), 34 + nw + 16, 82); g.fillStyle = '#3A2C1E';
+    setFont(g, FEEL ? Math.max(34, Math.min(64, yearNeed)) : 34, 800); g.fillStyle = '#6E5E4A'; g.fillText(String(m.year), 34 + nw + 16, 82); g.fillStyle = '#3A2C1E';
     // mini calendar
     const cx0 = 34, cy0 = 116, cw = 50, ch = 50;
     setFont(g, 22, 800); g.textAlign = 'center'; g.fillStyle = '#6A5440';
@@ -844,27 +872,36 @@
     const lx = cx0 + 7 * cw + 24, lw = W - lx - 26;
     let y = 150, shown = 0;
     g.textAlign = 'left';
+    /* V11, the Planner walk (5.4): the words on a year card print at 12 screen pixels or more where the card can hold
+       them (n, from yearNeed, up to 64 on the card's canvas): fewer lines then, and "and 2 more"; the hours' words
+       wrap to a second line. With n at 0 every size and place is what it was */
+    const n = FEEL ? Math.min(64, yearNeed) : 0;
+    const whenS = Math.max(32, n), nameS = Math.max(36, n), moreS = Math.max(30, n), yoursS = Math.max(46, n), wordsS = Math.max(30, n);
+    const words = m.yours && !m.quiet ? (m.usual ? (window.SR_starYours ? 'to yourself, usually' : 'usually, to yourself') : window.SR_kindYours ? 'to yourself' : 'yours') : '';
+    setFont(g, wordsS, 700, true);
+    const wl = !words ? [] : n > 30 ? wrapWords(g, words, lw).slice(0, 2) : [words];
+    const numY = m.quiet ? H - 40 : H - 28 - wl.length * wordsS * 1.2;
     /* a quiet month has nothing to list, and says nothing; a busy one lists what fits above its hours
        and says how many more there are */
-    const bottom = m.yours ? H - 112 : H - 24;
+    const bottom = m.yours ? (m.quiet ? H - 64 : numY) - yoursS * 48 / 46 : H - 24;
     for (const it of m.list) {
-      setFont(g, 36, 800);
+      setFont(g, nameS, 800);
       const wide = g.measureText(it.name).width > lw && it.name.includes(' ');
       const parts2 = wide ? twoLines(it.name) : [it.name];
       const left = m.list.length - shown - 1;
-      if (y + 48 + (parts2.length - 1) * 38 > bottom - (left > 0 ? 40 : 0)) break;
+      if (y + whenS * 40 / 32 + nameS * 8 / 36 + (parts2.length - 1) * nameS * 38 / 36 > bottom - (left > 0 ? moreS * 40 / 30 : 0)) break;
       const col = it.kind === 'trip' ? '#2A4B90' : it.kind === 'marker' ? '#983A5E' : it.kind === 'due' ? '#963A28' : '#6E3F8A';
-      g.fillStyle = col; setFont(g, 32, 900);
-      g.fillText(it.when, lx, y);
-      setFont(g, 36, 800);
+      g.fillStyle = col; setFont(g, whenS, 900);
+      g.fillText(n ? ellipsize(g, it.when, lw) : it.when, lx, y);
+      setFont(g, nameS, 800);
       g.fillStyle = '#3A2C1E';
-      parts2.forEach((t, k) => g.fillText(ellipsize(g, t, lw), lx, y + 40 + k * 38));
-      y += 86 + (parts2.length - 1) * 38;
+      parts2.forEach((t, k) => g.fillText(ellipsize(g, t, lw), lx, y + whenS * 40 / 32 + k * nameS * 38 / 36));
+      y += whenS * 40 / 32 + nameS * 46 / 36 + (parts2.length - 1) * nameS * 38 / 36;
       shown++;
     }
-    if (shown < m.list.length) { g.fillStyle = '#6A5440'; setFont(g, 30, 800); g.fillText('and ' + (m.list.length - shown) + ' more', lx, y - 8); }
+    if (shown < m.list.length) { g.fillStyle = '#6A5440'; setFont(g, moreS, 800); g.fillText('and ' + (m.list.length - shown) + ' more', lx, y - moreS * 8 / 30); }
     /* V11: a month after the first usual one shows its number alone (m.quiet); the words were said once */
-    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, 46, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual && !window.SR_starYours ? '~' : '') + m.yours, lx, m.quiet ? H - 40 : H - 64); if (!m.quiet) { setFont(g, 30, 700, true); g.fillText(m.usual ? (window.SR_starYours ? 'to yourself, usually' : 'usually, to yourself') : window.SR_kindYours ? 'to yourself' : 'yours', lx, H - 28); } }
+    if (m.yours) { g.fillStyle = '#6B4F0C'; setFont(g, yoursS, 800); g.fillText((window.SR_starYours ? '★ ' : '') + (m.usual && !window.SR_starYours ? '~' : '') + m.yours, lx, numY); setFont(g, wordsS, 700, true); wl.forEach((t, i) => g.fillText(t, lx, H - 28 - (wl.length - 1 - i) * wordsS * 1.2)); }
     return canvasTex(cv);
   }
 
@@ -989,7 +1026,8 @@
     }
     rows.forEach((r, i) => {
       const row = week.rows[i];
-      const sig = [r.date, r.wd, r.num, r.today, r.focus, (r.markers || []).join(','), r.trip || '', r.due || 0, r.markerIcon || '', r.kind || ''].join('|');
+      week.rowSpecs = rows;
+      const sig = [r.date, r.wd, r.num, r.today, r.focus, (r.markers || []).join(','), r.trip || '', r.due || 0, r.markerIcon || '', r.kind || '', r.overlap || '', FEEL ? weekPrintU : ''].join('|');
       if (row.userData.sig !== sig) {
         row.userData.sig = sig;
         const old = row.userData.tabFace.material.map;
@@ -1058,6 +1096,7 @@
     else if (u.inHand) { u.inHand = false; if (!u.held) m.visible = true; }
   }
   function setGapMarks(rows) {
+    week.gapRows = rows;
     const list = [];
     rows.forEach((r, i) => (r.gaps || []).forEach((gp) => { if (gp[1] - gp[0] >= 60) list.push({ i, gp }); }));
     while (week.gapMarks.length < list.length) {
@@ -1078,6 +1117,8 @@
       /* a long gap gets a bigger label, so a whole open day reads from across the desk */
       const gh = (it.gp[1] - it.gp[0]) / 60;
       const w = Math.min(1.9 + Math.max(0, gh - 4) * 0.12, 3.2, gh - 0.1);
+      /* (the Planner walk, 7.1: a label that would print under 12 screen pixels steps out, as the day's do) */
+      if (FEEL && weekPrintU && w * 46 / 420 < weekPrintU) { m.visible = false; return; }
       m.scale.set(w, w * 110 / 420, 1);
       m.position.set(xOf((it.gp[0] + it.gp[1]) / 2), BOARD_Y + 0.022, rowZ(it.i));
     });
@@ -1214,10 +1255,21 @@
     setFont(g, smallS, 700, true); g.fillStyle = c.warn ? '#963A28' : inkS;
     let lines = [];
     if (c.warn) { lines = wrapWords(g, c.warn, W - pad - x).slice(0, 2); if (lines[1]) lines[1] = ellipsize(g, lines[1], W - pad - x); }
+    /* (V11, the Planner walk, 4.1: the line takes two lines before it ends in an ellipsis; with an Adds line, one) */
+    else if (c.line && FEEL) { lines = wrapWords(g, c.line, W - pad - x).slice(0, c.adds ? 1 : 2); const last = lines.length - 1; if (last >= 0 && wrapWords(g, c.line, W - pad - x).length > lines.length) lines[last] = ellipsize(g, lines[last] + '…', W - pad - x); }
     else if (c.line) lines = [ellipsize(g, c.line, W - pad - x)];
     lines = lines.filter((t) => t && t.replace('…', '').length >= 4);
     lines.forEach((t, i) => g.fillText(t, x, y2 + i * smallS * 1.25));
-    const textEnd = y2 + Math.max(0, lines.length - 1) * smallS * 1.25 + smallS * 0.6;
+    let textEnd = y2 + Math.max(0, lines.length - 1) * smallS * 1.25 + smallS * 0.6;
+    /* V11, the Planner walk (4.1): what it adds, in words, under the line ("Adds: Nap 1 pm, Reading 2:30 pm"), so kinds
+       can be told apart without reading colored bars; the bars stay as the picture */
+    if (FEEL && c.adds) {
+      setFont(g, smallS, 700, true); g.fillStyle = inkD;
+      const al = wrapWords(g, c.adds, W - pad * 2).slice(0, c.warn ? 1 : 2);
+      if (wrapWords(g, c.adds, W - pad * 2).length > al.length && al.length) al[al.length - 1] = ellipsize(g, al[al.length - 1] + '…', W - pad * 2);
+      al.forEach((t, i) => g.fillText(t, pad, textEnd + smallS * 0.75 + i * smallS * 1.25));
+      textEnd += al.length * smallS * 1.25 + 2 * k;
+    }
     /* three lanes: the day, as this kind would make it */
     const n = (c.lanes || []).length || 3, gapL = 5 * k, laneTop = textEnd + 10 * k;
     const laneH = Math.max(12 * k, (H - pad - laneTop - gapL * (n - 1)) / n), lx = pad + 20 * k, lw = W - lx - pad;
@@ -1375,10 +1427,11 @@
     return g;
   }
   function setYear(months) {
+    year.months = months;
     year.cards.forEach((c, i) => {
       const m = months[i];
       c.userData.month = m.key;
-      const sig = JSON.stringify(m);
+      const sig = JSON.stringify(m) + (FEEL ? '|' + yearNeed : '');
       if (c.userData.sig !== sig) {
         c.userData.sig = sig;
         const old = c.userData.face.material.map;
@@ -1412,7 +1465,36 @@
      in steps), so nothing on the board prints smaller than it reads; 0 until the day has been framed.
      dayScale is screen pixels to a unit of the board at the framed view */
   let dayPrintU = 0, dayScale = 0;
+  /* V11, the Planner walk (7.1): the same for the week, so the week prints nothing smaller than it reads either:
+     weekPrintU is 12 screen pixels on the week board (weekScale, from the camera, as dayScale is) */
+  let weekPrintU = 0, weekScale = 0;
+  function weekWatch() {
+    if (!weekScale || zoomName !== 'week') return;
+    const s = weekScale * Math.max(1, user.zoom || 1), q = Math.floor(Math.log2(Math.max(1, s)) * 4) / 4;
+    const u = +(12 / Math.pow(2, q)).toFixed(4);
+    if (u === weekPrintU) return;
+    weekPrintU = u;
+    week.blocks.forEach((m) => { const v = m.userData; if (v.block && v.wU && v.shrink == null) dressBlock(m, v.block, v.wU, v.dU, v.hMul && v.hMul !== 1 ? { hMul: v.hMul } : {}); });
+    if (week.gapRows) setGapMarks(week.gapRows);
+    if (week.header) { const old = week.header.material.map; week.header.material.map = headerTexture(); week.header.material.needsUpdate = true; if (old) old.dispose(); }
+    (week.rowSpecs || []).forEach((r, i) => { const row = week.rows[i]; if (!row) return; const old = row.userData.tabFace.material.map; row.userData.tabFace.material.map = tabTexture(r); row.userData.tabFace.material.needsUpdate = true; row.userData.sig = ''; if (old) old.dispose(); });
+    touch();
+  }
+  /* (the Planner walk, 5.4: and the year's cards: yearNeed is the size on a card's canvas that prints at 12 screen
+     pixels, measured on the far row of cards, which prints smallest; the cards print again when it changes) */
+  let yearNeed = 0, yearScale = 0;
+  function yearWatch() {
+    if (!yearScale || !year.months) return;
+    const s = yearScale * Math.max(1, user.zoom || 1), q = Math.floor(Math.log2(Math.max(1, s)) * 4) / 4;
+    const n = Math.ceil(12 * 134.3 / Math.pow(2, q));
+    if (n === yearNeed) return;
+    yearNeed = n;
+    setYear(year.months);
+    touch();
+  }
   function printWatch() {
+    if (FEEL && !directOn && !drag.obj && zoomName === 'week') { weekWatch(); return; }
+    if (FEEL && !directOn && !drag.obj && zoomName === 'year') { yearWatch(); return; }
     if (!FEEL || !dayScale || directOn || drag.obj || zoomName !== 'day') return;
     const s = dayScale * Math.max(1, user.zoom || 1), q = Math.floor(Math.log2(Math.max(1, s)) * 4) / 4;
     const u = +(12 / Math.pow(2, q)).toFixed(4);
@@ -1421,6 +1503,8 @@
     /* the day's faces, its open time labels, and its header print again at the new size */
     dayb.blocks.forEach((m) => { const v = m.userData; if (v.block && v.wU && v.shrink == null) dressBlock(m, v.block, v.wU, v.dU, { hMul: v.hMul, grip: v.gripOpt }); });
     if (dayb.gapSp) setDayGaps(dayb.gapSp);
+    /* (the Planner walk, 8.2: Block library beside the day prints again at the new size too) */
+    if (bench.kitSp && bench.group && bench.group.userData.shown) setBench(bench.kitSp);
     if (dayb.headSp && dayb.header) { const old = dayb.header.material.map; dayb.header.material.map = dayHeaderTexture(dayb.headSp); dayb.header.material.needsUpdate = true; if (old) old.dispose(); }
     if (dayb.nowArgs) setNow.apply(null, dayb.nowArgs);
     const ru =Math.min(0.5, Math.max(0.3, Math.ceil(u * 100) / 100));
@@ -1853,7 +1937,10 @@
   }
   /* sp: { title, sub, icon, items: [{ key, kind: 'plate' | 'brick', row, label, sub, icon, cat, dur, done }] } */
   function benchPrint(sp) {
-    const sig = JSON.stringify([sp.prints, bench.width, bench.depth, ink.name]);
+    /* (V11, the Planner walk, 8.2: Block library's words on the wood, its group names, print at 12 screen pixels too, as
+       far as the band above each row holds them) */
+    const fl = FEEL && sp.kit && dayPrintU ? Math.min(0.42, dayPrintU) : 0;
+    const sig = JSON.stringify([sp.prints, bench.width, bench.depth, ink.name, fl]);
     if (sig === bench.printSig) return;
     bench.printSig = sig;
     if (!bench.print) {
@@ -1868,7 +1955,7 @@
     (sp.prints || []).forEach((t) => {
       const x = (t.x + bench.width / 2) * PX, y = (t.z + bench.depth / 2) * PX;
       g.fillStyle = t.soft ? ink.note : ink.name;
-      setFont(g, (t.size || 0.34) * PX, t.soft ? 700 : 800, !!t.soft);
+      setFont(g, Math.max(t.size || 0.34, fl) * PX, t.soft ? 700 : 800, !!t.soft);
       if (t.icon) { cutIcon(g, t.icon, x + 0.2 * PX, y, 0.36 * PX, ink.mark, 1.5); cutText(g, t.text, x + 0.5 * PX, y, 1.5); }
       else cutText(g, t.text, x, y, 1.5);
     });
@@ -1881,17 +1968,21 @@
   let kitMemo = { sig: '', s: 0.17 };
   function kitSize(items, rowD) {
     const list = items.filter((it) => it.kind === 'brick');
-    const sig = rowD + '|' + list.map((it) => it.label + ':' + (it.w || 1.5)).join(',');
+    const sig = rowD + '|' + (FEEL ? dayPrintU : '') + '|' + list.map((it) => it.label + ':' + (it.w || 1.5)).join(',');
     if (sig === kitMemo.sig) return kitMemo.s;
     const g = document.createElement('canvas').getContext('2d');
     const H = Math.round(rowD * 170 * (rowD > 1.5 ? 0.8 : 1));
     const sizes = list.map((it) => wrapFit(g, it.label, ((it.w || 1.5) - GAP * 2 - 0.1) * H / rowD - H * 0.16, H * 0.2, 2).s / H).sort((a, b) => a - b);
     /* one or two very long names may shrink on their own instead of shrinking everyone */
-    const s = Math.max(0.15, sizes[Math.min(2, sizes.length - 1)] || 0.17);
+    let s = Math.max(0.15, sizes[Math.min(2, sizes.length - 1)] || 0.17);
+    /* V11, the Planner walk (8.2): the names print at 12 screen pixels or more beside the day (the rack is framed
+       with it, so the day's print size is the rack's); a name too long for that wraps to its second line */
+    if (FEEL && dayPrintU) s = Math.max(s, Math.min(0.3, dayPrintU / rowD));
     kitMemo = { sig, s };
     return s;
   }
   function setBench(sp) {
+    bench.kitSp = sp && sp.kit ? sp : null;
     if (!sp) { bench.pieces.forEach((m) => { if (m.userData.shrink == null) m.userData.shrink = 1; }); return; }
     const ts = JSON.stringify([sp.title, sp.sub, sp.icon]);
     if (ts !== bench.titleSig) {
@@ -2458,7 +2549,13 @@
       if (['card', 'ycard'].includes(o.userData.kind)) return;
       const dist = origin ? Math.hypot(o.position.x - origin.x, o.position.z - origin.z) : 0;
       const u = o.userData;
-      u.pop = { show, t: 0, delay: reduced ? 0 : show ? 0.08 + dist * 0.018 + (it.delay || 0) : dist * 0.006, from: u.pop ? u.popK : show ? 0 : 1, ticked: false, onTick };
+      /* a pop starts where the board is: where the last step left it (popK), or, when the pop before this one
+         hasn't taken a step yet, where that one starts. (V11-2: a hide and a show before any step read popK
+         before anything wrote it, so the week board, shown from the start, rose from a number that isn't one,
+         and the day's blocks flying home to it went with it. A boot that opens Today and then the Planner did
+         it, a tab in the background, Dev holding another day in Today.) */
+      const was = u.pop, at = was ? (was.t > 0 ? u.popK : was.from) : show ? 0 : 1;
+      u.pop = { show, t: 0, delay: reduced ? 0 : show ? 0.08 + dist * 0.018 + (it.delay || 0) : dist * 0.006, from: Number.isFinite(at) ? at : show ? 0 : 1, ticked: false, onTick };
       if (!pops.includes(o)) pops.push(o);
       if (show) o.visible = true;
     });
@@ -2712,14 +2809,14 @@
     /* in the back row, each prop carries its own place and the holders stay home */
     if (propMode === 'back' && mt) { TF.propsL = { x: 0, z: 0, s: 1 }; TF.propsR = { x: 0, z: 0, s: 1 }; return; }
     /* each side's props sit right beside the mat, the nearest one a hand's width from its edge */
-    const sh = mt ? sideShift(mt, sideKept) : null;
+    const sh = mt ? sideShift(mt, sideKept, sideAt) : null;
     TF.propsL = { x: mt ? sh.L : clearSide(propBoxes.L, boards, -1), z: 0, s: 1 };
     TF.propsR = { x: mt ? sh.R : clearSide(propBoxes.R, boards, 1), z: 0, s: 1 };
   }
   /* how far each side's holder slides so the nearest thing that stays sits a hand's width off the mat */
-  function sideShift(mt, keep) {
+  function sideShift(mt, keep, at) {
     const hug = (list, dir) => (!list.length ? 0 : dir > 0 ? mt.x1 + 0.45 - Math.min(...list.map((p) => p.x0)) : mt.x0 - 0.45 - Math.max(...list.map((p) => p.x1)));
-    const feet = (sd) => (keep ? propList.filter((p) => p.side === sd && keep.has(p)).map((p) => p.foot0) : propBoxes[sd]);
+    const feet = (sd) => (keep ? propList.filter((p) => p.side === sd && keep.has(p)).map((p) => footAt(p, at)) : propBoxes[sd]);
     return { L: hug(feet('L'), -1), R: hug(feet('R'), 1) };
   }
   /* The back row: in a window without room beside the mat, things stand along its back edge the way
@@ -2733,6 +2830,12 @@
   let propMode = 'side', backAt = null, propCost = null;
   /* beside the mat, the things that stay (null for all of them); the rest step out */
   let sideKept = null;
+  /* V11, the Today walk (6.4): in Now, the notepad may stand at the place of a thing on its side that matters less (where
+     the mug stood, the mug stepping out for it); sideAt holds each moved thing's step from its own place then, and
+     footAt is a thing's footprint where it stands */
+  let sideAt = null;
+  const atOf = (p, at) => (at && at.get(p)) || null;
+  const footAt = (p, at) => { const a = atOf(p, at), f = p.foot0; return a ? { x0: f.x0 + a.dx, x1: f.x1 + a.dx, z0: f.z0 + a.dz, z1: f.z1 + a.dz } : f; };
   /* a steady number from 0 to 1 per thing, so its small turn and nudge never change between frames */
   const seed = (id, k) => { let h = 2166136261; for (const c of String(id) + k) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return ((h >>> 0) % 1000) / 1000; };
   const tallOf = (p) => p.box0.max.y;
@@ -2774,12 +2877,14 @@
     for (const p of propList) {
       const u = placed.get(p), m = p.mover;
       p.dropped = propMode === 'back' ? !u : !!(sideKept && !sideKept.has(p));
-      p.tx = u ? p.rest.x + u.dx : p.rest.x;
-      p.tz = u ? p.rest.z + u.dz : p.rest.z;
+      /* (6.4: beside the mat, a thing moved to another's place stands there) */
+      const sa = propMode === 'side' && !u ? atOf(p, sideAt) : null;
+      p.tx = u ? p.rest.x + u.dx : p.rest.x + (sa ? sa.dx : 0);
+      p.tz = u ? p.rest.z + u.dz : p.rest.z + (sa ? sa.dz : 0);
       /* in the back row a lamp built to face the board turns in toward the work */
       const t = u ? turnIn(p) : null;
       p.try = t != null ? t : p.rest.ry;
-      if (!u) { p.box = p.box0; continue; }
+      if (!u) { const v = sa ? new T.Vector3(sa.dx, 0, sa.dz) : null; p.box = v ? new T.Box3(p.box0.min.clone().add(v), p.box0.max.clone().add(v)) : p.box0; continue; }
       /* measured at full size and resting on the desk, whatever it's doing right now */
       const was = { x: m.position.x, z: m.position.z, ry: m.rotation.y, s: p.obj.scale.clone(), y: p.obj.position.y };
       m.position.x = p.tx; m.position.z = p.tz; m.rotation.y = p.try;
@@ -3163,13 +3268,18 @@
     const limit = phoneDay ? 1.02 : zoomName === 'week' ? 1.05 : 1.12;
     const place = (f) => { tmpCam.position.copy(f.look).addScaledVector(f.dir, f.d * 1.02); tmpCam.lookAt(f.look); tmpCam.updateMatrixWorld(); };
     const shown = () => seenProps(tmpCam, W, H).filter(Boolean).length;
-    const tryMode = (mode, f, plan, keep) => { propMode = mode; backAt = plan || null; sideKept = keep ? new Set(keep) : null; placeProps(); aimProps(); place(f); return shown(); };
+    /* V11, the Today walk (6.4): in Now, tryW weighs what a try shows by how much each thing matters (the notepad more
+       than the plant and the mug together, light and time more than drinks and paper) */
+    const nowRank = FEEL && alone && !phoneDay;
+    let tryW = 0;
+    const worth = () => { const sn = seenProps(tmpCam, W, H); return propList.reduce((a, p, i) => a + (sn[i] ? Math.pow(4, p.keep || 0) : 0), 0); };
+    const tryMode = (mode, f, plan, keep, at) => { propMode = mode; backAt = plan || null; sideKept = keep ? new Set(keep) : null; sideAt = at || null; placeProps(); aimProps(); place(f); tryW = nowRank ? worth() : 0; return shown(); };
     /* V11: with a stack laid out on the bench, the things on the desk step out (benchAway), so the camera
        doesn't pull back or lift the board to make room for a back row of them: that left bare desk above
        the week and the bench, and the mat cut off below */
     const mt = layout === 'week' && propList.length && !(FEEL && benchWanted()) ? matTarget() : null;
     /* a phone's day has no room beside the mat; things there stand only along its back edge, or not at all */
-    let best = { mode: 'side', f: pick, plan: null, keep: null, n: phoneDay ? -1 : tryMode('side', pick) };
+    let best = { mode: 'side', f: pick, plan: null, keep: null, at: null, n: phoneDay ? -1 : tryMode('side', pick) };
     propCost = null;
     if (mt && best.n < propList.length) {
       /* while a panel is open, only what's on the desk now can stay */
@@ -3177,9 +3287,9 @@
       const withRiders = (p) => [p].concat((p.riders || []).filter(ok));
       /* beside the mat, things join one at a time too, the one that matters most first; the ones that
          stay hug the mat, so one blocked thing never takes its whole side with it */
-      const sideFeet = (list) => {
-        const sh = sideShift(mt, new Set(list));
-        return list.map((p) => { const b = p.foot0, dx = p.side === 'L' ? sh.L : sh.R; return { x0: b.x0 + dx - 0.15, x1: b.x1 + dx + 0.15, z0: b.z0, z1: b.z1, y1: tallOf(p) }; });
+      const sideFeet = (list, at) => {
+        const sh = sideShift(mt, new Set(list), at);
+        return list.map((p) => { const b = footAt(p, at), dx = p.side === 'L' ? sh.L : sh.R; return { x0: b.x0 + dx - 0.15, x1: b.x1 + dx + 0.15, z0: b.z0, z1: b.z1, y1: tallOf(p) }; });
       };
       const firsts = propList.filter((p) => !p.rides && ok(p)).sort((a, b) => (b.keep || 0) - (a.keep || 0));
       let sideSet = [], side = { d: Infinity };
@@ -3225,13 +3335,41 @@
       }
       propCost = { side: +(side.d / pick.d).toFixed(3), back: back ? +(back.d / pick.d).toFixed(3) : null, kept: back ? plan.units.length : 0 };
       const tries = [];
-      if (!phoneDay && sideSet.length && side.d <= pick.d * limit) tries.push({ mode: 'side', f: side, plan: null, keep: sideSet, n: tryMode('side', side, null, sideSet) });
-      if (back && back.d <= pick.d * limit) tries.push({ mode: 'back', f: back, plan, keep: null, n: tryMode('back', back, plan) });
+      if (!phoneDay && sideSet.length && side.d <= pick.d * limit) tries.push({ mode: 'side', f: side, plan: null, keep: sideSet, at: null, n: tryMode('side', side, null, sideSet) });
+      if (back && back.d <= pick.d * limit) tries.push({ mode: 'back', f: back, plan, keep: null, at: null, n: tryMode('back', back, plan) });
       /* more things for the least pull back */
       for (const t of tries) if (t.n > best.n || (t.n === best.n && t.f.d < best.f.d && best.mode !== 'side')) best = t;
+      /* V11, the Today walk (6.4): in Now the notepad never steps out for things that matter less. When it would, it
+         stands at its own place, or at the place of the nearest thing on its side that's on the desk and matters less,
+         which steps out for it (its pencil too when there's no room for it); wherever costs the board least, up to the
+         same pull back as ever, and only when what the desk then shows matters more */
+      const top = firsts[0];
+      if (nowRank && best.mode === 'side' && top && top.keep >= 3) {
+        tryMode('side', best.f, null, best.keep, best.at);
+        const at = new Map(propList.map((p, i) => [p, i])), on = seenProps(tmpCam, W, H), w0 = tryW;
+        if (!on[at.get(top)]) {
+          const far = (q) => Math.hypot(q.rest.x - top.rest.x, q.rest.z - top.rest.z);
+          const spots = [null].concat(propList.filter((q, i) => on[i] && q.side === top.side && !q.rides && q !== top && (q.keep || 0) < top.keep).sort((a, b) => far(a) - far(b)));
+          let pickT = null;
+          for (let k = 1; k <= limit * pick.d / best.f.d + 1e-6 && !pickT; k += 0.01) {
+            const f = Object.assign({}, best.f, { d: best.f.d * k });
+            for (const q of spots) {
+              const map = new Map();
+              if (q) { const d = { dx: q.rest.x - top.rest.x, dz: q.rest.z - top.rest.z }; [top].concat(top.riders || []).forEach((e) => map.set(e, d)); }
+              for (const ents of (top.riders || []).length ? [withRiders(top), [top]] : [[top]]) {
+                const keep = (best.keep || propList).filter((o) => o !== q && o !== top && !(top.riders || []).includes(o)).concat(ents);
+                const n = tryMode('side', f, null, keep, map);
+                if (seenProps(tmpCam, W, H)[at.get(top)] && tryW > w0) { pickT = { mode: 'side', f, plan: null, keep, at: map, n }; break; }
+              }
+              if (pickT) break;
+            }
+          }
+          if (pickT) best = pickT;
+        }
+      }
       propCost.shown = [best.n].concat(tries.map((t) => t.mode + ':' + t.n));
     }
-    propMode = best.mode; backAt = best.plan; pick = best.f; sideKept = best.keep ? new Set(best.keep) : null;
+    propMode = best.mode; backAt = best.plan; pick = best.f; sideKept = best.keep ? new Set(best.keep) : null; sideAt = best.at || null;
     placeProps();
     aimProps();
     camTo.look.copy(pick.look); camTo.elev = pick.box.elev; camTo.dist = pick.d * 1.02; camTo.offX = offX; camTo.offY = offY;
@@ -3242,6 +3380,19 @@
       const at = (x, z) => world.localToWorld(new T.Vector3(x, BOARD_Y, z)).project(tmpCam);
       const a = at(mx - 0.5, mz), b = at(mx + 0.5, mz), c0 = at(mx, mz - 0.5), c1 = at(mx, mz + 0.5);
       dayScale = Math.min(Math.abs(b.x - a.x) / 2 * W, Math.abs(c1.y - c0.y) / 2 * H);
+    }
+    /* (the Planner walk, 7.1: and the week's, the same way, for weekPrintU) */
+    if (FEEL && layout === 'week' && zoomName === 'week') {
+      const c = placeBox(WEEK_BOX, TF.week), mx = (c.x0 + c.x1) / 2, mz = (c.z0 + c.z1) / 2;
+      const at = (x, z) => world.localToWorld(new T.Vector3(x, BOARD_Y, z)).project(tmpCam);
+      const a = at(mx - 0.5, mz), b = at(mx + 0.5, mz), c0 = at(mx, mz - 0.5), c1 = at(mx, mz + 0.5);
+      weekScale = Math.min(Math.abs(b.x - a.x) / 2 * W, Math.abs(c1.y - c0.y) / 2 * H);
+    }
+    /* (5.4: and the year's, at its far row of cards, for yearNeed) */
+    if (FEEL && layout === 'year') {
+      const z = ycardPos(0).z, at = (x, zz) => world.localToWorld(new T.Vector3(x, BOARD_Y + 0.2, zz)).project(tmpCam);
+      const a = at(-0.5, z), b = at(0.5, z), c0 = at(0, z - 0.5), c1 = at(0, z + 0.5);
+      yearScale = Math.min(Math.abs(b.x - a.x) / 2 * W, Math.abs(c1.y - c0.y) / 2 * H);
     }
     /* V11: with a stack framed close on the bench, the things on the desk step out */
     benchAway = FEEL && !!benchClose(W, H, sx0, sx1, sy0, sy1);
@@ -3281,6 +3432,9 @@
   }
   function setZoom(name, row) {
     if (name !== zoomName) resetView();
+    /* (the Planner walk, 7.1: the week's bricks were dressed while the day was in view, so the week prints again at its
+       12 px once it's framed) */
+    if (FEEL && name === 'week' && zoomName !== 'week') weekPrintU = 0;
     zoomName = name;
     if (row != null) focusRow = row;
     applyMode();
@@ -3606,6 +3760,19 @@
       else { cam.look.set(0, 0, 0); camV.look.set(0, 0, 0); }
       noteRepair('the camera');
     }
+  }
+  /* (V11-2: the boards the blocks sit on get the same. A board rising or sinking with a number that isn't one
+     draws nothing, and every block on it goes with it though each block's own numbers are fine: the board
+     finishes its pop where it was going, now, and the desk says so) */
+  function watchBoards() {
+    pops.forEach((o) => {
+      const u = o.userData, p = u.pop;
+      if (!p || (Number.isFinite(p.from) && Number.isFinite(p.t) && Number.isFinite(p.delay) && finite3(o.position) && finite3(o.scale))) return;
+      o.visible = p.show; o.position.y = u.baseY || 0; o.scale.copy(u.baseScale || ONE);
+      u.pop = null; u.popK = p.show ? 1 : 0;
+      if (p.show && !p.ticked && p.onTick) p.onTick();
+      noteRepair('a board', o === week.group ? 'week' : o === dayb.group ? 'day' : o === bench.group ? 'bench' : u.kind || o.name || '');
+    });
   }
 
   /* == feel: how a block moves ==
@@ -4145,6 +4312,7 @@
       stepRings(dt);
       /* V11: nothing on the desk keeps a number that isn't one into the frame it's drawn in */
       watchBlocks();
+      watchBoards();
     }
     stepCamera(dt);
     /* V11, lift and place: the hand, the fall, and the shadow, after the camera, so the block in hand never

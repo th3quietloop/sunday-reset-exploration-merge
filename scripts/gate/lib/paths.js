@@ -19,10 +19,10 @@
   /* == the board every run starts from: the made up family, nothing saved, the clock held == */
   mx.boot = async (o = {}) => {
     /* o.real: the board a first visit gets (the made up family as this device's own board, saved as it
-       changes), reached the way a person does: Look around first */
+       changes), reached the way a person does: Look at a sample week (Look around first until Oct 15) */
     if (o.real) {
-      for (let k = 0; k < 20 && !btn(/^Look around first$/); k++) await wait(200);
-      const look = btn(/^Look around first$/);
+      for (let k = 0; k < 20 && !btn(/^(Look at a sample week|Look around first)$/); k++) await wait(200);
+      const look = btn(/^(Look at a sample week|Look around first)$/);
       if (look) { look.click(); await wait(600); }
     } else {
       const close = $$('button').find((b) => /close/i.test(b.getAttribute('aria-label') || '') && shown(b) && b.closest('.k-sheet, .c-intro, .c-setupintro, #sheet, .sheet, [role=dialog]'));
@@ -59,6 +59,9 @@
       if (document.querySelector('.c-setup') && window.Kit && Kit.v7) { try { Kit.v7.closeMat(); } catch (e) { /* fine */ } await wait(400); }
     }
     if (!keep.phone && SR.view.phoneDesk && SR.closePhoneDesk) { SR.closePhoneDesk(); await wait(500); }
+    /* (a panel a path opened, the to-do panel of todo-step-week and -day, is put away, so the next path finds the
+       board as it left it) */
+    if (!keep.side && SR.view.sel && !document.getElementById('side').hidden) { SR.view.sel = null; SR.render(); await wait(400); }
   };
   /* a spot on a board, for a block this long, from attempt i (a different day or time each time) */
   const spotFor = (where, dur, i, o = {}) => {
@@ -559,5 +562,57 @@
       return { from: { x: r.cx, y: r.cy, text: el.textContent.trim().slice(0, 30), vis: mx.visible(el), top: mx.at(r.cx, r.cy) }, to: { x: z.cx, y: z.cy, zone: 'su-home', sel: '[data-zone="su-home"]', top: mx.at(z.cx, z.cy) }, expect: 'post', post: "!!document.querySelector('[data-zone=\"su-home\"] .c-su-placed') || /Robin|Question 3|In the way/.test((document.querySelector('.c-setup') || {}).textContent || '') && !!document.querySelector('[data-zone=\"su-home\"] .c-dblock')" };
     }
   };
+  /* == V11-2: a step off a to-do's panel, a brick, onto the week or the day (docs/BIG-MOMENTS.md, A) ==
+     Russell, Oct 15: "it wasn't super clear to me that these were blocks that I could drag". Each step is a brick
+     now; this is the drag that has to keep working. A to-do of the gate's own, three steps with no time yet, its
+     panel open beside the board; each attempt carries one of the outline bricks (Not on your week yet) to an open
+     spot. A phone's list has no board beside its sheet (n/a there) */
+  const stepPanel = (zoom) => ({
+    kind: 'tile-board',
+    async setup() {
+      await mx.clearFor({});
+      if (SR.view.phone) return { skip: 'a phone shows its list here, with no board beside the sheet', na: true };
+      if (SR.view.mode !== 'planner') { SR.setMode('planner'); await wait(700); }
+      if (SR.view.zoom !== zoom) { SR.setZoom(zoom); await wait(800); }
+      if (zoom === 'day' && SR.view.focus === SR.today) { SR.setZoom('day', roomyDay()); await wait(900); }
+      if (!SR.taskById('gate-steps')) {
+        const due = M().addDays(SR.today, 6);
+        window.__reset.edit((s) => {
+          const inbox = (s.groups.find((g) => g.id === 'inbox') || s.groups[0]).id;
+          s.tasks.push({ id: 'gate-steps', name: 'Renew the car registration', group: inbox, icon: 'car', cat: 'home', due, dur: null, repeat: null, done: false,
+            steps: [{ id: 'gate-s1', name: 'Find the notice', dur: 15, done: false }, { id: 'gate-s2', name: 'Pay online', dur: 15, done: false }, { id: 'gate-s3', name: 'Put the sticker on', dur: 15, done: false }] });
+        });
+        await wait(300);
+      }
+      if (!(SR.view.sel && SR.view.sel.type === 'task' && SR.view.sel.id === 'gate-steps')) { SR.openSel({ type: 'task', id: 'gate-steps' }); await wait(900); }
+      mx.stepDesk(80, 0.05);
+      await mx.still(2500);
+      if (!$$('#side .c-ts-brick.loose').some(shown)) return { skip: 'the to-do panel did not open with its steps as bricks' };
+      /* the board has to be on stage beside the panel. An upright window (the iPad held up) lays the panel over the
+         day by design, so there the path isn't on this size; anywhere else no room is a path that broke */
+      const where = zoom === 'day' ? 'day' : 'week', room = mx.placeSpots(where, 30, {}).length > 0;
+      if (!room) {
+        SR.view.sel = null; SR.render(); await wait(300);
+        if (innerHeight > innerWidth) return { skip: 'the to-do panel stands over the ' + where + ' on an upright window', na: true };
+        return { skip: 'no room on the ' + where + ' beside the to-do panel' };
+      }
+      return { ok: true };
+    },
+    async plan(i, o) {
+      await mx.still(2500);
+      if (!$$('#side .c-ts-brick.loose').some(shown)) { SR.openSel({ type: 'task', id: 'gate-steps' }); await wait(900); }
+      const p = tilePlan('#side .c-ts-brick.loose', i, o);
+      if (p.skip) return p;
+      const where = SR.view.zoom === 'day' ? 'day' : 'week';
+      const t = targetFor(where, 120, i, o, p.from);
+      if (!t) return { skip: 'no target (' + (o.target || 'open spot') + ') on the ' + where };
+      p.to = t;
+      p.expect = o.target === 'off' || o.target === 'panel' ? 'nothing' : 'land';
+      p.second = secondFor(o, t);
+      return p;
+    }
+  });
+  mx.paths['todo-step-week'] = stepPanel('week');
+  mx.paths['todo-step-day'] = stepPanel('day');
   return Object.keys(mx.paths).join(' ');
 })();

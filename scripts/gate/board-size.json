@@ -1,0 +1,12 @@
+{
+ "about": "How wide the board is drawn at rest, in CSS pixels, in V11 as it went live (Oct 15, v/corners11). boardsize.mjs fails any later build whose board is more than 2 percent narrower. Measured by boardsize.mjs -build v/corners11 -save.",
+ "measured": "2026-10-20T16:09:31.816Z",
+ "tolerance": 0.02,
+ "sizes": {
+  "week@1440x900": 1231,
+  "day@1440x900": 980,
+  "now@1440x900": 911,
+  "week@1024x768": 870,
+  "phonedesk@375x812": 330
+ }
+}

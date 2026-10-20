@@ -1,4 +1,4 @@
-// What the drag gate drives: V11 built into a folder of its own, served on a port, and a headless Chrome
+// What the drag gate drives: the version in the works (V11-2) built into a folder of its own, served on a port, and a headless Chrome
 // with remote debugging. A script given -url and -port uses what's already running; otherwise it starts
 // its own and stops it at the end. Nothing here touches the repo's own folders.
 import { spawn, execFileSync } from 'node:child_process';
@@ -27,11 +27,13 @@ export function runDir(args, name) {
   return dir;
 }
 
-/* V11 built from this repo into dir (the same build Vercel gets), and the folder its page is in */
-export function build(dir) {
+/* the version in the works built from this repo into dir (the same build Vercel gets), and the folder its page is
+   in: V11-2 since Oct 20 (V11 itself is frozen as it went live, in v/corners11) */
+export const BUILD_ID = 'corners11-2';
+export function build(dir, id = BUILD_ID) {
   mkdirSync(dir, { recursive: true });
-  execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), 'corners11'], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: dir }), stdio: 'pipe' });
-  const root = join(dir, 'corners11');
+  execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), id], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: dir }), stdio: 'pipe' });
+  const root = join(dir, id);
   if (!existsSync(join(root, 'index.html'))) throw new Error('the build made no page in ' + root);
   return root;
 }
@@ -94,7 +96,8 @@ export async function session(args, name = 'gate') {
   const stop = async () => { for (const p of parts.reverse()) { try { await p(); } catch (e) { /* fine */ } } };
   try {
     let root = args.build && args.build !== true ? resolve(String(args.build)) : null;
-    if (root && existsSync(join(root, 'corners11', 'index.html'))) root = join(root, 'corners11');
+    /* (a folder a build was made into: the version's own folder inside it, V11-2 first) */
+    if (root) for (const id of [BUILD_ID, 'corners11']) if (existsSync(join(root, id, 'index.html'))) { root = join(root, id); break; }
     if (!root) {
       const dir = mkdtempSync(join(tmpdir(), 'sunday-reset-gate-build-'));
       parts.push(async () => rmSync(dir, { recursive: true, force: true }));

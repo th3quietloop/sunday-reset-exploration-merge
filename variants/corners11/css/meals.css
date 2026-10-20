@@ -69,27 +69,31 @@ body.c-toasts-top.phone #toasts, body.c-toasts-top.phone-desk #toasts { top: max
 .c-shop-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .k .c-shop-act, .c-shop-act { min-height: 44px; }
 .c-shop-plain { width: 100%; min-height: 0; resize: vertical; font: 500 14px/1.5 var(--k-font); }
-/* the sheet */
-.c-shop-paper { padding: 16px 24px 20px; border-radius: 8px; background: #FBF5E9; color: #2A2118; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 12px 22px -12px rgba(20, 10, 0, 0.65); }
+/* the list, on the meal board's own dark: the surface of its right column (Russell, Oct 15: the light paper was the
+   one thing on the board that wasn't dark). Every word and every check box reads 4.5 to 1 or more on it over the
+   leather: white names, #CDCDCD for the kinds and what each thing is for, a #CDCDCD box, and once a thing is got, the
+   board's mint with a dark tick. (The quiet grey, #AFAFAF, fell to 4.0 on the leather's light spots, so it isn't used
+   here.) The class keeps its old name */
+.c-shop-paper { padding: 16px 24px 20px; border-radius: 18px; background: rgba(0, 0, 0, 0.12); color: var(--tx); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
 .c-shop-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 28px; align-items: start; }
 .c-shop-group { display: flex; flex-direction: column; min-width: 0; }
-.c-shop-group h4 { margin: 0 0 4px; font: 700 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: #7B5320; }
-.c-shop-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid rgba(123, 83, 32, 0.16); cursor: pointer; }
+.c-shop-group h4 { margin: 0 0 4px; font: 700 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-2); }
+.c-shop-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1); cursor: pointer; }
 .c-shop-row:last-child { border-bottom: 0; }
 /* the real check box is there for the keyboard and a screen reader; the drawn one is what shows */
 .c-shop-tick { position: absolute; left: 0; top: 50%; width: 24px; height: 24px; margin: -12px 0 0; opacity: 0; cursor: pointer; }
-.c-shop-box { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; box-shadow: inset 0 0 0 2px #7B5320; background: #FFFDF8; transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out; }
+.c-shop-box { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; box-shadow: inset 0 0 0 2px var(--tx-2); background: transparent; transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out; }
 .c-shop-box canvas { width: 14px !important; height: 14px !important; opacity: 0; transform: scale(0.6); transition: opacity 0.12s ease-out, transform 0.16s var(--f-out); }
-.c-shop-tick:checked + .c-shop-box { background: #3B7F45; box-shadow: inset 0 0 0 2px #3B7F45; }
-.c-shop-tick:checked + .c-shop-box canvas { opacity: 1; transform: none; }
-.c-shop-tick:focus-visible + .c-shop-box { outline: 3px solid #C98A1B; outline-offset: 2px; }
-.c-shop-row:hover .c-shop-box { box-shadow: inset 0 0 0 2px #4A3418; }
-.c-shop-row:hover .c-shop-tick:checked + .c-shop-box { box-shadow: inset 0 0 0 2px #2F6A38; }
+.c-shop-tick:checked + .c-shop-box { background: var(--good); box-shadow: inset 0 0 0 2px var(--good); }
+/* (the tick is drawn white; on the mint it's dark, as the board's other checks are) */
+.c-shop-tick:checked + .c-shop-box canvas { opacity: 1; transform: none; filter: brightness(0); }
+.c-shop-tick:focus-visible + .c-shop-box { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.c-shop-row:hover .c-shop-box, .c-shop-row:hover .c-shop-tick:checked + .c-shop-box { box-shadow: inset 0 0 0 2px #FFFFFF; }
 .c-shop-words { min-width: 0; display: flex; flex-direction: column; gap: 0; }
-.c-shop-name { font: 600 16px/1.3 var(--k-font); color: #2A2118; }
-.c-shop-words small { font: 500 12px/1.35 var(--k-font); color: #6B5B4A; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.c-shop-row.got .c-shop-name { color: #76664F; text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: rgba(118, 102, 79, 0.8); }
-.c-shop-none { margin: 0; font: 500 14px/1.5 var(--k-font); color: #6B5B4A; }
+.c-shop-name { font: 600 16px/1.3 var(--k-font); color: var(--tx); }
+.c-shop-words small { font: 500 12px/1.35 var(--k-font); color: var(--tx-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.c-shop-row.got .c-shop-name { color: var(--tx-2); text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: var(--tx-2); }
+.c-shop-none { margin: 0; font: 500 14px/1.5 var(--k-font); color: var(--tx-2); }
 /* on a phone the list waits after the meals: a line under the board goes to it */
 .k .c-shopjump, .c-shopjump { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, 0.08); color: var(--tx); font: 500 14px var(--k-font); cursor: pointer; }
 .c-shopjump b { font-weight: 600; }

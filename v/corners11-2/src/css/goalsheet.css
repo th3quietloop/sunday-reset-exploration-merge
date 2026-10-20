@@ -1,0 +1,104 @@
+/* == V11: goals on the sheet (docs/PHONE-REDESIGN.md, 7): New goal in three pages, a goal's sheet, a session's
+   sheet, and the morning question (board/src/app.js: newGoalPanel, goalPanel, sessionPanel, goalAskCard, checkInBox) ==
+   The sheet's own parts carry most of it (css/sheet.css, css/todosheet.css): the title, the facts line, the grouped
+   rows, the plate, the footer. Here: the header's three marks, the spacing of the pages, This week as seven days,
+   what isn't confirmed yet (in gold words), and the rows that ask Did these happen?. Type at 12, 13, 14, and 16;
+   every control 44 px tall or more; white fill is what's picked; gold is the one call to action, and the words for
+   time nobody has answered for yet. */
+
+/* -- the header's middle: where New goal is, three small marks, centered on the sheet -- */
+#side .c-sgap:empty { min-width: 0; }
+#side .c-shead .c-smarks { position: absolute; left: 50%; top: 50%; display: flex; gap: 6px; transform: translate(-50%, -50%); pointer-events: none; }
+#side .c-smarks i { width: 18px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.24); }
+#side .c-smarks i.did, #side .c-smarks i.on { background: #FFFFFF; }
+/* (on the desk the header row shows for the marks too, the way it does for Back and More) */
+body.feel:not(.phone):not(.phone-desk) #side .c-shead:has(.c-sgap:not(:empty)) { display: flex; align-items: center; gap: 2px; min-height: 44px; margin: -12px 34px 6px -10px; position: relative; z-index: 3; }
+
+/* -- New goal's pages: one question each, its answers spaced on the sheet's steps -- */
+.c-gl-need { margin: 8px 0 0; font: 500 16px/1.4 var(--k-font); color: var(--tx-2); }
+.c-gl-need b { color: var(--tx); font-weight: 600; white-space: nowrap; }
+.side-in:has(> .c-gl-ptitle) > .row2 { margin-top: 18px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-match { margin-top: 10px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-suggest { margin-top: 10px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-say { margin-top: 10px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-starts, .side-in:has(> .c-gl-ptitle) > .c-gl-chunk { margin-top: 16px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-first { margin-top: 18px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-plan { margin-top: 14px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-parts, .side-in:has(> .c-gl-ptitle) > .c-gl-plist { margin-top: 16px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-add { margin: 8px 0 0 -12px; }
+.side-in:has(> .c-gl-ptitle) > .c-gl-ai { margin-top: 12px; }
+.side-in:has(> .c-gl-ptitle) > .field-hint { margin-top: 8px; }
+.c-gl-starts .c-sf-change, .c-gl-chunk .c-sf-change { margin-left: 2px; }
+/* the plan's plate: what the days hold, in white; the ways to fit it under their own small heading */
+.c-gl-plan .c-gl-holds { font-weight: 500; color: var(--tx); }
+.c-gl-plan .c-gs-h { margin: 4px 0 -4px; }
+/* the first week's caption sits under its days */
+.c-gl-first .c-gs-h { margin-bottom: 2px; }
+
+/* -- a goal's sheet -- */
+.c-gs-sec { margin: 22px 0 0; }
+.c-gs-h { margin: 0 0 10px; font: 600 14px/20px var(--k-font); color: var(--tx-2); }
+/* This week: seven days, each a button that lists its sessions under the strip */
+.c-gs-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.c-gs-day { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 64px; padding: 6px 0; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); font: inherit; cursor: pointer; transition: background-color 0.12s ease-out; }
+.c-gs-day:hover { background: var(--sf-hover); }
+.c-gs-day:active { transform: translateY(1px); }
+.c-gs-day.none { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-gs-day.today { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6); }
+.c-gs-day[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); box-shadow: none; }
+.c-gs-day:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-gs-dn { font: 600 12px/16px var(--k-font); color: var(--tx-2); }
+.c-gs-day b { font: 600 13px/18px var(--k-font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-gs-day.none b { color: var(--tx-3); font-weight: 500; }
+.c-gs-day[aria-pressed="true"] .c-gs-dn { color: var(--sf-ink); }
+.c-gs-day[aria-pressed="true"].none b { color: #57575C; }
+.c-gs-dm { display: grid; place-items: center; height: 12px; }
+.c-gs-dm canvas { width: 12px !important; height: 12px !important; }
+/* a gold dot: a session that day went by with no word yet (ink on the picked day, so it still shows on white) */
+.c-gs-dm i { width: 6px; height: 6px; border-radius: 50%; background: var(--k-gold, #F2CF7A); }
+.c-gs-day[aria-pressed="true"] .c-gs-dm i { background: var(--sf-ink); }
+.c-gs-strip + .c-gl-rows { margin-top: 10px; }
+.c-gs-say { margin: 10px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+/* time nobody has said anything about yet, in gold words, with Answer beside it */
+.c-gs-unc { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin-top: 4px; }
+.c-gs-uw { font: 600 14px/1.4 var(--k-font); color: var(--k-gold, #F2CF7A); }
+.c-gs-answer, .c-gs-fit { flex: none; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); cursor: pointer; }
+.c-gs-answer:hover, .c-gs-fit:hover { background: var(--sf-press); }
+.c-gs-answer:active, .c-gs-fit:active { transform: translateY(1px); }
+.c-gs-answer:focus-visible, .c-gs-fit:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+/* how it stands: one calm line on a raised plate (short isn't behind, so it's white, never red) */
+.c-gs-plate { margin: 18px 0 0; padding: 14px 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-gs-pl { margin: 0; font: 500 16px/1.4 var(--k-font); color: var(--tx); }
+.c-gs-plate .c-gl-fixes { margin-top: 12px; }
+.c-gs-plate .c-gs-fit { margin-top: 10px; }
+/* a row's name and the line under it */
+.c-gs-rw { display: block; }
+.c-gs-rd { display: block; margin-top: 2px; font: 500 13px/1.35 var(--k-font); color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -- did these happen? A row a day, the answers on its right; Some asks how much on a line of its own -- */
+.c-ci { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.c-ci-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 60px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--sf-raised); }
+.c-ci-lab { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.c-ci-lab b { font: 600 14px/1.3 var(--k-font); color: var(--tx); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-ci-lab span { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-ci-acts { display: flex; flex: none; gap: 6px; }
+.c-ci-row.some .c-ci-acts { flex: 1 1 100%; }
+.c-ci-row.some .c-ci-acts .c-ci-b { flex: 1 1 0; }
+.c-ci-b { min-width: 52px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); white-space: nowrap; cursor: pointer; }
+.c-ci-b:hover { background: var(--sf-press); }
+.c-ci-b.quiet { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-ci-b:active { transform: translateY(1px); }
+.c-ci-b:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-ci-did { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding-right: 6px; font: 600 14px var(--k-font); color: var(--good, #8FD3B1); }
+.c-ci-did canvas { width: 14px !important; height: 14px !important; }
+/* one day on the phone's Today: Yes, Some of it, and No, three equal buttons */
+.c-ci-three { display: flex; gap: 8px; margin-top: 12px; }
+.c-ci-three > .c-ci-b { flex: 1 1 0; min-width: 0; min-height: 48px; padding: 0 8px; font-size: 16px; }
+.td-card.c-gl-ask .c-ci-row { background: var(--sf-hover); }
+.td-card.c-gl-ask .c-ci-b:not(.quiet) { background: var(--sf-press); }
+.td-card.c-gl-ask .td-acts { margin-top: 8px; }
+
+/* calmer motion and the system's reduced motion: nothing presses or fades */
+body.calm .c-gs-day, body.calm .c-ci-b { transition: none; }
+body.calm .c-gs-day:active, body.calm .c-ci-b:active, body.calm .c-gs-answer:active, body.calm .c-gs-fit:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-gs-day, .c-ci-b { transition: none; } .c-gs-day:active, .c-ci-b:active, .c-gs-answer:active, .c-gs-fit:active { transform: none; } }

@@ -15,6 +15,8 @@
     { id: 'batchcook', group: 'Weeks', name: 'Batch cook week', line: 'Two batch cooks with leftovers on lunches, a Meal prep block, three things in the cart, milk on the list, and vegetarian.' },
     { id: 'busy', group: 'People', name: 'Busy person', line: 'Long work days, an early workout, errands in every gap, and a pile of to dos.' },
     { id: 'creative', group: 'People', name: 'Creative person', line: 'Three short work days and the rest given to studio time, sketching, and reading.' },
+    { id: 'student', group: 'People', name: 'Student with an exam', line: 'Noor takes the bar exam in about 18 weeks, around a part time job three days a week. On her own, no kids.' },
+    { id: 'caregiver', group: 'People', name: 'Caregiver for a parent', line: 'Grace looks after her dad across town: his appointments, a trip to see her sister, and his insurance renewal coming due.' },
     { id: 'light', group: 'Weeks', name: 'Light week', line: 'One person, four short work days, and lots of open time.' },
     { id: 'heavy', group: 'Weeks', name: 'Heavy week', line: 'Long work days, three kids on two schedules, soccer twice a week, meetings, 18 to dos, and overlaps.' },
     { id: 'full', group: 'Weeks', name: 'Fully scheduled', line: 'Every open minute has a block, every dinner is decided, every to do has a time.', heavy: true },
@@ -129,7 +131,8 @@
       st.meals = st.meals || {};
       for (let d = 0; d < 7; d++) {
         st.dinners[M.addDays(three, d)] = { name: R[d % R.length].name, recipe: R[d % R.length].id, cook: d % 2 ? 'kim' : 'me', items: R[d % R.length].items.slice() };
-        if (d > 0) st.meals[M.addDays(three, d)] = { lunch: { name: d % 2 ? 'Turkey sandwiches' : 'Leftovers', how: d % 2 ? undefined : 'leftovers' } };
+        /* (a sandwich keeps no how at all, as a saved board would: never one that's undefined) */
+        if (d > 0) st.meals[M.addDays(three, d)] = { lunch: d % 2 ? { name: 'Turkey sandwiches' } : { name: 'Leftovers', how: 'leftovers' } };
         if (d < 5) st.dinners[M.addDays(two, d)] = { name: R[(d + 3) % R.length].name, recipe: R[(d + 3) % R.length].id, cook: d % 2 ? 'me' : 'kim', items: R[(d + 3) % R.length].items.slice() };
       }
       st.dinners[M.addDays(last, 2)] = { name: 'Pizza place', recipe: null, cook: 'order', items: [] };
@@ -352,6 +355,52 @@
     }
 
     if (id === 'bare') return base({ name: 'Quinn', work: null, help: { dinners: false, together: false } });
+
+    /* V11-2 (big moments): a student with an exam. Noor takes the bar exam about 18 weeks from today, planned two
+       weeks at a time around a part time job that's set, like a shift (Monday, Wednesday, and Thursday mornings); she
+       lives on her own, with no kids. Ids are seeded, so the same day builds the same board */
+    if (id === 'student') {
+      const st = base({ name: 'Noor', wake: { wd: 420, we: 480 }, bed: { wd: 1380, we: 1410 }, work: { days: [1, 3, 4], start: 540, end: 780, hours: {}, fixed: true } });
+      const ex = M.goalForExam('Pass the bar exam', D);
+      const g = M.newGoal({ id: uid('g'), name: 'Pass the bar exam', kind: 'exam', date: M.addDays(today, 126), today, mix: ex.mix,
+        parts: ex.parts.map((p) => Object.assign({ id: uid('gp') }, p)), rhythm: { days: [0, 1, 2, 3, 4, 5, 6], wd: 180, we: 300, when: 'any', chunk: 90 } });
+      st.goals = [g];
+      M.planGoal(st, g.id, today, 0, { horizon: 14 });
+      st.tasks = [
+        task({ name: 'Pay the bar exam fee', due: M.addDays(today, 9), dur: 15, icon: 'receipt', group: 'bills' }),
+        task({ name: 'Character and fitness form', due: M.addDays(today, 20), icon: 'note', steps: [['Gather every address since college', 30], ['Fill in the form', 45], ['Send it', 15]] }),
+        task({ name: 'Laundry', due: M.addDays(today, 4), dur: 45, icon: 'shirt', group: 'home' })
+      ];
+      dinners(st, at(0), 7, ['me'], 0.4);
+      return st;
+    }
+
+    /* V11-2 (big moments): a caregiver. Grace looks after her dad, Walter, who lives on his own across town: she drives
+       him to his appointments (one of them while she's away), a trip to see her sister Lena in Denver is five weeks
+       off, and his insurance renewal is coming due (a deadline). She works 9 to 3 on weekdays and lives on her own */
+    if (id === 'caregiver') {
+      const st = base({ name: 'Grace', wake: { wd: 390, we: 450 }, bed: { wd: 1350, we: 1380 }, work: { days: [1, 2, 3, 4, 5], start: 540, end: 900, hours: {} } });
+      st.profile.people = [{ id: uid('p'), name: 'Walter', group: 'family', home: false }];
+      const appt = (name, n, start, dur, icon) => ({ id: uid('e'), kind: 'timed', name, cat: 'family', icon, date: M.addDays(today, n), start, dur, big: false });
+      st.events = [
+        appt('Dad’s cardiology', 1, 930, 60, 'heart'), appt('Dad’s physical therapy', 3, 960, 45, 'runner'), appt('Dad’s physical therapy', 10, 960, 45, 'runner'), appt('Dad’s eye doctor', 15, 990, 60, 'calendar'), appt('Dad’s physical therapy', 37, 960, 45, 'runner'),
+        { id: uid('e'), kind: 'trip', name: 'Denver', icon: 'plane', date: M.addDays(today, 36), end: M.addDays(today, 39), leave: 540, back: 1080 },
+        { id: uid('e'), kind: 'marker', name: 'Dad’s insurance renewal', icon: 'note', date: M.addDays(today, 24), deadline: true }
+      ];
+      st.meetings = [{ id: uid('m'), name: 'Groceries for Dad', days: [6], start: 600, dur: 60 }];
+      /* the trip gets ready the way a new one does (travel, a place to stay, time off, who's covering Dad's appointment
+         that week, and his groceries when the trip has a Saturday, packing, and after it), with a heads-up for her
+         sister, whose time to ask has come */
+      const trip = st.events.find((e) => e.kind === 'trip');
+      trip.ready = M.readySuggest(trip, st).concat([{ k: 'headsup', who: 'Lena' }]);
+      st.tasks = [
+        task({ name: 'Refill Dad’s prescriptions', due: M.addDays(today, 2), dur: 15, icon: 'handset', group: 'people' }),
+        task({ name: 'Find someone to check on Dad while I’m away', due: M.addDays(today, 21), icon: 'people', group: 'people', steps: [['Ask the neighbors', 15], ['Call his church', 15], ['Write down his routine', 30]] }),
+        task({ name: 'Pay Dad’s water bill', due: M.addDays(today, 6), dur: 15, icon: 'receipt', group: 'bills' })
+      ];
+      dinners(st, at(0), 7, ['me'], 0.5);
+      return st;
+    }
 
     if (id === 'calendar') {
       const st = base({ name: 'Avery', kids: ['Sol'], cares: [{ kids: ['Sol'], days: [1, 2, 3, 4, 5], drop: 480, pick: 990 }] });

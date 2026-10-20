@@ -49,8 +49,11 @@
 .c-days .daypill .dlook { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--k-gold); pointer-events: none; }
 .c-days .daypill.on .dlook { background: #8C6A1E; }
 
-/* == 3.2 The kinds of day's list fits the window (variant.js sets its height to the room under the card) == */
+/* == 3.2 The kinds of day's list fits the window (variant.js sets its height to the room under the card) ==
+   Each row keeps its height and the list scrolls: a flex list held to the room would squeeze its rows shorter than their
+   words, and on the open Duo "Your usual" spilled off its white plate onto the dark list (the contrast gate) */
 .kinds-row { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.kinds-row > .kind, .kinds-row > .kind-wrap { flex-shrink: 0; }
 
 /* == 12 Quick add ==
    12.1: on a phone (the iPhone, the folded Duo) its buttons stack: the gold one across the sheet, the quiet one under
@@ -58,6 +61,12 @@
 @media (max-width: 600px) {
   .quick-acts { flex-direction: column; align-items: stretch; }
   .quick-acts > button { width: 100%; min-height: 44px; justify-content: center; white-space: normal; text-align: center; }
+}
+/* V11-2 (Grok's audit): a full day's ways on. The first way across the panel in gold, the others and Adjust in a row
+   under it, so a long way on never pushes Adjust off the panel; any row of buttons wraps before it spills */
+@media (min-width: 601px) {
+  .quick-acts { flex-wrap: wrap; }
+  .quick-acts.ways > .go { flex: 1 0 100%; }
 }
 .quick .quick-kinds { margin: -2px 0 0; gap: 6px; }
 .quick .quick-kinds .chip-btn { min-height: 34px; font-size: 13px; }
@@ -149,3 +158,89 @@ body.drawer-sheet .c-stackbar, body.drawer-sheet .c-steps, body.drawer-sheet .c-
 #btools .tool-len { display: inline-flex; align-items: center; gap: 2px; }
 #btools .tool-len .tool-step { min-width: 44px; justify-content: center; padding-left: 0; padding-right: 0; }
 #btools .tool-len .tool-lenv { min-width: 56px; text-align: center; font-size: 14px; font-weight: 600; color: var(--tx); white-space: nowrap; }
+
+/* == 1.2: Getting started folded to its next thing, a card over the bottom bar on the right (variant.js sets its
+   bottom from the bar's height) == */
+.k-chip.c-gsfold { right: 16px; bottom: 74px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 320px; max-width: calc(100vw - 32px); padding: 10px 12px 12px 14px; border-radius: 18px; }
+.k-chip.c-gsfold[hidden] { display: none !important; }
+.c-gsfhead { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.c-gsfname, .c-gsfn { font-size: 13px; font-weight: 600; color: var(--tx-2, #CDCDCD); }
+.c-gsfn { font-variant-numeric: tabular-nums; }
+.k .c-gsfx { position: relative; display: grid; place-items: center; width: 36px; height: 36px; margin: -6px -4px -6px auto; padding: 0; border-radius: 50%; background: rgba(255, 240, 220, 0.1); cursor: pointer; }
+.k .c-gsfx::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+.k .c-gsfx:hover { background: rgba(255, 240, 220, 0.18); }
+.k .c-gsfx:active { transform: translateY(1px); }
+.c-gsfx canvas { width: 14px; height: 14px; }
+.c-gsfnext { margin: 0; font-family: 'Gabarito', var(--k-font); font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--cream, #F6EEE2); }
+.c-gsfacts { display: flex; gap: 6px; }
+.c-gsfacts .k-pill { height: 44px; padding: 0 14px; border-radius: 12px; background: rgba(255, 240, 220, 0.1); }
+.c-gsfacts .k-pill:hover { background: rgba(255, 240, 220, 0.18); }
+.c-gsfacts .k-pill[hidden] { display: none; }
+body.c-away .c-gsfold { opacity: 0; pointer-events: none; }
+body.c-resetting .c-gsfold, body.onb-landing .c-gsfold { display: none !important; }
+
+/* == The side panel's corner (Oct 20, from Russell's to-do panel, where More sat over the x) ==
+   On the desk a panel's corner buttons, More and the x, stand in one row at its top right: both round, 36 px to the eye
+   and 44 px to a finger (a ring of hit area around each), 8 px apart, centered on the first line of the panel's title.
+   app.js cornerAt finds the title, sets --corner-y, and gives only the title room on its right (.c-cornered), so it
+   wraps before it runs under them and nothing else in the panel gives up width. One rule for every panel, in place of
+   each panel's own; the phone's header keeps Done (sheet.css).
+   They stay while the panel scrolls, so closing is one tap however far down you are, as the phone's sheet keeps Done
+   at its top (the same day, after Russell's round), and so do the title and the line under it (the panel's top,
+   below). For that the panel is a column on the desk: each button sticks where cornerAt puts it, 18 and 62 px from the
+   panel's right edge (--side-pr is the panel's own padding), and gives its height back in its margins, so the panel's
+   words start where they always did. A sticky top counts from inside the panel's padding, so theirs is --corner-mt,
+   the place less the padding, and the x's old right: 12px goes (sticky, it would hold the x 12 px inside the padding).
+   Both are solid, so whatever passes under them never shows through */
+body.feel:not(.phone):not(.phone-desk) #side { display: flex; flex-direction: column; }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore {
+  position: sticky; z-index: 4; float: none; flex: none; align-self: flex-end; top: var(--corner-mt, 0px); right: auto; left: auto;
+  width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0;
+  margin: var(--corner-mt, 0px) 0 calc(-36px - var(--corner-mt, 0px)) 0;
+}
+body.feel:not(.phone):not(.phone-desk) #side > .side-x { margin-right: calc(18px - var(--side-pr, 20px)); border-radius: 50%; background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x:hover { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore { margin-right: calc(62px - var(--side-pr, 20px)); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x canvas,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-dot canvas { width: 16px; height: 16px; }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-dot { width: 36px; height: 36px; background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn:hover .c-smore-dot,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn[aria-expanded="true"] .c-smore-dot { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x::after,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+/* (the title's room: the x reaches 32 px into the panel's words, and More and the gap 44 more, then 8 to the words) */
+body.feel:not(.phone):not(.phone-desk) #side .c-cornered { padding-right: 40px; }
+body.feel:not(.phone):not(.phone-desk) #side:has(> .c-smore:not(:empty)) .c-cornered { padding-right: 84px; }
+/* (the title and the kicker keep no room of their own for the x now, and the header row, Back and a flow's marks, takes
+   the panel's whole width unless it's what the corner sits beside) */
+body.feel:not(.phone):not(.phone-desk) #side .side-title:not(.c-cornered), body.feel:not(.phone):not(.phone-desk) #side .side-kicker:not(.c-cornered) { padding-right: 0; }
+body.feel:not(.phone):not(.phone-desk) #side.side .c-shead:has(.c-sback:not(:empty)):not(.c-cornered),
+body.feel:not(.phone):not(.phone-desk) #side.side .c-shead:has(.c-sgap:not(:empty)):not(.c-cornered) { margin-right: 0; }
+
+/* == The panel's top (Oct 20): the title and the line under it stay while the rest scrolls ==
+   cornerAt makes the header row (Back, a flow's marks) when it shows, the panel's words down to its title, and the line
+   under the title stick, each at the place it already sits (.c-pstick, its top in its style), and puts a plate under
+   them as tall as they are and a little more (.c-splate, shown by #side.c-plated, --plate-h): solid, the panel's color
+   (the glass over the desk, as the kinds list and the hover note are), so nothing that scrolls under shows through. It
+   carries the panel's own top edge, and a hairline under it once the panel has scrolled, as the phone's sheet has
+   under Done. Its margins give its height back, so nothing moves; a field you Tab to scrolls clear of it
+   (scroll-padding). The corner's buttons stand over it, the title over it, and the rest of the panel's words under
+   it. What sticks here wins over a header row's own place (todosheet.css keeps it relative, for its marks), hence the
+   important. The phone's sheet has its own header, so the plate is the desk's only */
+#side > .c-splate { display: none; }
+body.feel:not(.phone):not(.phone-desk) #side .c-pstick { position: sticky !important; z-index: 3; }
+body.feel:not(.phone):not(.phone-desk) #side.c-plated { scroll-padding-top: var(--plate-h, 0px); }
+body.feel:not(.phone):not(.phone-desk) #side.c-plated > .c-splate {
+  display: block; position: sticky; top: calc(0px - var(--side-pt, 20px)); z-index: 2; flex: none; align-self: stretch;
+  height: var(--plate-h, 0px);
+  margin: calc(0px - var(--side-pt, 20px)) calc(1px - var(--side-pr, 20px)) calc(var(--side-pt, 20px) - var(--plate-h, 0px)) calc(1px - var(--side-pl, 20px));
+  border-radius: var(--side-r, 0px) var(--side-r, 0px) 0 0;
+  background: var(--sf-solid);
+  box-shadow: inset 0 1px 0 var(--sf-edge);
+}
+body.feel:not(.phone):not(.phone-desk) #side.c-plated.scrolled > .c-splate { box-shadow: inset 0 1px 0 var(--sf-edge), 0 1px 0 var(--sf-edge); }
+/* (until the panel scrolls nothing is under it, so it's clear: the glass a little warm over the desk, #262322 over the
+   wood where the plate is #232325, shows as it always did, and the plate shows the moment words go under) */
+body.feel:not(.phone):not(.phone-desk) #side.c-plated:not(.scrolled) > .c-splate { background: transparent; box-shadow: none; }

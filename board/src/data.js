@@ -779,8 +779,22 @@
      drop a person or a meal added on the other device in the same moment.
      Meals stay in the store's app/core document: an older build writes each month's document with only
      dates and dinners, so meals kept there would be lost. With parts, a year of breakfasts and lunches is
-     about 100 KB of core. */
-  const VERSION = 8;
+     about 100 KB of core.
+     V11-2, big moments (Oct 20, docs/BIG-MOMENTS.md): VERSION is 9. Every field it adds is optional, so a
+     version 8 board reads the same and migrate changes only the number (tests/big-moments-model.test.mjs):
+       an event's window ({ from, to } with date null: a fuzzy date, sometime in spring), host (you're
+         hosting it), away (out of town), and deadline (marked as one); a ready entry's who (one heads-up per
+         person, its prep key k:who@date) and place (where that person is);
+       a to-do's msg ({ to, text }: a message step; text is kept only once the person edits it, and the app
+         never sends anything), list ([{ id, name, done }]: things inside the block, a packing list), and of
+         (the id of the big thing it belongs to);
+       a step's doneOn (the date it was checked);
+       a goal's rhythm.n (times a week, for a goal with no date), and practice: true on a practice exam
+         session's add.
+     An event saved without its own ready list keeps the suggestions it always had (Model.readySuggest's
+     version 8 list); a new date gets the version 9 defaults when it's made. Version 8 builds read 8, so
+     one of them takes a version 9 board as newer: read only, never written over. */
+  const VERSION = 9;
   /* Who the board belongs to. Names in the app's own words (tabs, buttons, lines) come from here,
      never from code. Russell's board keeps Kim, Elijah, and Kim's cookbook. */
   const RUSSELL = { name: 'Russell', partner: 'Kim', kids: ['Elijah'], cookbook: 'https://truffle-recipes.vercel.app' };
@@ -834,6 +848,11 @@
       /* goals with a date, broken into daily sessions. Every other field and date stays as it was. */
       if (!Array.isArray(st.goals)) st.goals = [];
       st.v = 8;
+    }
+    if (st.v === 8) {
+      /* big moments: fuzzy dates, hosting, heads-ups, message steps, lists inside a block, practice exams.
+         Each is optional and read with a default, so nothing on a version 8 board changes but the number. */
+      st.v = 9;
     }
     return st;
   }

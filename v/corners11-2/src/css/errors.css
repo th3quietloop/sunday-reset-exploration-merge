@@ -1,0 +1,49 @@
+/* == V11-2: errors that stay, and Undo on the phone that stays (board/src/app.js toastFeel, errorDone, phoneUndo) ==
+   An error toast is something that failed: a save, an import, a calendar refresh, the household, an ask of Claude. It
+   says what happened and what to do, offers Try again where doing it again can help, and stays until its x puts it
+   away or the trouble clears. A coral ring and a mark before the words, so it isn't said by color alone; the words
+   on the left, the x at the top right, the buttons under the words on the right. Every other toast still fades.
+   Type at 14 and 16; every control 44 or more. */
+body.feel #toasts .toast.error {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 44px; grid-template-areas: "mark words x" ". acts acts";
+  column-gap: 10px; row-gap: 0; align-items: center;
+  padding: 4px 4px 4px 14px; text-align: left; pointer-events: auto;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 158, 140, 0.7), 0 12px 32px -10px rgba(0, 0, 0, 0.6) !important;
+}
+body.feel #toasts .toast.error::before {
+  content: ''; grid-area: mark; align-self: start; width: 20px; height: 20px; margin-top: 12px; background: #FF9E8C;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill-rule='evenodd' d='M128,20A108,108,0,1,0,236,128,108,108,0,0,0,128,20Zm-14,52a14,14,0,0,1,28,0v60a14,14,0,0,1-28,0Zm14,116a16,16,0,1,1,16-16A16,16,0,0,1,128,188Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill-rule='evenodd' d='M128,20A108,108,0,1,0,236,128,108,108,0,0,0,128,20Zm-14,52a14,14,0,0,1,28,0v60a14,14,0,0,1-28,0Zm14,116a16,16,0,1,1,16-16A16,16,0,0,1,128,188Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+body.feel #toasts .toast.error .toast-words { grid-area: words; align-self: start; padding: 12px 0; text-wrap: pretty; }
+body.feel #toasts .toast.error .toast-x { grid-area: x; align-self: start; display: grid; place-items: center; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; }
+body.feel #toasts .toast.error .toast-x canvas { width: 14px; height: 14px; }
+body.feel #toasts .toast.error .toast-x:hover { background: var(--sf-hover); }
+body.feel #toasts .toast.error .toast-x:active { transform: translateY(1px); }
+body.feel #toasts .toast.error .toast-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -3px; }
+body.feel #toasts .toast.error .toast-acts { grid-area: acts; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 0 0 4px; }
+body.feel #toasts .toast.error .toast-acts .toast-act { margin: 0; min-height: 44px; }
+body.calm #toasts .toast.error .toast-x:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { body.feel #toasts .toast.error .toast-x:active { transform: none; } }
+
+/* -- the last change's Undo: a quiet line under the phone's date, and on the phone desk's bar -- */
+.c-ph-undo { display: flex; align-items: center; gap: 4px; min-width: 0; margin: 2px 0 0 -8px; }
+.c-ph-ub { display: inline-flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 0 10px 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--tx-2); font: 500 14px var(--k-font); text-align: left; cursor: pointer; }
+.c-ph-ub canvas { flex: none; width: 14px; height: 14px; }
+.c-ph-ub .c-ph-uw { flex: none; color: var(--tx); font-weight: 600; }
+.c-ph-ub .c-ph-uwhat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-ph-ub.c-ph-redo { flex: none; }
+.c-ph-ub + .c-ph-ub.c-ph-redo { margin-left: auto; }
+.c-ph-ub:hover { background: var(--sf-hover); }
+.c-ph-ub:active { transform: translateY(1px); }
+.c-ph-ub:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+body.calm .c-ph-ub:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-ph-ub:active { transform: none; } }
+/* (the phone desk's bar: the same two as marks, beside the month; hidden means gone, whatever .nav says) */
+.phonebar.pb-feel .nav.pb-un { width: 44px; height: 44px; background: transparent; }
+.phonebar.pb-feel .nav.pb-un[hidden] { display: none; }
+.phonebar.pb-feel .nav.pb-un canvas { width: 16px; height: 16px; }
+.phonebar.pb-feel .nav.pb-un:hover { background: rgba(255, 255, 255, 0.08); }
+.phonebar.pb-feel .nav.pb-un:active { transform: translateY(1px); }
+body.calm .phonebar.pb-feel .nav.pb-un:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .phonebar.pb-feel .nav.pb-un:active { transform: none; } }

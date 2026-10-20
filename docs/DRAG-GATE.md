@@ -10,7 +10,11 @@ npm run gate        every path at Mac 1440x900, iPad 820x1180, Duo folded 466x67
 npm run gate:full   every size, 5 times each, plus the WebKit lane and the tries to break it. About an hour.
 ```
 
-Each run builds V11 from this repo into a temporary folder (the same build Vercel gets, `scripts/make-variants.mjs corners11`), serves it, starts a headless Chrome of its own, runs, and stops everything again. It ends with the matrix, every failure, and **GATE: GREEN** or **GATE: RED** (exit code 1). Everything it saw is in the run's folder, printed at the end: `summary.md`, a JSON file per lane with every attempt, and a picture of every failure.
+Each run builds the version in the works from this repo into a temporary folder (V11-2 since Oct 20: the same build Vercel gets, `scripts/make-variants.mjs corners11-2`; V11 itself stays frozen in `v/corners11` as it went live), serves it, starts a headless Chrome of its own, runs, and stops everything again. It ends with the matrix, every failure, and **GATE: GREEN** or **GATE: RED** (exit code 1). Everything it saw is in the run's folder, printed at the end: `summary.md`, a JSON file per lane with every attempt, and a picture of every failure.
+
+**The board's size.** The gate also measures how wide the board is drawn at rest, in Week, Day and Now at 1440 by 900, in Week at 1024 by 768, and on the phone's desk at 375 by 812 (`boardsize.mjs`), and fails when any is more than 2 percent narrower than V11 as it went live. V11's own widths are kept in `scripts/gate/board-size.json`, measured with `node scripts/gate/boardsize.mjs -build v/corners11 -save`.
+
+**A busy machine.** The gate notes the load average through the run. A run whose drops fail while the load was over twice the computer's cores says **GATE: INVALID** (exit code 2), not RED: at a load of 57 on 14 cores (Oct 15), 96 of 234 drops failed and none of it was the app. Run it again when the machine is quieter. A green run under that load stands, and a board that's too small is RED whatever the load (it's measured at rest). At most two heavy browser runs at a time on this computer: take a slot first, `mkdir /private/tmp/claude-501/sr-browser.lock` or, if that one is there, `mkdir /private/tmp/claude-501/sr-browser.lock2` (wait 30 seconds and try again while both are there), and `rmdir` the one you took when the run ends, even if it fails.
 
 It needs Google Chrome (or `CHROME_PATH` pointing at a Chrome or Chromium) and `npm install` (it brings `playwright-core` and `three`). The WebKit lane needs Playwright's WebKit; if it isn't on this computer, `npx playwright-core install webkit` gets it. three.js is served to the page from `node_modules` (the same bytes the page asks the CDN for), so the gate never waits on a slow CDN.
 
@@ -22,9 +26,9 @@ Options, for `node scripts/gate/release-gate.mjs`:
 | `-n 3` | attempts per path, size, and input |
 | `-sizes mac1,phone` | only these sizes |
 | `-paths reset-yours,lib-week` | only these paths |
-| `-build folder` | use a V11 build that's already made |
+| `-build folder` | use a build that's already made (`v/corners11` is V11 as it went live) |
 | `-serve 4467 -cdp 9467` | the ports for the page and for Chrome |
-| `-no-webkit`, `-no-break`, `-no-matrix` | leave a part out |
+| `-no-webkit`, `-no-break`, `-no-matrix`, `-no-size` | leave a part out |
 | `-out folder` | where the results go |
 | `-baseline file`, `-no-baseline` | hold to another list of the last green run's cells, or to none |
 
@@ -37,6 +41,10 @@ One part on its own: `node scripts/gate/gate.mjs -sizes ipadP -inputs touch -pat
 3. **It said so**: a toast says where it went. A drop that can't land says why.
 4. **Nothing is left in hand**: no block floating over the desk, no copy of a tile, no meal ghost.
 5. **Nothing threw**: no exception and no console error (a server with no API, which the live site doesn't have, is the one thing let through). Two guards in the app write to the console when they step in: the desk's watchdog, when a block has a number that isn't one and is put back at rest (`scene.js` `watchBlocks`), and the landing watch, when a block set down isn't drawn 1.7 seconds later and is drawn again (`app.js` `watchLanding`). People never see either, and the gate fails on both, so the cause gets fixed.
+6. **The first press after a load is quick** (its own row, `first-press`, once per load): the page takes at most 50 ms over it, and with sound on the sound was made before it. Made inside the first press, it held the page about 200 ms in Chrome.
+7. **The boot put nothing back at rest** (its own row, `boot`, each size's first load): the watchdog repaired nothing and the console said nothing about a number that isn't one. Item 5 counts errors inside each drag, so a boot that went wrong failed nothing; that let one through from Oct 13 to Oct 20 (below). In Chrome that load gets no frames until the boot is done, and it opens in Today the way a weekday does whatever the day, so the boot's switch to the Planner's week hides and shows the week before a frame every run. WebKit can't take a page script back once it's added, so there it's a plain boot.
+
+**The boot that broke today's blocks (Oct 20).** The week board starts shown, and a pop reads `popK` for where to start when the pop before it is still waiting. No step had written it yet, so a boot that hid the week and showed it again before the first frame started the week's rise from a number that isn't one. The day's blocks flying home to the week aimed at it, and the watchdog put them back at rest ("a block (2026-10-20|2026-10-20:sleep:am|0) had a number that is not a number"). A tab in the background does that, as do a busy machine and Dev holding another day in Today. It had been there since Round two (1ce31e1, Oct 13), live V11 too: 5 of 5 first boots with frames held back repaired 13 blocks at Mac size. Fixed where it starts: a pop starts where the board is (`popItems`: where the last step left it, or where the waiting pop starts), and the watchdog now looks at the boards too (`watchBoards`: a board mid pop with such a number finishes where it was going and says "a board (week)"). `tests/pop-finite.test.mjs` holds it: the week and the day turned around before a step and in flight, 600 runs of hides, shows, and steps, and the board net.
 
 Every attempt is undone, so the next starts from the same board: the made up family's week (Dev, sample), nothing saved, the clock held at 10 am. A path that's on a size but can't run once there (no pieces to pick up, no place to put one) counts as a failure too: that's a path that broke quietly.
 
@@ -50,6 +58,7 @@ Every attempt is undone, so the next starts from the same board: the made up fam
 | `reset-meals` | a meal on the meal board, onto a day (on a short screen the board scrolls while it's held at the top) |
 | `lib-week`, `lib-day` | a Block library piece off the bench, onto the week or a day |
 | `stack-week`, `stack-day` | a to-do off the bench, onto the week or a day |
+| `todo-step-week`, `todo-step-day` | a step, a brick in its to-do's panel (V11-2), onto the week or a day |
 | `move-week`, `move-day` | a block already on the board, to another day or time |
 | `stretch-week`, `stretch-day` | a block's end, to make it longer |
 | `today-bench`, `today-move` | the same in Today |
@@ -63,7 +72,7 @@ Sizes: `mac1` 1440x900, `mac2` 1280x800, `ipadL` 1180x820, `ipadP` 820x1180, `du
 
 ## The tries to break it (`break.mjs`, in `gate:full`)
 
-Each runs a path and does something to the drag: a toast arriving mid drag; toasts with Undo covering part of the week (the drop must go through them: this is the Apple Store kind of failure, a drop swallowed by a toast); the panel redrawn under the finger; the minute ticking over; a step opened a moment before the press; a flick; a swipe along a list of tiles (it must scroll, and lift nothing); slow, paused, press and hold, and blind hands; out past the window's edge and back, or let go there; a locked block; time that's over; off the board; put back on the panel; a second finger resting, tapping, lifting, or pinching while one carries a tile, a meal, a setup piece, or a block being moved; a touch the browser takes back (a call, Control Center) on a tile, a bench piece, a meal, a setup piece, and a move; Escape on a tile, a move (it must not zoom the desk out), a meal, and a setup piece; a scroll then a drag; a stretch pressed 6 px inside the end or, with a finger, 8 px past it; a tap on a tile (its own panel opens, and the tap's click lands on nothing in it); a tap on open time (a panel opens, nothing is placed); Add from the place panel (the copy flies from the card, not the screen's corner, and meets the block); Block library putting itself away mid drag; two drags back to back; and leaving a made up board (nothing throws).
+Each runs a path and does something to the drag: a toast arriving mid drag; toasts with Undo covering part of the week (the drop must go through them: this is the Apple Store kind of failure, a drop swallowed by a toast); the panel redrawn under the finger; the minute ticking over; a step opened a moment before the press; a flick; a swipe along a list of tiles (it must scroll, and lift nothing); slow, paused, press and hold, and blind hands; out past the window's edge and back, or let go there; a locked block; time that's over; off the board; put back on the panel; a second finger resting, tapping, lifting, or pinching while one carries a tile, a meal, a setup piece, or a block being moved; a touch the browser takes back (a call, Control Center) on a tile, a bench piece, a meal, a setup piece, and a move; Escape on a tile, a move (it must not zoom the desk out), a meal, and a setup piece; a scroll then a drag; a stretch pressed 6 px inside the end or, with a finger, 8 px past it; a tap on a tile (its own panel opens, and the tap's click lands on nothing in it); a tap on open time (a panel opens, nothing is placed), right beside a block too (the finger's forgiveness takes the block only for a hold or a move); a sideways list under the lift point inside a list that scrolls down, held, jiggled, and carried (it lands, the sideways list never moves, and the browser never takes the finger), and flicked (the list scrolls and nothing lifts); Add from the place panel (the copy flies from the card, not the screen's corner, and meets the block); Block library putting itself away mid drag; two drags back to back; and leaving a made up board (nothing throws).
 
 ## The WebKit lane
 

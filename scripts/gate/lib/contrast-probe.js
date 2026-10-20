@@ -328,11 +328,21 @@
       }
     }
     /* fields: what's typed, the placeholder, and the edge that says it's a field */
+    /* a check box drawn by the page: the real one is there unseen, for the keyboard and a screen reader, and the box
+       beside it is what shows (the grocery list's), so that box is measured as the check box */
+    const drawnBox = (el) => {
+      const drawn = el.tagName === 'INPUT' && /^(checkbox|radio)$/.test((el.getAttribute('type') || '').toLowerCase()) ? el.nextElementSibling : null;
+      const dr = drawn && shown(drawn) && opacityOf(drawn) > 0.5 ? drawn.getBoundingClientRect() : null;
+      if (!dr || dr.width < 10 || dr.width > 48 || dr.height < 10 || dr.height > 48 || (drawn.textContent || '').trim()) return;
+      const dc = cut(dr, clipOf(drawn));
+      if (!dc || dc.width * dc.height < 0.92 * dr.width * dr.height || coverAt(drawn, dc.left + dc.width / 2, dc.top + dc.height / 2) || inFade(fadesOf(drawn).concat(edgesOf(drawn)), dc.top + dc.height / 2, dc.left + dc.width / 2)) return;
+      add({ kind: 'checkbox', text: (el.getAttribute('aria-label') || el.name || 'check box').slice(0, 60), path: pathOf(drawn), rect: box(dr), radius: parseFloat(getComputedStyle(drawn).borderTopLeftRadius) || 0, disabled: disabledOf(el), checked: !!el.checked });
+    };
     for (const el of document.body.querySelectorAll('input, textarea, select, [contenteditable="true"]')) {
-      if (!shown(el)) continue;
+      if (!shown(el)) { drawnBox(el); continue; }
       const cs = getComputedStyle(el);
       const op = opacityOf(el);
-      if (op < 0.05) continue;
+      if (op < 0.05) { drawnBox(el); continue; }
       const r = el.getBoundingClientRect();
       const c = cut(r, clipOf(el));
       if (!c || c.width < 6 || c.height < 6) continue;

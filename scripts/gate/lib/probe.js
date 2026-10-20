@@ -3,8 +3,8 @@
    redrawn under a finger) and answers questions about the board (where a slot is on screen, what was
    placed, whether a block's meshes are drawn). It changes nothing in the app. */
 (() => {
-  if (window.__mx && window.__mx.v === 8) return 'probe ready';
-  const mx = window.__mx = { v: 8, log: [], toasts: [], errs: [], dragMesh: null, dragMeshes: [], sideSwaps: [], focusLog: [], cancels: [], samples: [] };
+  if (window.__mx && window.__mx.v === 9) return 'probe ready';
+  const mx = window.__mx = { v: 9, log: [], toasts: [], errs: [], dragMesh: null, dragMeshes: [], sideSwaps: [], focusLog: [], cancels: [], samples: [] };
   const now = () => Math.round(performance.now());
   /* when the first finger or the mouse went down, first moved 8 px, and lifted, as the page saw them: a busy
      machine can stretch a tap or a swipe past the app's press to lift (300 ms), and then it isn't one */
@@ -13,6 +13,12 @@
   document.addEventListener('pointerdown', (e) => { if (!e.isPrimary) return; mx.ptr = { down: now(), move8: 0, up: 0, x: e.clientX, y: e.clientY, downT: e.timeStamp, move8T: 0 }; }, { capture: true, passive: true });
   document.addEventListener('pointermove', (e) => { if (!e.isPrimary || mx.ptr.move8 || !mx.ptr.down || mx.ptr.up) return; if (Math.hypot(e.clientX - mx.ptr.x, e.clientY - mx.ptr.y) >= 8) { mx.ptr.move8 = now(); mx.ptr.move8T = e.timeStamp; } }, { capture: true, passive: true });
   document.addEventListener('pointerup', (e) => { if (e.isPrimary && !mx.ptr.up) mx.ptr.up = now(); }, { capture: true, passive: true });
+  /* V11-2: how long the page took over each press (from the first pointerdown listener on the page to the last,
+     both on window), and whether the sound was made before it: the first press after a load mustn't stop to start
+     the sound (it took about 200 ms in Chrome) */
+  mx.presses = [];
+  window.addEventListener('pointerdown', (e) => { if (!e.isPrimary) return; const S = window.Sound; mx._pd = { t: performance.now(), sound: S ? (S.state || 'n/a') : 'n/a', on: S ? !!S.on : false }; }, { capture: true, passive: true });
+  window.addEventListener('pointerdown', (e) => { if (!e.isPrimary || !mx._pd) return; mx.presses.push({ ms: Math.round((performance.now() - mx._pd.t) * 10) / 10, sound: mx._pd.sound, on: mx._pd.on }); mx._pd = null; }, { passive: true });
   const W = window.World;
   const num = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v);
   /* == the World calls a drag makes, in order == */

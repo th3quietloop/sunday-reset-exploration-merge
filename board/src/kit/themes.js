@@ -332,9 +332,12 @@
     home: { name: 'From home', L: ['picture', 'toy_car', 'water'], R: ['lamp', 'globe', 'clock'] },
     autumn: { name: 'Autumn', L: ['pumpkin', 'mug', 'candle'], R: ['books', 'lamp', 'string_lights'] },
     winter: { name: 'Winter', L: ['tree', 'teacup', 'notepad'], R: ['lamp', 'alarm_clock', 'string_lights'] },
-    spring: { name: 'Spring', L: ['spring_flowers', 'water', 'notes'], R: ['tulips', 'lamp', 'clock'] }
+    spring: { name: 'Spring', L: ['spring_flowers', 'water', 'notes'], R: ['tulips', 'lamp', 'clock'] },
+    /* (V11-2, Oct 20: the year had three seasons; summer is the kit's own things, a big leaf, an iced drink, fruit, and
+       the radio) */
+    summer: { name: 'Summer', L: ['monstera', 'tumbler', 'notes'], R: ['fruit', 'lamp', 'radio'] }
   };
-  const LAYOUT_ORDER = ['full', 'tidy', 'bare', 'plants', 'coffee', 'reading', 'evening', 'kitchen', 'home', 'autumn', 'winter', 'spring'];
+  const LAYOUT_ORDER = ['full', 'tidy', 'bare', 'plants', 'coffee', 'reading', 'evening', 'kitchen', 'home', 'autumn', 'winter', 'spring', 'summer'];
 
   /* == helpers == */
   /* One catalog of every thing: the eight in props-data.js and everything in the kit. */

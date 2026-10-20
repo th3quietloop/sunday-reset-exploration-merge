@@ -1,0 +1,152 @@
+/* == V11-2: the countdown (docs/BIG-MOMENTS.md, B; mock screens 2 to 5) ==
+   The road from today to a big date or goal, drawn to scale: one panel on the desk and the same sheet on the phone
+   (app.js countdownPanel, cdRoad, cdRoadEl). Its head is a to-do's (todosheet.css: the mark at a block's tile size,
+   the name), its steps are the to-do sheet's bricks with their Done circles, and its message is the steps helper's
+   card. Words in Gabarito for names and Onest for the rest, at the eight sizes; every color on the panel passes 4.5 to 1
+   for words and 3 to 1 for what isn't words. One rhythm down it: 4, 8, 12, 16, 24. */
+
+/* the head: the mark, the name, when, and how a goal stands */
+.c-ts-head.c-cd-head { align-items: flex-start; }
+.c-cd-hw { flex: 1; min-width: 0; }
+.c-ts-hname.c-cd-title { margin: 4px 0 0; }
+.c-cd-words { margin: 4px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+.c-cd-stand { font-weight: 600; color: var(--tx); white-space: nowrap; }
+.c-cd-stand.ok { color: var(--good, #8FD3B1); }
+
+/* the road: a weeks track, what's gone by, the date as a span (or an exam's stages, or a fuzzy date's dashed
+   window), a pin on each step's last good day, practice exams as diamonds, and today's red pin */
+.c-cd-road { position: relative; margin: 24px 0 0; padding-top: 12px; }
+.c-cd-road.pins, .c-cd-road.marks { padding-top: 40px; }
+.c-cd-track { position: relative; height: 34px; border-radius: 10px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-cd-track > * { position: absolute; }
+.c-cd-gone { top: 0; bottom: 0; left: 0; border-radius: 10px 0 0 10px; background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0 4px, transparent 4px 8px); }
+.c-cd-wk { top: 6px; bottom: 6px; width: 0; border-left: 1px solid rgba(255, 255, 255, 0.12); }
+.c-cd-span, .c-cd-stage { top: 4px; bottom: 4px; display: flex; align-items: center; justify-content: center; min-width: 6px; overflow: hidden; white-space: nowrap; background: var(--c); color: var(--ink, #FFFFFF); font: 700 12px/1 var(--k-font); }
+.c-cd-span { border-radius: 7px; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.c-cd-stage { justify-content: flex-start; padding: 0 8px; box-sizing: border-box; }
+.c-cd-stage.first { border-radius: 7px 0 0 7px; }
+.c-cd-stage.last { border-radius: 0 7px 7px 0; }
+.c-cd-stage.first.last { border-radius: 7px; }
+.c-cd-window { top: 4px; bottom: 4px; min-width: 8px; box-sizing: border-box; border-radius: 7px; border: 2px dashed #8DBCCB; background: repeating-linear-gradient(135deg, rgba(141, 188, 203, 0.16) 0 6px, transparent 6px 12px); }
+/* a pin on a step's last good day: its mark on its color, a stem down to its day, a count when steps share a spot */
+.c-cd-pin { top: -34px; left: clamp(12px, calc(var(--at) * 1%), calc(100% - 12px)); width: 24px; height: 24px; margin-left: -12px; border-radius: 7px; display: grid; place-items: center; background: var(--c); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.3); }
+.c-cd-pin::after { content: ''; position: absolute; left: 50%; top: 100%; width: 2px; height: 10px; margin-left: -1px; background: rgba(255, 255, 255, 0.28); }
+.c-cd-pin canvas { width: 14px; height: 14px; }
+.c-cd-pin.done { background: #46464B; }
+.c-cd-pin.next { outline: 2px solid var(--good, #8FD3B1); outline-offset: 2px; }
+.c-cd-pin.c-cd-day { background: #D9443A; }
+.c-cd-n { position: absolute; top: -8px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: #FFFFFF; color: #1C1C1E; font: 700 12px/16px var(--k-font); text-align: center; box-shadow: 0 0 0 2px var(--c-ts-gap, #202125); }
+.c-cd-mark { top: -18px; left: calc(var(--at) * 1%); width: 10px; height: 10px; margin-left: -5px; border-radius: 2px; transform: rotate(45deg); background: #F2EEE6; }
+.c-cd-now { top: -8px; bottom: -8px; left: calc(var(--at) * 1%); width: 2px; margin-left: -1px; border-radius: 1px; background: #FF6B5E; }
+.c-cd-now::after { content: ''; position: absolute; left: -5px; bottom: -6px; width: 12px; height: 12px; border-radius: 50%; background: #FF6B5E; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+.c-cd-months { position: relative; height: 18px; margin-top: 14px; }
+.c-cd-months span { position: absolute; top: 0; font: 600 12px/18px var(--k-font); color: var(--tx-3); white-space: nowrap; }
+
+/* an exam's stages in words, the one under way in white */
+.c-cd-legend { list-style: none; display: grid; gap: 6px; margin: 12px 0 0; padding: 0; }
+.c-cd-legend li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; font: 500 13px/1.35 var(--k-font); color: var(--tx-2); }
+.c-cd-legend li i { width: 12px; height: 12px; border-radius: 3px; background: var(--c); }
+.c-cd-legend li.on { color: var(--tx); }
+.c-cd-legend li.on .c-cd-ln { font-weight: 700; }
+.c-cd-lw { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* a goal with no date: the last eight weeks as columns of dots, this week ringed. No streak, no score */
+.c-cd-weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin: 24px 0 0; }
+.c-cd-wkcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; padding: 8px 0 6px; border-radius: 10px; background: var(--sf-raised); }
+.c-cd-wkcol.this { box-shadow: inset 0 0 0 2px var(--good, #8FD3B1); }
+.c-cd-dots { display: grid; grid-template-columns: 12px; gap: 5px; justify-items: center; }
+.c-cd-dots.two { grid-template-columns: 12px 12px; }
+.c-cd-dots i { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; border: 2px solid #8E8E94; }
+.c-cd-dots i.on { border: 0; background: var(--c, #EFB940); }
+.c-cd-wkcol small { font: 600 12px/1.2 var(--k-font); color: var(--tx-3); white-space: nowrap; }
+
+/* what goes under the road: a section's name, this week's hours, a step's why, a line */
+.c-cd-lbl { margin: 24px 0 0; font: 700 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3); }
+.c-cd-stat { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 0; }
+.c-cd-stat b { font: 800 26px/1.1 var(--name); color: var(--tx); font-variant-numeric: tabular-nums; }
+.c-cd-stat span { font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+.c-cd-why { margin: 8px 0 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+/* (under its brick, the row's width, in the to-do sheet's grid) */
+.c-ts-bricks.c-cd-steps > .c-ts-step > .c-cd-why { grid-row: 2; grid-column: 1 / -1; margin: 6px 0 0 4px; }
+.c-ts-bricks.c-cd-steps > .c-ts-step > .c-ts-brick { grid-row: 1; grid-column: 1; }
+.c-ts-bricks.c-cd-steps > .c-ts-step > .c-ts-check { grid-row: 1; grid-column: 2; }
+.c-cd-say { margin: 12px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+
+/* the steps: the to-do sheet's bricks. One that only waits for a fuzzy date's day has no grip and no circle, and
+   takes the row; one that doesn't drag shows no grip */
+.c-cd-head + .c-cd-steps, .c-cd-road + .c-cd-steps { margin-top: 24px; }
+.c-cd-lbl + .c-cd-steps, .c-cd-stat + .c-cd-steps { margin-top: 16px; }
+.c-ts-bricks.c-cd-steps > .c-ts-step:has(> .c-cd-wait) { grid-template-columns: minmax(0, 1fr); }
+.c-ts-brick.c-cd-wait { cursor: default; }
+.c-ts-brick.c-cd-wait .c-ts-grip, .c-ts-brick.c-cd-nodrag .c-ts-grip { visibility: hidden; }
+.c-ts-brick.c-cd-nodrag { cursor: pointer; }
+/* (a step's name can run to three lines here: Line up who's covering Robin's drop-offs and pick-ups while you're
+   away; a word with a hyphen never breaks at it) */
+.c-cd-steps .c-ts-brick .c-ts-sn { -webkit-line-clamp: 3; }
+.c-nobr { white-space: nowrap; }
+.c-cd-steps + .c-msg { margin-top: 12px; }
+
+/* the rest, folded: N more steps and what they are, a chevron */
+.c-cd-fold { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; margin: 16px 0 0; padding: 8px 4px; border: 0; border-top: 1px solid var(--sf-edge); border-radius: 0; background: transparent; color: var(--tx); text-align: left; cursor: pointer; }
+.c-cd-fw { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-cd-fw b { font: 600 16px/1.3 var(--k-font); }
+.c-cd-fw span { font: 500 14px/1.35 var(--k-font); color: var(--tx-2); }
+.c-cd-fold canvas { flex: none; width: 16px; height: 16px; }
+.c-cd-fold:hover { background: var(--sf-raised); }
+.c-cd-fold:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; border-radius: 10px; }
+.c-cd-fold + .c-cd-steps { margin-top: 12px; }
+
+/* someone to see there: a quiet row, then a box for their names */
+.c-cd-add { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; margin: 12px 0 0; padding: 0 4px; border: 0; background: none; color: var(--tx-2); font: 500 16px/1.3 var(--k-font); text-align: left; cursor: pointer; }
+.c-cd-add canvas { flex: none; width: 16px; height: 16px; margin-left: 10px; }
+.c-cd-add:hover { color: var(--tx); }
+.c-cd-add:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; border-radius: 10px; }
+.c-cd-addrow { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; }
+.c-cd-addrow .input { flex: 1; min-width: 0; min-height: 44px; }
+.side .small.c-cd-addgo { flex: none; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); }
+.side .small.c-cd-addgo:hover { background: var(--sf-press); }
+
+/* a fuzzy date's pick, in place */
+.c-cd-pick { margin: 16px 0 0; padding: 12px; border-radius: 16px; background: var(--sf-raised); }
+/* (the pick takes focus only from Pick the date, never from Tab, so it shows none of its own: its fields do) */
+.c-cd-pick:focus { outline: none; }
+.c-cd-pick .field + .field, .c-cd-pick .row2 { margin-top: 0; }
+/* (its days are fields like every other: the same edge, and the same white ring with focus, whether Pick the date put
+   it there or a tap or a key did) */
+.c-cd-pick .input { border-color: var(--field-edge); }
+.c-cd-pick .input:focus { outline: none; border-color: rgba(255, 255, 255, 0.75); }
+.c-cd-pick .input:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+
+/* the question a new trip asks once: names, the board's own people as pills, and No one as a tile */
+.c-cd-pills { margin-top: 12px; }
+.c-cd-none { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; margin: 16px 0 0; padding: 10px 14px; border: 0; border-radius: 16px; background: var(--sf-raised); color: var(--tx); text-align: left; cursor: pointer; }
+.c-cd-none b { font: 600 16px/1.3 var(--k-font); }
+.c-cd-none span { font: 500 13px/1.35 var(--k-font); color: var(--tx-2); }
+.c-cd-none:hover { background: var(--sf-hover); }
+.c-cd-none:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* who's going: a tile for each answer that fits the household, who stays home under it; the one picked is white */
+.c-cd-going { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 0; }
+.c-cd-gtile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; padding: 10px 14px; border: 0; border-radius: 16px; background: var(--sf-raised); color: var(--tx); text-align: left; cursor: pointer; }
+.c-cd-gtile b { font: 600 16px/1.3 var(--k-font); }
+.c-cd-gtile span { font: 500 13px/1.35 var(--k-font); color: var(--tx-2); }
+.c-cd-gtile:hover { background: var(--sf-hover); }
+.c-cd-gtile:active { transform: translateY(1px); }
+.c-cd-gtile[aria-pressed="true"] { background: #FFFFFF; color: #1C1C1E; }
+.c-cd-gtile[aria-pressed="true"] span { color: #4A4A4E; }
+.c-cd-gtile:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* who's covering in New date's list: what it covers under its name */
+.c-ready-nm { display: flex; flex-direction: column; min-width: 0; }
+.c-ready-what { font: 400 13px/18px var(--k-font, var(--font)); color: var(--tx-3); }
+.c-ready-opt[aria-pressed="true"] .c-ready-what { color: #4A4A4E; }
+
+/* New date: what it is (out of town, hosting, a deadline), Not sure yet, and when, roughly */
+.c-ev-flags, .c-ev-unsure { margin-top: 8px; }
+.side .chips.c-ev-wins { margin-top: 4px; }
+.c-ev-winsay { margin: 8px 0 0; }
+
+/* quick add: a date or a heads-up it read */
+.quick-big span { font-variant-numeric: tabular-nums; }
+
+body.calm .c-cd-fold, body.calm .c-cd-add { transition: none; }

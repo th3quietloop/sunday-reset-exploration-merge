@@ -1,0 +1,47 @@
+/* == V11-2: the two big questions (docs/BIG-MOMENTS.md; board/src/app.js, the two big questions) ==
+   The morning after, yesterday's things that didn't get a check (Go through them opens a sheet where each is Done,
+   Move, or Let go), and a heads-up whose time to ask has come (Text {who}, gold, then Sent it? Mark it done). In
+   Today's strip on the desk and as the phone's one question. Type at 13, 14, and 16; every control 44 px tall on a
+   touch screen; every word on the near black surface at the tokens contrast.css holds (white, --tx-2). */
+
+/* == the desk's strip: a long question keeps its buttons on one row beside it, and wraps them under it when the
+   strip is narrow (the open Duo, an iPad on its side) == */
+body.k-today .moment.headsup, body.k-today .moment.yesterday { flex-wrap: wrap; row-gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+body.k-today .moment.headsup .moment-text, body.k-today .moment.yesterday .moment-text { flex: 1 1 260px; }
+body.k-today .moment.headsup .moment-acts, body.k-today .moment.yesterday .moment-acts { flex: 0 1 auto; flex-wrap: nowrap; }
+/* the strip's one gold is V11's gold, filled, the band's and the sheets' own (.go), with the near black ink on it */
+body.k-today .moment.headsup .moment-go, body.k-today .moment.yesterday .moment-go { background: var(--k-gold, #F2CF7A); color: var(--sf-ink, #1C1C1E); box-shadow: none; font-weight: 600; }
+body.k-today .moment.headsup .moment-go:hover, body.k-today .moment.yesterday .moment-go:hover { background: var(--gold-hi, #F7DA93); }
+@media (max-width: 1139px) {
+  body.k-today .moment.headsup .moment-acts { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; padding-left: 30px; }
+}
+
+/* == the sheet that goes through yesterday: each thing as the block it was (an outline: its time went by), and
+   under it three equal answers. An answered one stays in its row as what happened: done (the grey brick, its name
+   struck through), moved (solid, Moved to Thu 7 pm), or let go (an outline: No time now) == */
+.c-yd-lead { margin-top: 6px; }
+.c-yd-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.c-yd-row + .c-yd-row { margin-top: 16px; }
+.c-ts-brick.c-yd-brick { grid-template-columns: 16px minmax(0, 1fr); cursor: default; touch-action: auto; -webkit-user-select: text; user-select: text; }
+.c-ts-brick.c-yd-brick canvas { width: 16px; height: 16px; align-self: start; margin-top: 3px; }
+.c-yd-acts { display: flex; gap: 8px; margin-top: 8px; }
+.c-yd-b { flex: 1 1 0; min-width: 0; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px var(--k-font); white-space: nowrap; cursor: pointer; }
+.c-yd-b canvas { flex: none; width: 14px; height: 14px; }
+.c-yd-b:hover { background: var(--sf-press); }
+.c-yd-b:active { transform: translateY(1px); }
+.c-yd-b:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-yd-lead:focus { outline: none; }
+
+/* (on the phone's list a brick has no grip and one column; here its mark keeps its place beside the name) */
+body.phone:not(.phone-desk) .c-ts-brick.c-yd-brick { grid-template-columns: 16px minmax(0, 1fr); }
+
+/* == the phone's one question: both questions are long, so the answer is full width under the words, and the put
+   offs are words under that == */
+.td-card.c-big-ask > h2 { margin: 0; }
+.td-card.c-big-ask > .go.c-ph-g, .td-card.c-big-ask > .small.c-ph-decide { display: flex; width: 100%; min-height: 52px; margin-top: 12px; justify-content: center; text-align: center; }
+.td-card.c-big-ask > .small.c-ph-decide { border: 0; border-radius: 16px; background: var(--sf-hover); color: var(--tx); font: 600 16px var(--k-font); }
+.td-card.c-big-ask > .small.c-ph-decide:hover { background: var(--sf-press); }
+.td-card.c-big-ask .c-ph-later { flex-wrap: wrap; column-gap: 8px; }
+
+body.calm .c-yd-b:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-yd-b:active { transform: none; } }

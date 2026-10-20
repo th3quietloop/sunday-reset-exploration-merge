@@ -1,0 +1,4 @@
+/* V11: found by the tests pass. White fill means selected, and it stays white under the pointer: a hover
+   that dims it leaves dark words on dark glass (about 1.2 to 1), right after the click that picked it */
+.wkcell[aria-pressed="true"]:hover:not(:disabled) { background: #FFFFFF; }
+.k-pill[aria-pressed="true"]:hover { background: var(--cream); }

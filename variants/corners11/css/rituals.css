@@ -113,22 +113,23 @@
 
 /* == the grocery list: things that aren't for a meal, and the store view == */
 .c-shop-add { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
-.c-shop-add .c-find { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: #FFFFFF; box-shadow: inset 0 0 0 1.5px rgba(123, 83, 32, 0.35); color: #2A2118; font: 500 16px/1.2 var(--k-font); }
-/* on the paper the field's edge is the paper's brown at 70 percent, about 3.1 to 1 (at 35 it read 1.6), and a ring
-   on the paper is the dark ring, since the corners' white ring vanishes there; the field's own focus edge still wins */
-.c-shop-paper .c-shop-add .c-find { box-shadow: inset 0 0 0 1.5px rgba(123, 83, 32, 0.7); }
-.c-shop-add .c-find::placeholder { color: #76664F; }
-.c-shop-add .c-find:focus, .c-shop-paper .c-shop-add .c-find:focus { outline: none; box-shadow: inset 0 0 0 2px #4A3418; }
-.c-shop-paper button:focus-visible, .c-shop-paper input:focus-visible, .c-shop-paper label:focus-visible { outline-color: var(--ring-dark, #1E1408); }
-.c-shop-paper .c-shop-add .c-again { min-height: 44px; background: #4A3418; box-shadow: none; color: #FFFFFF; }
-.c-shop-paper .c-shop-add .c-again:hover { background: #5C4024; }
+.c-shop-add .c-find { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--sf); box-shadow: inset 0 0 0 1.5px var(--tx-2); color: var(--tx); font: 500 16px/1.2 var(--k-font); }
+/* on the list's dark (meals.css) the field is the meal board's search, its edge the light grey the check boxes use
+   (5.5 to 1 or more on the leather), and every ring there is white */
+.c-shop-add .c-find::placeholder { color: var(--tx-3); }
+.c-shop-add .c-find:focus { outline: none; box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-shop-paper button:focus-visible, .c-shop-paper input:focus-visible, .c-shop-paper label:focus-visible { outline-color: #FFFFFF; }
+.c-shop-paper .c-shop-add .c-again { min-height: 44px; background: var(--sf-raised); color: var(--tx); }
+.c-shop-paper .c-shop-add .c-again:hover { background: var(--sf-hover); }
 .c-shop-off { flex: none; width: 44px; height: 44px; margin: -8px -10px -8px auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
-.c-shop-off:hover { background: rgba(123, 83, 32, 0.12); }
-.c-shop-off:focus-visible { outline: 2px solid #4A3418; outline-offset: -2px; }
-.c-shop-off canvas { width: 12px !important; height: 12px !important; }
-.c-cartfold { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; padding: 0 12px; border: 0; border-radius: 10px; background: rgba(123, 83, 32, 0.1); color: #4A3418; font: 600 14px/1.2 var(--k-font); cursor: pointer; }
-.c-cartfold:focus-visible { outline: 2px solid #4A3418; outline-offset: 2px; }
-.c-cartfold canvas { width: 12px !important; height: 12px !important; }
+.c-shop-off:hover { background: var(--sf-hover); }
+.c-shop-off:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -2px; }
+/* (its x, and the cart's arrow, are drawn in the paper's brown; on the dark they're white) */
+.c-shop-off canvas { width: 12px !important; height: 12px !important; filter: brightness(0) invert(1); }
+.c-cartfold { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--sf-raised); color: var(--tx); font: 600 14px/1.2 var(--k-font); cursor: pointer; }
+.c-cartfold:hover { background: var(--sf-hover); }
+.c-cartfold:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+.c-cartfold canvas { width: 12px !important; height: 12px !important; filter: brightness(0) invert(1); }
 .c-shop-group.c-incart { margin-top: 4px; }
 .c-storebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .c-storebar[hidden] { display: none; }
@@ -160,6 +161,11 @@ body.c-resetting .rack.resetting .rack-body > .rsec.pp-ideas.pp-first { flex: 1 
 /* == the finish: a picture of the plan is the second way to send it == */
 .k .c-again.c-fin-pic, .c-again.c-fin-pic { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; min-height: 44px; margin-top: 8px; background: transparent; color: var(--tx, #FFFFFF); cursor: pointer; }
 .c-fin-pic canvas { width: 14px !important; height: 14px !important; }
+/* V11-2 (Oct 20): private by default, so the finish's way out has its switch, Include to-dos (off), and the line
+   that says what goes out, each across the panel like the plan's cards */
+body.c-resetting .rack.resetting .rack-body > .c-fin-sharesw, body.c-resetting .rack.resetting .rack-body > .c-fin-shareline { flex: 1 1 100%; width: 100%; min-width: 0; }
+.c-fin-sharesw { margin-top: 8px; }
+.c-fin-shareline { margin: 6px 0 0; font: 500 14px/1.45 var(--k-font); color: var(--tx-2); }
 
 /* == Look ahead: the holiday grid's Done at its top, in view while the tiles scroll == */
 .c-ah-holtop { position: sticky; top: -4px; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -4px 8px; padding: 8px 4px; background: var(--sf-solid, #232325); }

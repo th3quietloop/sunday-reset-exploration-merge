@@ -30,6 +30,22 @@ export async function connect(port, opts = {}) {
   const errors = [];
   const listeners = new Set();
   const three = localThree();
+  /* (the unhappy gate: requests whose address matches a route are answered here, to stage a server that's down,
+     slow, or wrong. route(glob, fn): fn(request) gives { status, body, type, wait } to answer with, 'fail' to cut
+     it like a lost connection, 'hang' never to answer, or null to let it go to the network) */
+  const routes = [];
+  const globRe = (g) => new RegExp('^' + g.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+  const answer = (p) => {
+    const r = routes.find((x) => x.re.test(p.request.url));
+    let a = null;
+    if (r) { try { a = r.fn(p.request); } catch (e) { a = null; } }
+    if (a === 'hang') return;
+    if (a === 'fail') { send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'InternetDisconnected' }).catch(() => {}); return; }
+    if (!a) { send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => {}); return; }
+    const body = a.body == null ? '' : typeof a.body === 'string' ? a.body : JSON.stringify(a.body);
+    const go = () => send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: a.status || 200, responseHeaders: [{ name: 'Content-Type', value: a.type || 'application/json' }, { name: 'Cache-Control', value: 'no-store' }], body: Buffer.from(body).toString('base64') }).catch(() => {});
+    if (a.wait) setTimeout(go, a.wait); else go();
+  };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.id && waiting.has(msg.id)) {
@@ -41,8 +57,9 @@ export async function connect(port, opts = {}) {
     /* three.js from node_modules instead of the CDN (the same bytes, so its integrity check passes) */
     if (msg.method === 'Fetch.requestPaused') {
       const p = msg.params;
-      if (three && /three@0\.160\.0\/build\/three\.min\.js/.test(p.request.url)) send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/javascript' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: three.toString('base64') }).catch(() => {});
-      else send('Fetch.continueRequest', { requestId: p.requestId }).catch(() => {});
+      /* (a route answers first, so the unhappy gate can take three.js away) */
+      if (three && /three@0\.160\.0\/build\/three\.min\.js/.test(p.request.url) && !routes.some((x) => x.re.test(p.request.url))) send('Fetch.fulfillRequest', { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/javascript' }, { name: 'Access-Control-Allow-Origin', value: '*' }], body: three.toString('base64') }).catch(() => {});
+      else answer(p);
       return;
     }
     events.push(msg);
@@ -68,9 +85,15 @@ export async function connect(port, opts = {}) {
   await send('Log.enable');
   if (three) await send('Fetch.enable', { patterns: [{ urlPattern: '*three@0.160.0*' }] });
 
+  const fetchFor = () => (three ? [{ urlPattern: '*three@0.160.0*' }] : []).concat(routes.map((x) => ({ urlPattern: x.glob })));
   const c = {
     send, events, errors, listeners, ws, browser: 'chrome',
     close() { try { ws.close(); } catch (e) { /* fine */ } },
+    /* (the unhappy gate) answer or cut requests to addresses like glob (above), until unroute; offline(true) is the
+       page with no connection at all (navigator.onLine false, every request failing), offline(false) brings it back */
+    async route(glob, fn) { routes.push({ glob, re: globRe(glob), fn }); await send('Fetch.enable', { patterns: fetchFor() }); },
+    async unroute() { routes.length = 0; if (three) await send('Fetch.enable', { patterns: fetchFor() }); else await send('Fetch.disable').catch(() => {}); },
+    async offline(on) { await send('Network.emulateNetworkConditions', { offline: !!on, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }); },
     async ev(js) {
       const r = await send('Runtime.evaluate', { expression: js, awaitPromise: true, returnByValue: true, userGesture: true });
       if (r.exceptionDetails) return { __error: (r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text };

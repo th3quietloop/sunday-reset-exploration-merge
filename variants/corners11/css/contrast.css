@@ -26,6 +26,9 @@
 
 /* == words on the phone's desk: the list's times, open time, Bed, and Earlier == */
 .td-time, .td-open, .td-bed, .td-bed small, .td-earlier { color: var(--desk-ink); }
+/* free time in the list is drawn on the desk itself (no block under its words), so its words are the desk's too: its
+   own brown, #3F2A12, read 4.2 to 1 low on the gradient (V11-2's walk: a free evening under a long question) */
+.td-block.free { color: var(--desk-ink); }
 /* Earlier's plate is a pale wash on the desk, not a darker one: dark at 12 percent took the gradient's dark end
    down to where even near black read 4.4 to 1; pale at 20 percent keeps it 6 to 1 or more all the way down */
 .td-earlier { background: rgba(255, 248, 236, 0.2); }
@@ -40,8 +43,8 @@
    percent to clear 3 to 1 on the leather (3.4 to 3.9; it read 1.5 to 1.7), and a day's meal field on the board
    takes it too (5.4 to 5.9; it read 1.4) */
 .c-mat .c-find { border-color: rgba(255, 255, 255, 0.55); }
-/* (the grocery list's add row on the paper, its edge and its rings, is rituals.css's own: the edge at 70 percent and
-   the dark ring there, --ring-dark from this file) */
+/* (the grocery list's add row, its edge and its rings, is rituals.css's own: since Oct 20 the list is on the meal
+   board's dark, meals.css, so its field's edge is the light grey and its rings are white) */
 .input::placeholder, .quick-in::placeholder { color: var(--field-hint); }
 
 /* == switches == */
@@ -80,9 +83,3 @@
    (On a phone a panel's x is Done in the sheet's solid header, sheet.css, which keeps its own.) == */
 #drawer-x, #side .side-x { background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
 #drawer-x:hover, #side .side-x:hover { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }
-
-/* == the kinds of day's list, now that it scrolls to fit the window (planner.css, 3.2): a flex column of a set height
-   squeezed each kind's row shorter than its words, so on the open Duo "Your usual" spilled off its white plate onto
-   the dark list (1.09 to 1) and the rows ran into each other. Each row keeps its height and the list scrolls. (This
-   belongs beside planner.css's rule; it's here until it's there.) == */
-.kinds-row > .kind, .kinds-row > .kind-wrap { flex-shrink: 0; }

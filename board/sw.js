@@ -7,8 +7,12 @@
 const SHELL = 'sundayreset-merge-shell-v2';
 const KEEP = /\.(?:js|css|html|webmanifest|png|webp|svg|woff2?)$|\/$/;
 const OTHER = /^https:\/\/(?:cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
+/* (V11-2, the unhappy gate: each file is kept on its own, so one that can't be fetched leaves the rest kept; addAll
+   kept nothing when any one failed, and the first visit's own requests come before the worker is there to keep
+   them, so an app opened offline after one visit came up without the desk) */
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/src/style.css', '/src/merge.css', '/src/focus.js', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png']).catch(() => {})).then(() => self.skipWaiting()));
+  const files = ['/', '/src/style.css', '/src/merge.css', '/src/focus.js', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
+  e.waitUntil(caches.open(SHELL).then((c) => Promise.all(files.map((f) => c.add(f).catch(() => {})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('sundayreset-merge-shell-') && k !== SHELL).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', (e) => {
@@ -25,7 +29,8 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(fetch(req).then((res) => {
     if (res && (res.ok || res.type === 'opaque')) { const copy = res.clone(); caches.open(SHELL).then((c) => c.put(key, copy)).catch(() => {}); }
     return res;
-  }).catch(() => caches.match(key).then((hit) => hit || Response.error())));
+  /* (a library from another site is kept by its address: the network's Vary on how it was compressed doesn't matter) */
+  }).catch(() => caches.match(key, { ignoreVary: true }).then((hit) => hit || Response.error())));
 });
 self.addEventListener('push', (e) => {
   let p = {};

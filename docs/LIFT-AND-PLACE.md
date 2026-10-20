@@ -619,7 +619,7 @@ Each item is a question a person would ask, ranked by how much it breaks or chea
 14. **The Blender brick master.** Recommended: **yes, after the build now list lands.** It makes stretch and length changes smooth and lets the desk draw bricks in far fewer calls.
 15. **Haptics.** Recommended: **in the native shell only**, per section 7.
 
-## 14. Built, Oct 15
+## 14. Built, Oct 15 (checked again on V11-2, Oct 20)
 
 Built on the night of Oct 14 into V11, with every recommendation in section 13 taken. The hand is on wherever V11's feel is (`FEEL`): `hand.use` in `board/src/scene.js`, `HAND` in `board/src/app.js`. The other variants keep the old paths.
 
@@ -629,7 +629,7 @@ Built on the night of Oct 14 into V11, with every recommendation in section 13 t
 
 | Part | As built |
 |:-|:-|
-| 3.1 Press | The dip and footprint squeeze on a spring (`press`, `feelBlock`). Tiles take a `pressed` class at pointerdown, so iOS shows it. On touch, a miss within 20 px picks the nearest movable brick (`nearBrick`). |
+| 3.1 Press | The dip and footprint squeeze on a spring (`press`, `feelBlock`). Tiles take a `pressed` class at pointerdown, so iOS shows it. On touch, a miss within 20 px takes the nearest movable brick (`nearBrick`) for a hold or a move; a tap acts on what's under the finger, so open time beside a block still opens that time (`hit.near`, `bdrag.under`). |
 | 3.2 Hold to lift | On the board too: a still 300 ms hold within 8 px lifts (`holdWait`, `liftBlock`), the brick rising from 120 ms. The card in hand starts from the held tile's 1.06. |
 | 3.3 Lift | (0.22 s, 0.62) to 1.5 on the week and 1.8 on the day; 1.12 in hand with a mouse or pen, 1.20 on touch; the face tipped toward you; the pick on the lift frame (`handStart`). |
 | 3.4 Seam | The card becomes the brick in 140 ms, both pinned at the spot you grabbed; the brick starts as wide as the card (up to 2.2 times) and its swing carries over. Back over a panel, the brick sinks to 0.6 as the card grows back out of it (`seamOut`, `seamIn`, `foldBack`). |
@@ -653,43 +653,75 @@ Built on the night of Oct 14 into V11, with every recommendation in section 13 t
 | 4.7 Place panel | The copy flies from the hero, read before the commit; the desk holds its insets until it lands (at most 1.5 s), and the toast comes after (`placeIt`, `holdInsets`). |
 | 5 Inputs | Mouse, pen, and touch by pointer type throughout. |
 | 6 Calmer and reduced motion | The one to one carry stays; no swing, size 1, no lean, placed at once with the highlight. Motion that isn't the carry stays at or under 0.25 s. |
-| 7 Sound | `clack(size, speed)` in three variants with jitter and loudness by speed; `tap` variants; `pick` jitter; detents 50 ms apart. |
+| 7 Sound | `clack(size, speed)` in three variants with jitter and loudness by speed; `tap` variants; `pick` jitter; detents 50 ms apart. Since Oct 20 the sound is made early and quietly, so the first press only resumes it, and with sound off there's no context at all (see Proof). |
 | 8 Performance | The aim runs once a frame (`carryFrame`): pointermove only stores it, and pointerup flushes it. The desk still draws only while something moves. |
 | 10 Tests | `tests/hand.test.mjs`: A2, A4, A5, A8, A11, the squash law, the no beat, and finite output, cut from scene.js the way the motion test cuts it. Measured there: the lift reaches 90 percent by 83 ms with a 7.1 percent overshoot and the size peaks at 1.129; a hard stop swings 9.1 degrees, the next swing is 34 percent of it, 0.27 degrees by 1.2 s, 0.12 at steady speed; the fall from 1.5 takes 104 ms; the squash peaks at 11.0 percent at 32 ms and rebounds 2.5. The probe, feel, and film scripts of section 10 were run from outside the repo, not added to `scripts/gate/`. |
 | 13 Decisions | All fifteen as recommended. For decision 2, the three presets are in Settings, Help, Dev, Lift and place (Calmer, Middle, Bolder), kept on the device (`sundayreset.hand`). |
 
 ### The 3D list
 
-Built in code: **1** (one clean rounded outline, `rrShape`), **2** (creased normals, 4 bevel segments, the corner at most 0.3 and the bevel at most 0.2 of the width), **4** (the hang rig), **5** (one contact shadow), **6** (the outline as a socket), **7** (touchdown in the screen's plane), **8** (a face you can read in hand), **9** (the underside a step darker, 0.82, as its own material group), **10** (the dust ring as a decal), **11** (the picked glow stays on the board), **12** (the line of light on the bevels, `onBeforeCompile` on Lambert, never the top), **13** (the groove level with the board), and **14** (flecks only where they read). **3** is in part: a re pick and a bench piece stay one object, without the cached widths.
+Built in code: **1** (one clean rounded outline, `rrShape`), **2** (creased normals, 4 bevel segments, the corner at most 0.3 and the bevel at most 0.2 of the width), **4** (the hang rig), **5** (one contact shadow), **6** (the outline as a socket), **7** (touchdown in the screen's plane), **8** (a face you can read in hand), **9** (the underside a step darker, 0.82, in the brick's own shader, so a brick is still one draw: a material group of its own made every brick three draws, 364 on the week where 210 do), **10** (the dust ring as a decal), **11** (the picked glow stays on the board), **12** (the line of light on the bevels, `onBeforeCompile` on Lambert, never the top), **13** (the groove level with the board), and **14** (flecks only where they read). **3** is in part: a re pick and a bench piece stay one object, without the cached widths.
 
 **Blender, written down and not faked:** the stretchable brick master (15) and the shallow recess in its underside (9); the 9 slice soft shadow in two softness levels (5); the dust ring and flecks as an 8 to 12 frame flipbook (10); worn edges (19); a padlock set flush (26); routed grooves with a lip (28); props with real normals and baked occlusion (29); one wood swatch set, and month and year inlays (42); tapered clock hands (43); brick stills for a lab page (41).
 
 ### Proof
 
-**The gate.** `npm run gate` (`release-gate.mjs`) on a build of this tree, on ports 4480 and 9480: **GREEN**. Chrome 303 of 303 drops at Mac 1440x900, iPad 820x1180, Duo folded 466x678 and iPhone 390x844, mouse and touch, three of each, on every path that's on each size; WebKit 57 of 57 at Mac size. At 07cfa4d, before this work: GREEN, the same 303 and 57. On the way the gate found two faults of this work's, both fixed: Undo of a placed block lost its step (3.18), and the meal board scrolled under a finger resting on its first row on the folded Duo (4.6). It also showed two paths had gone quiet under other changes the same night (`today-bench`, and `reset-meals` on a sheet): they run again, n/a now means only "not on this size", and every cell the last green run ran has to run again (docs/DRAG-GATE.md).
+**The gate, on V11-2** (Oct 20, `npm run gate` on a build of the `v11-2` branch, ports 4480 and 9480): **GREEN**.
+- Chrome: 303 of 303 drops at Mac 1440x900, iPad 820x1180, Duo folded 466x678 and iPhone 390x844, mouse and touch, three of each, on every path that's on each size. With the sound fix, the 4 first presses pass too.
+- WebKit: 57 of 57 at Mac size, and its first press.
+- The board at rest is exactly as wide as V11's in all five places it's measured.
+- The new to-do step paths, which belong to another builder, were left out of that run: at iPad size their panel covers the board. The tries to break it (`gate:full`'s, on the iPhone, the folded Duo, the iPad, and the Mac): **504 of 504**. At 07cfa4d, before this work: GREEN, the same 303 and 57.
 
-After the last changes (the shadow made while the desk loads, the hold for a piece in nested lists, the pointer kept), the folded Duo's meal drop with a finger ran 3 of 3 on a fresh build, and the new tries to break it with a sideways list under the lift point (held, jiggled, and carried; and flicked) ran 27 of 27 on the Duo, the iPhone, and the iPad. On 07cfa4d the flick lifts the piece instead of scrolling the list, 0 of 2: the gate catches it.
+On the way, the gate found five faults of this work's, all fixed:
+- Undo of a placed block lost its step (3.18).
+- On the folded Duo, the meal board scrolled under a finger resting on its first row (4.6).
+- With a finger, a tap on open time beside a block opened the block (3.1).
+- The underside group made every brick three draws.
+- A piece in a sideways list inside a list that scrolls down could lift on a move that list owns. It now lifts only on the hold, and a quick move scrolls.
 
-**Frame times on a phone** (iPhone 390x844, a finger, the reset's Your time onto the week, headless Chrome at 4x CPU throttling on an M4 Pro; the second and third carries of three):
+It also showed two paths had gone quiet under other changes the same night (`today-bench`, and `reset-meals` on a sheet). They run again, and two rules now keep that from recurring:
+- n/a means only "not on this size".
+- Every cell the last green run ran has to run again (docs/DRAG-GATE.md).
 
-| | 07cfa4d | Now |
+The new tries with a sideways list under the lift point fail on 07cfa4d (the flick lifts the piece, 0 of 2), so the gate catches the old way.
+
+**Frame times on a phone.** Conditions:
+- An iPhone 390x844 with a finger, carrying the reset's Your time onto the week.
+- Headless Chrome at 4x CPU throttling on an M4 Pro, a fresh Chrome for each build.
+- Oct 20, the load average 4 to 7 on 14 cores.
+- The second and third carries of three.
+
+| | 07cfa4d | V11-2 |
 |:-|:-|:-|
-| Frame interval, median and 95th percentile | 16.7 and 16.7 to 16.8 ms | 16.7 and 16.8 ms |
+| Frame interval, median and 95th percentile | 16.7 and 16.8 ms | 16.7 and 16.7 ms |
 | Frames over 33 ms in a carry | 1 | 1 |
-| The page's handling of a pointer move, median (95th percentile) | 4.0 to 6.1 ms (9.3 to 11.3) | 0.1 ms or less (0.7 to 1.0) |
-| The desk's draw, median | 5.6 ms | 5.2 to 5.3 ms |
-| Longest frame | 100 ms | 100 ms |
+| The page's handling of a pointer move, median (95th percentile) | 3.6 to 4.3 ms (7.0 to 7.1) | 0 ms (0.3) |
+| The desk's draw, median | 3.6 to 4.4 ms | 3.0 to 4.5 ms |
+| Longest frame | 67 ms | 67 ms |
 
-The one long frame left in a carry is letting go: the commit and the redraw run in pointerup (78 to 103 ms at 4x, as before this work). The first carry after a load also pays for the first touch (the sound starting and the first style pass, about 257 ms at 4x in pointerdown, as before) and the first frame with a block in hand; the shadow in hand is now made while the desk loads, so it isn't one of them.
+The one long frame left in a carry is letting go: the commit and the redraw run in pointerup, 57 to 65 ms of script at 4x, as before this work.
 
-**Clips** (CDP screencast and ffmpeg, in `docs/lift/`): `phone-touch.mp4`, the iPhone with a finger (the tile lifts, swings, and lands on today); `phone-touch-refused.mp4`, the same drop onto a locked block (it says no, why, and goes home); `phone-touch-before.mp4`, the same drop at 07cfa4d. An iPad Pro 1024x1366 with a finger and a Mac 1440x900 with a mouse follow.
+**The first press after a load** used to stop to start the sound: `new AudioContext()` inside the press held the page about 200 ms in Chrome, whether or not the CPU was throttled. On 07cfa4d that didn't show, because the gate's boot clicked the welcome's close mark first. Now (`board/src/sound.js`, `tests/sound.test.mjs`):
+- The sound is made early and quietly (suspended): once sound is on, while the page is idle and the desk at rest. Steam counts as rest; after 2 s it's made anyway.
+- A person's first touch or click only resumes it, inside that gesture. iPhone Safari starts it on a touch that ends, so the app asks again on pointerup and click.
+- Turned on from a tap in Settings, it's made right then, so the chime plays.
+- With sound off there's no context at all.
+
+Measured on a fresh load (a fresh Chrome, the iPhone, a finger on Your time, nothing pressed before): the page's time over the first press went from 196 ms to 2.5 ms at 4x, and from 226 ms to 0.4 ms at 1x. The gate now judges every first press after a load as its own row (`first-press`): at most 50 ms in the page, with the sound made before it. On V11-2 as it was before this fix, it fails at 202 ms. The shadow in hand is made while the desk loads too, so the first lift doesn't pay for it.
+
+**Clips** (CDP screencast and ffmpeg, in `docs/lift/`):
+- `phone-touch.mp4`: the iPhone with a finger; the tile lifts, swings, and lands on today.
+- `phone-touch-refused.mp4`: the same drop onto a locked block; it says no, says why, and goes home.
+- `phone-touch-before.mp4`: the same drop at 07cfa4d.
+- `ipad-pro-touch.mp4`: an iPad Pro 1024x1366 with a finger; a block on the week held, lifted, carried to Saturday, and landed.
+- `mac-mouse.mp4`: a Mac 1440x900 with a mouse; Workout from Block library onto Saturday's day board.
 
 ### Left, or for Russell
 
 - The done color beat (3.12).
-- Two long frames remain on a phone at 4x: the first seam compiles the brick's bevel material (about 48 ms; warming it at load would take it out of the carry), and letting go runs the commit and the redraw inside pointerup (69 to 83 ms, as before this work).
-- Section 10's scripts in the repo, with A6, A7, A13, A14, and A16 asserted by a script. A9 (refused) and A15 (Undo) were checked frame by frame; the gate's tries cover A10 (Escape) and A13 (Add from the place panel).
-- Section 10's fifteen minutes on a real iPhone, iPad, and Mac.
+- Letting go still runs the commit and the redraw inside pointerup, 57 to 65 ms at 4x on a phone, as before this work. That is the one long frame in a carry.
+- Section 10's scripts in the repo, with A6, A7, A13, A14, and A16 asserted by a script. A9 (refused) and A15 (Undo) were checked frame by frame; the gate's tries cover A10 (Escape), A13 (Add from the place panel), and the tap beside a block.
+- Section 10's fifteen minutes on a real iPhone, iPad, and Mac, including the change for a piece in a sideways list inside a list that scrolls down: the hold lifts it, and a quick move scrolls.
 - The Socratic list's Open items stay open.
 
 ## Appendix: the numbers in one place (`HAND_TUNE`)

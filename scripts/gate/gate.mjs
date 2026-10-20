@@ -10,13 +10,13 @@
 // nothing threw. Every attempt is undone, so the next starts from the same board. Exit code 1 if anything
 // failed. A finger presses until the tile lifts (lib/core.mjs TOUCH_HOLD) before it carries.
 // Paths: reset-yours reset-todo reset-meals reset-move reset-people lib-week lib-day stack-week stack-day
-//   move-week move-week-lib move-day stretch-week stretch-day today-bench today-move phone-move phone-stretch
+//   todo-step-week todo-step-day move-week move-week-lib move-day stretch-week stretch-day today-bench today-move phone-move phone-stretch
 //   setup-try setup-stretch desk-letters desk-home. Sizes: mac1 mac2 ipadL ipadP duoOpen duoFold duoSafari
 //   phone phoneL (or -sizes all). -real uses this device's own saved board; -newtab runs in a page of its
 //   own so several gates can run side by side; -clear-toasts starts each attempt with no toast.
 // -browser webkit runs the same paths in Playwright's WebKit with a mouse (WebKit takes no fingers from
 // Playwright, so touch is left out there and the summary says so).
-import { connect, newTab } from './lib/cdp.mjs';
+import { connect, newTab, sleep } from './lib/cdp.mjs';
 import { makeGate, SIZES } from './lib/core.mjs';
 import { parseArgs, runDir, session } from './lib/session.mjs';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -24,7 +24,7 @@ import { dirname, join } from 'node:path';
 
 const args = parseArgs(process.argv.slice(2));
 const N = +(args.n || 5);
-const ALL_PATHS = 'reset-yours,reset-todo,reset-meals,reset-move,reset-people,lib-week,lib-day,stack-week,stack-day,move-week,move-day,stretch-week,stretch-day,today-bench,today-move,phone-move,phone-stretch,setup-try,setup-stretch,desk-letters,desk-home';
+const ALL_PATHS = 'reset-yours,reset-todo,reset-meals,reset-move,reset-people,lib-week,lib-day,stack-week,stack-day,todo-step-week,todo-step-day,move-week,move-day,stretch-week,stretch-day,today-bench,today-move,phone-move,phone-stretch,setup-try,setup-stretch,desk-letters,desk-home';
 const webkit = args.browser === 'webkit';
 const sizes = (args.sizes === 'all' ? Object.keys(SIZES).join(',') : args.sizes || 'mac1').split(',');
 let inputs = (args.inputs || 'mouse').split(',');
@@ -58,9 +58,67 @@ const g = makeGate({ c, url: URL0, opts, shots });
 const results = [];
 const summary = {};
 const save = () => writeFileSync(OUT, J({ at: new Date().toISOString(), url: URL0, browser: webkit ? 'webkit' : 'chrome', opts, summary, results }, null, 1));
+/* V11-2: the first press after the page loads is a person's first impression of the desk. The page may take at most
+   FIRST_PRESS_MS over it, and with sound on the sound must be made before it: made inside the first press, it held
+   the page about 200 ms in Chrome, and a phone's first lift caught for a third of a second. Judged once per load,
+   on the first attempt, as its own row (first-press) */
+const FIRST_PRESS_MS = 50;
+function firstPress(size, input, style, r) {
+  const p = r.press;
+  if (!p) return;
+  const why = [];
+  if (p.on && (p.sound === 'none' || p.sound === 'soon')) why.push('the first press started the sound (it should be made before it)');
+  if (p.ms > FIRST_PRESS_MS) why.push('the page took ' + p.ms + ' ms over the first press (at most ' + FIRST_PRESS_MS + ')');
+  const key = `first-press | ${size} | ${input}`;
+  summary[key] = { pass: why.length ? 0 : 1, n: 1, skip: 0, why: why.length ? ['#0: ' + why.join('; ')] : [], soft: [] };
+  results.push({ size, input, path: 'first-press', i: 0, style, verdict: { pass: !why.length, why, soft: [] }, press: p });
+  say(`   ${key}: ${why.length ? 'FAIL ' + why.join('; ') : 'pass'} (${p.ms} ms, the sound ${p.sound}${p.on ? '' : ', off'})`);
+}
+/* V11-2: a boot that put something back at rest failed nothing, since the gate counts a page's errors inside each
+   drag. When the boot hid the week and showed it again before the first frame (a tab in the background does that,
+   a busy machine, Dev holding another day), the week board's rise read a number no step had written yet, and the
+   day's blocks flying home to it went with it. Each size's first load is its own row (boot): the watchdog put
+   nothing back at rest and said nothing. In Chrome that load gets no frames until the boot is done, and it opens
+   in Today the way a weekday does whatever the day (sundayreset.mode, which a preview reads and never writes), so
+   the boot's switch to the Planner's week hides and shows it before a frame every run, not only when the timing
+   happens to line up. (WebKit can't take a page script back once it's added, so there it's a plain boot.) */
+const HOLD_FRAMES = `(() => {
+  try { const d = new Date(), p = (n) => String(n).padStart(2, '0'); localStorage.setItem('sundayreset.mode', JSON.stringify({ date: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), mode: 'today' })); } catch (e) { /* fine */ }
+  const raf = window.requestAnimationFrame.bind(window), caf = window.cancelAnimationFrame.bind(window), held = new Map();
+  let on = false, n = 0;
+  window.requestAnimationFrame = (cb) => { if (on) return raf(cb); const id = 1e9 + (++n); held.set(id, cb); return id; };
+  window.cancelAnimationFrame = (id) => { if (!held.delete(id)) caf(id); };
+  window.__srFrames = () => { on = true; const q = [...held.values()]; held.clear(); q.forEach((cb) => raf(cb)); return q.length; };
+})();`;
+async function bootLoad(size) {
+  const hold = webkit ? null : await c.send('Page.addScriptToEvaluateOnNewDocument', { source: HOLD_FRAMES });
+  const e0 = c.errors.length;
+  let where, held = null;
+  try { where = await g.load(size); }
+  finally {
+    if (hold) {
+      held = await c.ev('window.__srFrames ? window.__srFrames() : null').catch(() => null);
+      await c.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: hold.identifier }).catch(() => {});
+    }
+  }
+  await sleep(1500);
+  const rep = JSON.parse(await c.ev('JSON.stringify(World.debug.repairs || { count: 0, list: [] })'));
+  const said = c.errors.slice(e0).filter((e) => /not a number/.test(e.text || ''));
+  const why = [];
+  if (rep.count) why.push('the watchdog put ' + rep.count + ' back at rest: ' + [...new Set(rep.list.map((x) => x.what + (x.key ? ' ' + x.key : '')))].slice(0, 3).join(', '));
+  else if (said.length) why.push('the console said: ' + said[0].text.slice(0, 160));
+  const key = `boot | ${size}`;
+  summary[key] = { pass: why.length ? 0 : 1, n: 1, skip: 0, why: why.length ? ['#0: ' + why.join('; ')] : [], soft: [] };
+  /* (input load: the matrix prints it as a count of its own, and last-green.json holds it like any cell) */
+  results.push({ size, input: 'load', path: 'boot', i: 0, verdict: { pass: !why.length, why, soft: [] }, cold: !!hold, held });
+  return { where, line: `   ${key}: ${why.length ? 'FAIL ' + why.join('; ') : 'pass'} (${hold ? 'no frames until the boot was done, ' + held + ' held back' : 'a plain boot'})` };
+}
 try {
   for (const size of sizes) {
-    say(`== ${size} ${await g.load(size)}`);
+    const boot = await bootLoad(size);
+    say(`== ${size} ${boot.where}`);
+    say(boot.line);
+    let fresh = true;
     for (const pathId of paths) {
       let setup = await g.setupPath(pathId);
       /* n/a means only that a path isn't on this size (the path says so: na). A setup that couldn't open its place
@@ -89,7 +147,7 @@ try {
               summary[key].skip++;
               say(`   ${key} #${i}: ${r.skip ? 'skip ' + r.skip : 'ERROR ' + r.error}`);
               results.push(Object.assign({ size, input, path: pathId, i, style }, r));
-              if (r.error) { await g.load(size); await g.setupPath(pathId); }
+              if (r.error) { await g.load(size); fresh = true; await g.setupPath(pathId); }
               continue;
             }
             summary[key].n++;
@@ -97,9 +155,10 @@ try {
             if (r.verdict.soft.length) summary[key].soft.push('#' + i + ': ' + r.verdict.soft.join('; '));
             results.push(r);
             say(`   ${key} #${i}: ${r.verdict.pass ? 'pass' : 'FAIL ' + r.verdict.why.join('; ')}${r.verdict.soft.length ? ' (' + r.verdict.soft.join('; ') + ')' : ''}`);
+            if (fresh) { fresh = false; firstPress(size, input, style, r); }
             /* a path whose place closed (a step that moved on, a panel that went) opens again */
             setup = await g.setupPath(pathId);
-            if (setup.skip) { await g.load(size); await g.setupPath(pathId); }
+            if (setup.skip) { await g.load(size); fresh = true; await g.setupPath(pathId); }
           }
           save();
         }

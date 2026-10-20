@@ -100,9 +100,12 @@
       this.rawLocal = doc ? JSON.parse(JSON.stringify(doc)) : null;
     },
 
-    /* Start a household with this device's board. */
+    /* Start a household with this device's board. (V11-2, the unhappy gate: a connection lost on the way, or a server
+       that never answers in 15 seconds, is an answer like any other, { error: 'offline' }, so the page says so;
+       it was a promise nobody caught, and nothing was said) */
     async start(doc, name, device) {
-      const r = await this.api('POST', '/api/household', { name, doc, device: { name: device || deviceName() } });
+      let r;
+      try { r = await this.api('POST', '/api/household', { name, doc, device: { name: device || deviceName() } }); } catch (e) { return { error: 'offline' }; }
       if (r.status !== 200) return { error: r.json.error || 'failed' };
       this.remember({ hid: r.json.household.id, did: r.json.device.id, token: r.json.token, name: r.json.household.name, version: r.json.version }, doc);
       this.set('saved');
@@ -112,15 +115,16 @@
     /* Link this device with a code from another device, or with the household key. Resolves the
        household's board, which replaces what's on this device. */
     async link(what, device) {
-      const r = await this.api('POST', '/api/link', Object.assign({ device: { name: device || deviceName() } }, what));
+      let r;
+      try { r = await this.api('POST', '/api/link', Object.assign({ device: { name: device || deviceName() } }, what)); } catch (e) { return { error: 'offline' }; }
       if (r.status !== 200) return { error: r.json.error || 'failed' };
       this.remember({ hid: r.json.household.id, did: r.json.device.id, token: r.json.token, name: r.json.household.name, version: r.json.version }, r.json.doc);
       this.set('saved');
       this.poll();
       return { doc: r.json.doc, household: r.json.household };
     },
-    async makeCode() { const r = await this.api('POST', '/api/link/start', {}); return r.status === 200 ? r.json : { error: r.json.error || 'failed' }; },
-    async devices() { const r = await this.api('GET', '/api/devices'); return r.status === 200 ? r.json : null; },
+    async makeCode() { try { const r = await this.api('POST', '/api/link/start', {}); return r.status === 200 ? r.json : { error: r.json.error || 'failed' }; } catch (e) { return { error: 'offline' }; } },
+    async devices() { try { const r = await this.api('GET', '/api/devices'); return r.status === 200 ? r.json : null; } catch (e) { return null; } },
     async removeDevice(id) { try { return (await this.api('DELETE', '/api/devices?id=' + encodeURIComponent(id))).status === 200; } catch (e) { return false; } },
     async renameDevice(id, name) { try { const r = await this.api('PATCH', '/api/devices', { id, name }); return r.status === 200 ? r.json : { error: r.json.error || 'failed' }; } catch (e) { return { error: 'offline' }; } },
     /* earlier saves of the household's board, kept by the server */
@@ -273,20 +277,25 @@
       /* with no worker registered this promise never settles, so it gets five seconds and then says so */
       const reg = await Promise.race([navigator.serviceWorker.ready, wait(5000).then(() => null)]);
       if (!reg) return { error: 'no-worker' };
+      /* (V11-2, the unhappy gate: with no connection it says so, { error: 'offline' }, instead of a promise nobody
+         caught. Off still works: this device's subscription is gone at once, and the server lets go of one that
+         no longer answers) */
       if (!on) {
-        const sub = await reg.pushManager.getSubscription();
+        const sub = await reg.pushManager.getSubscription().catch(() => null);
         if (sub) await sub.unsubscribe().catch(() => {});
-        await this.api('DELETE', '/api/push');
+        try { await this.api('DELETE', '/api/push'); } catch (e) { /* offline: the subscription above is gone already */ }
         return { on: false };
       }
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return { error: 'denied' };
-      const raw = atob(this.cfg.vapid.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - this.cfg.vapid.length % 4) % 4));
-      const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-      const r = await this.api('POST', '/api/push', { sub: sub.toJSON(), prefs, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
-      return r.status === 200 ? { on: true } : { error: r.json.error || 'failed' };
+      try {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return { error: 'denied' };
+        const raw = atob(this.cfg.vapid.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - this.cfg.vapid.length % 4) % 4));
+        const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        const r = await this.api('POST', '/api/push', { sub: sub.toJSON(), prefs, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+        return r.status === 200 ? { on: true } : { error: r.json.error || 'failed' };
+      } catch (e) { return { error: navigator.onLine === false || (e && e.name === 'TimeoutError') || e instanceof TypeError ? 'offline' : 'failed' }; }
     },
     /* A calendar someone subscribed to, fetched by the server. Its address can be a secret (Google's
        and Outlook's private links are), so it travels in the body, never in the address the server logs. */

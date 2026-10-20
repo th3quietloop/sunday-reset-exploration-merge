@@ -54,8 +54,10 @@ function around(px, [x, y, w, h], radius = 0) {
   for (let t = 0.34; t <= 0.66; t += 0.04) {
     const X = x + w * t, Y = y + h * t;
     outside.push(px.at(X, y - 3.5), px.at(X, y + h + 3.5), px.at(x - 3.5, Y), px.at(x + w + 3.5, Y));
-    /* (an edge is sampled at a few depths, since a 1 px border at a fractional position can fall between pixels) */
-    for (const d of [0.5, 1, 1.5, 2.2]) edge.push([px.at(X, y + d), px.at(X, y + h - d), px.at(x + d, Y), px.at(x + w - d, Y)]);
+    /* (an edge is sampled at a few depths, since a 1 px border at a fractional position can fall between pixels, and
+       the browser snaps it to whole pixels, which can put it right on the box's line: the meal board's day card at
+       the open Duo, x 344.125, drew its top and right edges there) */
+    for (const d of [0, 0.5, 1, 1.5, 2.2]) edge.push([px.at(X, y + d), px.at(X, y + h - d), px.at(x + d, Y), px.at(x + w - d, Y)]);
   }
   const ix = x + Math.max(3, k * 0.6), iy = y + Math.max(3, k * 0.6), iw = w - 2 * Math.max(3, k * 0.6), ih = h - 2 * Math.max(3, k * 0.6);
   if (iw > 1 && ih > 1) inside.push(...px.area(ix, iy, iw, ih, 200));
@@ -113,8 +115,9 @@ export function judge(list, img) {
       let edge = a.inside || a.outside, best = 1;
       for (const four of a.edges) for (const e of four) { const r = ratio(e, a.outside); if (r > best) { best = r; edge = e; } }
       /* an edge the eye can follow is the strongest edge pixel that shows on most sides, not one stray */
-      const sides = [0, 1, 2, 3].map((s) => Math.max(...a.edges.map((four) => ratio(four[s], a.outside))));
-      sides.sort((p, q) => p - q);
+      /* (top, bottom, left, right, as measured: kept in the result, so a weak side can be found) */
+      const each = [0, 1, 2, 3].map((s) => Math.max(...a.edges.map((four) => ratio(four[s], a.outside))));
+      const sides = each.slice().sort((p, q) => p - q);
       const edgeR = sides[1];
       const fillR = a.inside ? ratio(a.inside, a.outside) : 1;
       let r = Math.max(edgeR, fillR), markR = 1;
@@ -127,7 +130,7 @@ export function judge(list, img) {
       }
       /* a field with no edge, fill, or ring at rest has nothing to measure: it's read as words (it's listed) */
       const bare = it.kind === 'field' && it.bare;
-      out.push({ kind: it.kind, text: it.text, path: it.path, ratio: r2(r), need: 3, pass: bare || r >= 3, bare: bare || undefined, edge: r2(edgeR), fill: r2(fillR), inner: markR > 1 ? r2(markR) : undefined, inside: a.inside && hex(a.inside), outside: hex(a.outside), edgeColor: hex(edge), disabled: it.disabled, rect: it.rect });
+      out.push({ kind: it.kind, text: it.text, path: it.path, ratio: r2(r), need: 3, pass: bare || r >= 3, bare: bare || undefined, edge: r2(edgeR), sides: each.map(r2), fill: r2(fillR), inner: markR > 1 ? r2(markR) : undefined, inside: a.inside && hex(a.inside), outside: hex(a.outside), edgeColor: hex(edge), disabled: it.disabled, rect: it.rect });
     } else if (it.kind === 'mark') {
       const [x, y, w, h] = it.mark;
       if (w < 3 || h < 3) continue;

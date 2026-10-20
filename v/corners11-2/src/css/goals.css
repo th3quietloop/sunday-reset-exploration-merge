@@ -1,0 +1,210 @@
+/* == V11 goals: Goals, a goal's panel, New goal, a session's panel, the one question about yesterday, the
+   Sunday Reset's Goals step, and a goal's date in Look ahead (board/src/app.js, "V11 goals") ==
+   The surface tokens from polish.css, white for what's selected, gold only for a surface's one call to action
+   (New goal, Next, Start the plan, Done, Place this week's share). Type at 12, 13, 14, 16, 19, and 22; every
+   control 44 px tall; spacing on 4 px steps; nothing moves longer than a quarter second. A goal's color is its
+   sessions' color, so its mark and its bar wear it; words never sit on it. */
+
+/* the goal's mark on its own color, the way its sessions look on the board */
+.c-gl-mark { flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--bg); display: grid; place-items: center; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18); }
+.c-gl-mark canvas { width: 20px !important; height: 20px !important; }
+
+/* == Goals: one card each, New goal last (it rides the foot, never faded by the panel's fade) == */
+#side.more:has([data-fk="gl-new"]) { -webkit-mask-image: none; mask-image: none; }
+.c-gl-list { display: flex; flex-direction: column; gap: 8px; }
+.c-gl-card { display: flex; flex-direction: column; gap: 12px; width: 100%; padding: 16px; border: 0; border-radius: 16px; background: var(--sf-raised); color: var(--tx); text-align: left; font: inherit; cursor: pointer; transition: background-color 0.12s ease-out; }
+.c-gl-card:hover { background: var(--sf-hover); }
+.c-gl-card:active { transform: translateY(1px); }
+.c-gl-card:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-gl-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.c-gl-words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-gl-name { font: 700 16px/22px var(--name); color: var(--tx); overflow-wrap: anywhere; }
+.c-gl-when { margin: 0; font: 400 13px/18px var(--font); color: var(--tx-2); }
+.c-gl-week { margin: 0; font: 400 13px/18px var(--font); color: var(--tx-2); }
+
+/* hours done of all of them: a bar in the goal's color, the numbers, and where it stands */
+.c-gl-progress { display: flex; flex-direction: column; gap: 8px; }
+.c-gl-bar { display: block; height: 8px; border-radius: 4px; background: var(--sf-hover); overflow: hidden; }
+.c-gl-bar i { display: block; height: 100%; border-radius: 4px; background: var(--bg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.c-gl-nums { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.c-gl-nums b { font: 600 14px/20px var(--font); color: var(--tx); font-variant-numeric: tabular-nums; }
+.c-gl-stand { font: 600 13px/18px var(--font); text-align: right; }
+.c-gl-stand.ok { color: var(--good); }
+/* behind is a fact in plain white, never red */
+.c-gl-stand.behind { color: var(--tx); }
+.c-gl-stand.quiet { color: var(--tx-3); font-weight: 400; }
+/* time that went by with no word yet: said apart from what's done, never as done */
+.c-gl-unc { font: 400 13px/18px var(--font); color: var(--tx-2); }
+
+/* == a goal's own panel == */
+.side-in:has(> .c-gl-hero) { gap: 16px; }
+.c-gl-hero { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; }
+.c-gl-hero .c-gl-mark { width: 44px; height: 44px; }
+.c-gl-hero .c-gl-mark canvas { width: 22px !important; height: 22px !important; }
+.c-gl-hw { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.side .side-title.c-gl-title { padding-right: 0; font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
+.c-gl-sec { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.c-gl-standing { gap: 12px; padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-gl-h { margin: 0; font: 600 14px/20px var(--font); color: var(--tx-2); }
+.c-gl-hrow { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.c-gl-hn { font: 400 13px/18px var(--font); color: var(--tx-3); }
+.c-gl-say { margin: 0; font: 400 14px/20px var(--font); color: var(--tx-2); }
+.c-gl-behind { margin: 0; font: 600 14px/20px var(--font); color: var(--tx); }
+.c-gl-sec > .go { align-self: flex-start; min-height: 44px; }
+
+/* the next session, a tap from its block */
+.c-gl-next { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: center; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); text-align: left; font: inherit; cursor: pointer; }
+.c-gl-next:hover { background: var(--sf-press); }
+.c-gl-next .c-gl-nk { grid-row: 1 / 3; font: 600 12px/16px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-2); }
+.c-gl-next b { font: 600 14px/20px var(--font); }
+.c-gl-next span:last-child { font: 400 13px/18px var(--font); color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* this week's sessions, one row each; one that didn't happen is a quiet outline, never red */
+.c-gl-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.c-gl-row { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 4px 12px 4px 8px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); text-align: left; font: inherit; }
+button.c-gl-row { cursor: pointer; }
+button.c-gl-row:hover { background: var(--sf-hover); }
+.c-gl-row.skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-gl-rmark { display: grid; place-items: center; }
+.c-gl-rmark canvas { width: 16px !important; height: 16px !important; }
+.c-gl-rday { font: 600 13px/18px var(--font); color: var(--tx-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-gl-rname { font: 400 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-gl-rdur { font: 400 13px/18px var(--font); color: var(--tx-2); white-space: nowrap; }
+.c-gl-row.skipped .c-gl-rday, .c-gl-row.skipped .c-gl-rname, .c-gl-row.skipped .c-gl-rdur { color: var(--tx-3); }
+/* one whose time went by with no word asks, in plain grey, never red */
+.c-gl-row.unsure .c-gl-rdur { color: var(--tx); font-weight: 600; }
+
+/* the parts, each checked off when it's done */
+.c-gl-plist { display: flex; flex-direction: column; gap: 4px; }
+.c-gl-prow { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 44px; padding: 4px 12px; border-radius: 12px; background: var(--sf-raised); cursor: pointer; }
+.c-gl-prow:hover { background: var(--sf-hover); }
+.c-gl-pn { font: 400 14px/20px var(--font); color: var(--tx); overflow-wrap: anywhere; }
+.c-gl-ph { font: 400 13px/18px var(--font); color: var(--tx-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.c-gl-prow.done .c-gl-pn { color: var(--tx-3); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+
+/* chips in the goal's panels are 44 px to tap */
+.c-gl-chips .chip-btn { min-height: 44px; }
+/* each day 44 px to tap, even in a phone's narrow panel: the round day shows a little smaller inside its own
+   target (the chip's transparent border), and the gaps close up before any target shrinks */
+.chips.days7.c-gl-days { grid-template-columns: repeat(7, 44px); column-gap: clamp(0px, calc((100% - 308px) / 6), 6px); }
+.chips.days7.c-gl-days .chip-btn { width: 44px; height: 44px; aspect-ratio: auto; background-clip: padding-box; }
+/* (a phone narrower than the seven days takes them in two rows) */
+@media (max-width: 380px) { .chips.days7.c-gl-days { grid-template-columns: repeat(4, 44px); gap: 8px; } }
+/* Next waits for a day with time on it, and says so */
+.c-gl-why { color: var(--tx); }
+
+/* the ways to change it */
+.c-gl-acts, .c-gl-sacts { display: flex; flex-wrap: wrap; gap: 8px; }
+.c-gl-acts .small, .c-gl-sacts .small, .c-gl-sacts .go { min-height: 44px; }
+
+/* what would make a short plan fit: each a row with what it holds */
+.c-gl-fixes { display: flex; flex-direction: column; gap: 8px; }
+.c-gl-fix { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--sf-hover); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); text-align: left; font: inherit; cursor: pointer; }
+.c-gl-fix:hover { background: var(--sf-press); }
+.c-gl-fix:active { transform: translateY(1px); }
+.c-gl-fix b { font: 600 14px/20px var(--font); }
+.c-gl-fix span { font: 400 13px/18px var(--font); color: var(--tx-2); }
+
+/* == New goal: a question at a time == */
+.c-gl-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: -8px; }
+.c-gl-steps i { height: 4px; border-radius: 2px; background: var(--sf-hover); }
+.c-gl-steps i.did, .c-gl-steps i.on { background: #FFFFFF; }
+/* a known exam names itself under the box as you type */
+.c-gl-match { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px; border-radius: 12px; background: var(--sf-raised); }
+.c-gl-match[hidden] { display: none; }
+.c-gl-match canvas { width: 20px !important; height: 20px !important; margin-top: 2px; }
+.c-gl-mw { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-gl-mw b { font: 600 14px/20px var(--font); color: var(--tx); }
+.c-gl-mw span { font: 400 13px/18px var(--font); color: var(--tx-2); }
+/* suggestions that fill a box: outlined pills under it */
+.c-gl-suggest { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+.c-gl-suggest[hidden] { display: none; }
+.c-gl-pill { min-height: 44px; padding: 8px 16px; border: 0; border-radius: 22px; background: transparent; color: var(--tx); font: 500 14px/20px var(--font); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); cursor: pointer; }
+.c-gl-pill:hover { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.c-gl-pill:active { transform: translateY(1px); }
+.c-gl-pill[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); box-shadow: none; }
+/* the parts: a name, its hours, and a way off */
+.c-gl-parts { display: flex; flex-direction: column; gap: 8px; }
+.c-gl-part { display: grid; grid-template-columns: minmax(0, 1fr) 64px 12px 44px; align-items: center; gap: 8px; }
+.c-gl-part .input { min-height: 44px; font-size: 14px; font-weight: 500; }
+.side .input.c-gl-hours { padding-left: 8px; padding-right: 8px; text-align: right; font-variant-numeric: tabular-nums; }
+.c-gl-unit { font: 400 14px/20px var(--font); color: var(--tx-2); }
+.c-gl-px { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 12px; background: var(--sf-hover); display: grid; place-items: center; cursor: pointer; }
+.c-gl-px:hover { background: var(--sf-press); }
+.c-gl-px:active { transform: translateY(1px); }
+.c-gl-px canvas { width: 14px !important; height: 14px !important; }
+.c-gl-add { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; min-height: 44px; padding: 8px 12px; margin: -4px 0 0 -12px; border: 0; border-radius: 12px; background: transparent; color: var(--tx-2); font: 500 14px/20px var(--font); cursor: pointer; }
+.c-gl-add:hover { background: var(--sf-hover); color: var(--tx); }
+.c-gl-add canvas { width: 16px !important; height: 16px !important; }
+.c-gl-total { margin: -4px 0 0; font: 600 14px/20px var(--font); color: var(--tx); }
+.c-gl-ai { align-self: flex-start; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 12px; background: var(--sf-hover); color: var(--tx); font: 600 14px/20px var(--font); cursor: pointer; }
+.c-gl-ai:hover:not(:disabled) { background: var(--sf-press); }
+.c-gl-ai:disabled { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx-3); cursor: default; }
+/* the rhythm: the hours and the line under them */
+.c-gl-rhythm { margin: 0; font: 400 14px/20px var(--font); color: var(--tx-2); }
+/* the plan: what the rhythm holds against what the parts need, said plainly */
+.c-gl-plan { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-gl-plan.compact { padding: 12px; gap: 8px; }
+.c-gl-holds { margin: 0; font: 400 16px/24px var(--font); color: var(--tx-2); }
+.c-gl-plan.compact .c-gl-holds { font-size: 14px; line-height: 20px; }
+.c-gl-holds b { font-weight: 600; color: var(--tx); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-gl-verdict { margin: 0; font: 600 16px/24px var(--font); color: var(--tx); }
+.c-gl-plan.compact .c-gl-verdict { font-size: 14px; line-height: 20px; }
+.c-gl-plan:not(.short) .c-gl-verdict { color: var(--good); }
+/* the first week, and the reset's week: seven cells with the hours each day takes */
+.c-gl-first { display: flex; flex-direction: column; gap: 8px; }
+.c-gl-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.c-gl-strip li { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 8px 0; border-radius: 10px; background: var(--sf-hover); }
+.c-gl-strip li.none { background: transparent; box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-gl-strip li:has(> .c-gl-sbtn) { padding: 0; }
+.c-gl-strip li.today { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+.c-gl-sd { font: 600 12px/16px var(--font); color: var(--tx-2); }
+.c-gl-strip b { font: 600 13px/18px var(--font); color: var(--tx); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the reset's Goals step: its cells are narrower, so a day's time is short (45m) and a size down, 12 (app.js cellHrs) */
+.c-gl-strip b.c-gl-cellh { font-size: 12px; line-height: 16px; }
+.c-gl-strip li.none b { color: var(--tx-3); font-weight: 400; }
+.c-gl-sbtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 48px; padding: 8px 0; border: 0; border-radius: 10px; background: transparent; color: var(--tx); font: inherit; }
+button.c-gl-sbtn { cursor: pointer; }
+button.c-gl-sbtn:hover { background: var(--sf-press); }
+button.c-gl-sbtn:active { transform: translateY(1px); }
+/* Back and Next stay at the foot of the panel while the questions scroll. As the place panel's foot does
+   (consistency.css), it rides the bottom on the panel's own color while more is below, what scrolls under it
+   fades into it, and the panel's own fade steps aside so the buttons are never faded */
+#side.more:has(.c-gl-foot) { -webkit-mask-image: none; mask-image: none; }
+/* (with Back and Next, or Cancel, at the foot, the close x scrolls away with the title instead of floating over the
+   questions: every panel's corner does now, planner.css, the side panel's corner) */
+.c-gl-foot { position: sticky; bottom: -16px; z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: -4px -22px -16px; padding: 12px 22px 16px; }
+#side.more .c-gl-foot { background: var(--sf-solid); box-shadow: inset 0 1px 0 var(--sf-edge); }
+#side.more .c-gl-foot::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 32px; background: linear-gradient(to bottom, rgba(35, 35, 37, 0), var(--sf-solid)); pointer-events: none; }
+.c-gl-foot .small { min-height: 44px; margin-right: auto; }
+.c-gl-foot .go { min-height: 44px; min-width: 132px; justify-content: center; }
+.c-gl-foot .go:disabled { box-shadow: inset 0 0 0 1px var(--sf-edge); }
+
+/* == the one question about yesterday, on the phone's Today: a card with the gold edge of a question == */
+.td-card.c-gl-ask { box-shadow: inset 0 0 0 1.5px var(--cta-edge), var(--sf-shadow) !important; }
+.td-card.c-gl-ask .td-acts .small { min-height: 44px; }
+
+/* == the Sunday Reset's Goals step: a card a goal, as wide as the reset's panel == */
+body.c-resetting .rack.resetting .rack-body > .c-gl-step { flex: 1 1 100%; min-width: 0; width: 100%; }
+.c-gl-step { display: flex; flex-direction: column; gap: 12px; }
+.c-gl-scard { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: var(--sf-raised); }
+.c-gl-shead { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--tx); text-align: left; font: inherit; cursor: pointer; }
+.c-gl-shead:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-gl-scard > .small { align-self: flex-start; min-height: 44px; }
+
+/* == This week's plan: each goal's week == */
+.c-pgoals { display: flex; flex-direction: column; gap: 4px; }
+.c-pgoals .c-kick { margin-bottom: 4px; }
+.c-pgoal { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: calc(100% + 24px); min-height: 44px; margin: 0 -12px; padding: 8px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--tx); text-align: left; font: inherit; cursor: pointer; }
+.c-pgoal:hover { background: var(--sf-hover); }
+.c-pgoal b { font: 600 16px/22px var(--name); }
+.c-pgoal span { font: 400 14px/20px var(--font); color: var(--tx-2); }
+
+/* calmer motion and the system's reduced motion: nothing presses or slides */
+body.calm .c-gl-card, body.calm .c-gl-fix, body.calm .c-gl-pill, body.calm .c-gl-px, body.calm button.c-gl-sbtn { transition: none; }
+@media (prefers-reduced-motion: reduce) { .c-gl-card, .c-gl-fix, .c-gl-pill, .c-gl-px, button.c-gl-sbtn { transition: none; } }
+
+/* New goal, How much time can you give it?: On a weekday and On a weekend day one under the other at any width, so
+   "3 h 15 min" in both never runs one stepper's plus over the other's minus (a 380 px panel had about 163 px each) */
+.side .row2.c-gl-hours2 { flex-direction: column; gap: 12px; }
+.side .row2.c-gl-hours2 .stepper output { min-width: 6.4em; }

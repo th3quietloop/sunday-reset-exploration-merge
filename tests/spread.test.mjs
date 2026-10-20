@@ -106,11 +106,15 @@ test('weekdays, weekends, or days you pick, and a cap you set', () => {
 });
 
 test('the part of the day asked for comes first; with no room there, the rest of the day', () => {
-  // someone on their own has a free evening: evening steps go there
+  // someone on their own keeps a free evening, their own time (V11-2: your own time stays yours): evening steps go
+  // there only with a yes, and the plan says how much of it they'd take; without the yes, the rest of the day
   const solo = D.buildState({ name: 'Sam', kids: [], wake: { wd: 360, we: 420 }, bed: { wd: 1380, we: 1410 }, work: { days: [1, 2, 3, 4, 5], start: 540, end: 1020 } }, MON);
   solo.tasks.push(Object.assign(copy(board().tasks.find((t) => t.id === 'room'))));
-  const eve = M.spreadPlan(solo, 'room', { when: 'evening' }, MON, 7 * 60);
+  const eve = M.spreadPlan(solo, 'room', { when: 'evening', own: true }, MON, 7 * 60);
   assert.ok(eve.ok && eve.days.every((d) => d.items.every((x) => x.start >= 1080 && x.part === 'evening')));
+  assert.ok(eve.own.min > 0 && eve.own.days.every((x) => x.name === 'Free evening' && x.part === 'evening'), 'the yes is asked for in minutes of Free evening');
+  const asked = M.spreadPlan(solo, 'room', { when: 'evening' }, MON, 7 * 60);
+  assert.ok(asked.ok && asked.days.every((d) => d.items.every((x) => x.part !== 'evening')), 'no yes: never the free evening');
   const morn = M.spreadPlan(solo, 'room', { when: 'morning' }, MON, 7 * 60);
   assert.ok(morn.days.every((d) => d.items.every((x) => x.start < 720)));
   // the sample family's evenings are time together, not quiet time: the steps find the afternoon instead

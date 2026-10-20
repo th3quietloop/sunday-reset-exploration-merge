@@ -296,6 +296,7 @@ export function makeGate({ c, url, opts = {}, shots }) {
     const before = await c.ev(`JSON.stringify(__mx.snap())`);
     if (extra.beforeDrag) await extra.beforeDrag(p);
     const t0 = await c.ev(`__mx.mark()`);
+    await c.ev(`(() => { __mx.presses = []; return 1; })()`);
     const e0 = c.errors.length;
     const dr = await drag(input, p.from, p.to, st, (typeof hooks === 'function' ? hooks(p) : hooks) || {});
     const mid = dr.mid;
@@ -346,6 +347,8 @@ export function makeGate({ c, url, opts = {}, shots }) {
     /* a swipe the page saw take longer than the app's press to lift (a busy machine slows the input it's
        sent) wasn't a swipe: it's not judged */
     r.ptr = await c.ev(`JSON.stringify(__mx.ptr || null)`).then((s) => { try { return JSON.parse(s); } catch (e) { return null; } });
+    /* (the press that started this attempt: how long the page took over it, and the sound before it) */
+    r.press = await c.ev(`JSON.stringify((__mx.presses || [])[0] || null)`).then((s) => { try { return JSON.parse(s); } catch (e) { return null; } });
     const took = r.ptr && r.ptr.down && r.ptr.move8 ? Math.max(r.ptr.move8 - r.ptr.down, r.ptr.move8T && r.ptr.downT ? r.ptr.move8T - r.ptr.downT : 0) : 0;
     const slow = (r.expectOverride || p.expect) === 'scroll' && took > 260 ? 'the swipe took ' + Math.round(took) + ' ms to move (a busy machine): not a swipe' : null;
     if ((!r.verdict.pass && !slow) || extra.shot) {

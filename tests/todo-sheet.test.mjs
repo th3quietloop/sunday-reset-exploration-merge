@@ -22,6 +22,10 @@ function sheet(o = {}) {
     const setDone = (t, s, d) => __calls.push(['done', s, d]), breakDown = () => __calls.push(['breakDown']), openSel = (s) => __calls.push(['open', s.type]);
     const doSpread = () => __calls.push(['spread']), didntGetTo = () => __calls.push(['didnt']), tsGo = (t, p) => __calls.push(['page', p]);
     const setZoom = () => {}, closeSel = () => __calls.push(['close']), tsFindNew = () => __calls.push(['reflow']);
+    const spreadPlanFor = () => __o.ownPlan || { ok: false }, spreadOptsOf = (f) => Object.assign({}, f);
+    const keepUnit = (s) => String(s).replace(/(\d) (h|min)\b/g, '$1\u00a0$2');
+    const joinNames = (list) => (list.length <= 1 ? list.join('') : list.length === 2 ? list[0] + ' and ' + list[1] : list.slice(0, -1).join(', ') + ', and ' + list[list.length - 1]);
+    const dragsHere = () => !__o.list;
     ${app('  /* a day said the way a person says it: today, tomorrow, Thursday', '  /* V11: a box saved as focus leaves it saves once focus has landed')}
     ${app('  /* a day said short, the way the rows say it', '  /* where each step stands:')}
     ${app('  /* a plan said in one line:', '  /* what\'s in the way of a plan that doesn\'t fit')}
@@ -55,18 +59,43 @@ test('a to-do with no steps: a big one leads with Break it down, a small one wit
   assert.equal(set.gold, undefined, 'it has a time: nothing to do now, so no gold');
 });
 
-test('steps without a time: the plan, proposed, with Change and one gold Put them on my week', () => {
+test('steps without a time: drag one onto a day, or one gold Put the rest on my week, with the plan’s rule under it', () => {
   const s = sheet();
   const st = steps(3);
   const sp = { ok: true, days: [{ date: '2026-10-15', items: [{ step: 's0', start: 1035, dur: 15 }] }, { date: '2026-10-17', items: [{ step: 's1', start: 570, dur: 15 }, { step: 's2', start: 585, dur: 15 }] }] };
   const n = s.tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp, f: { cap: 30, when: 'any' } }));
   assert.equal(n.foot.line, 'Up to 30 min a day, Thu to Sat. Done 4 days before it’s due.');
   assert.equal(typeof n.foot.change, 'function', 'the choices are a tap away, on the line');
-  assert.equal(n.foot.gold[0], 'Put them on my week');
+  assert.equal(n.foot.gold[0], 'Put the rest on my week');
+  assert.equal(n.foot.hint, 'Drag a step onto a day, or', 'the drag is said in words, over the gold');
+  assert.equal(n.foot.under, true, 'the plan’s line is the rule under the gold');
+  assert.equal(sheet({ list: true }).tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp, f: { cap: 30, when: 'any' } })).foot.hint, '', 'the phone’s list has no board to drag to, so it never says to');
   n.foot.gold[1]();
   assert.deepEqual(plain(s.calls.pop()), ['spread']);
   const no = s.tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp: { ok: false, days: [], unplaced: ['s2'] }, f: { cap: 30 } }));
   assert.equal(no.ask, true, 'it doesn’t fit: the sheet asks, with goals-fix’s choices, before anything moves');
+});
+
+test('when only the person’s own time holds it all, the sheet asks once for the whole plan: Use it, or Leave it short', () => {
+  const st = steps(3);
+  const ownPlan = { ok: true, days: [], own: { min: 90, days: [{ date: '2026-10-20', min: 45, part: 'evening', name: 'Free evening' }, { date: '2026-10-22', min: 45, part: 'evening', name: 'Free evening' }] } };
+  const s = sheet({ ownPlan, today: '2026-10-18' });
+  const short = { ok: false, days: [], unplaced: ['s2'] };
+  const n = s.tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp: short, f: { cap: 45 } }));
+  assert.equal(sp(n.foot.line), 'This needs 1 h 30 min of your own time this week, Tue and Thu evening.');
+  /* today and tomorrow are said the way the step rows say them */
+  const near = (days) => sheet({ today: '2026-10-19', ownPlan: { ok: true, days: [], own: { min: 60, days } } }).tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp: short, f: { cap: 30 } })).foot.line;
+  assert.equal(sp(near([{ date: '2026-10-19', min: 30, part: 'afternoon' }, { date: '2026-10-20', min: 30, part: 'afternoon' }])), 'This needs 1 h of your own time, today and tomorrow afternoon.');
+  assert.equal(sp(near([{ date: '2026-10-19', min: 30, part: 'evening' }, { date: '2026-10-22', min: 30, part: 'morning' }])), 'This needs 1 h of your own time, this evening and Thu morning.');
+  assert.deepEqual([n.foot.quiet[0], n.foot.gold[0]], ['Leave it short', 'Use it'], 'never placed without the yes');
+  n.foot.gold[1]();
+  n.foot.quiet[1]();
+  assert.equal(s.calls.filter((c) => c[0] === 'spread').length, 2, 'Use it places the plan with own time; Leave it short, what fits in open time');
+  /* one day is said the way a person says it */
+  const one = (date, part) => sheet({ today: '2026-10-19', ownPlan: { ok: true, days: [], own: { min: 30, days: [{ date, min: 30, part, name: 'Creative time' }] } } }).tsNext(task({ steps: st }), ctx({ steps: st, toSpread: st, sp: short, f: { cap: 30 } })).foot.line;
+  assert.equal(sp(one('2026-10-19', 'evening')), 'This needs 30 min of your own time, this evening.');
+  assert.equal(sp(one('2026-10-20', 'morning')), 'This needs 30 min of your own time, tomorrow morning.');
+  assert.equal(sp(one('2026-10-22', 'afternoon')), 'This needs 30 min of your own time, Thursday afternoon.');
 });
 
 test('a step under way: Start in its first ten minutes (a timer sized to it), then Mark it done; Didn’t get to it is a normal button', () => {

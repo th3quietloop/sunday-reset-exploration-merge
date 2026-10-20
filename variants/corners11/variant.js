@@ -90,6 +90,13 @@
     const nowClock = h('span', 'c-nowclock'); nowClock.hidden = true;
     const bandKick = h('div', 'c-bandkick');
     const whenBtn = dateCtl.querySelector('.k-when'); if (whenBtn) whenBtn.appendChild(nowClock);
+    /* V11-2 (Russell's list, Oct 20): on the minute (app.js clockTick) the time in the date chip and over the band
+       says the new minute, words only: no redraw, so a drag or a panel is never touched */
+    window.SR_onMinute = () => {
+      const t = M.clock(SR.nowMin);
+      if (!nowClock.hidden && nowClock.textContent !== t) nowClock.textContent = t;
+      if (bandKick.isConnected && SR.inToday()) { const k = Kit.when().title + ' · ' + t; if (bandKick.textContent !== k) bandKick.textContent = k; }
+    };
     tc.append(dateCtl, kinds, days);
     /* V11, the Planner walk (2.1): the arrows never move while you page. Today stands outside the pair, in a chip of its
        own to the left of the card (under it on a narrow window), where a second tap on Later can't land on it; and the
@@ -198,6 +205,39 @@
     const gsRing = h('span', 'c-gsring'), gsN = h('span', 'c-gsn');
     gs.append(gsRing, h('span', 'c-gsname', 'Getting started'), gsN);
     gs.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); if (SR.openMoves) SR.openMoves(); });
+    /* V11 (the Planner walk, 1.2): after the setup the list is folded to its next thing, in a card over this bar, with
+       Show me and See all, so the new week keeps the window (the list took 380 px of it); its x folds it into the
+       button above, and the button opens it again */
+    const gsf = h('section', 'k k-chip c-gsfold'); gsf.dataset.edge = 'bottom'; gsf.hidden = true;
+    gsf.setAttribute('aria-label', 'Getting started');
+    const gsfRing = h('span', 'c-gsring'), gsfN = h('span', 'c-gsfn'), gsfNext = h('p', 'c-gsfnext');
+    const gsfX = Kit.btn('c-gsfx', '', () => { if (SR.foldMoves) SR.foldMoves(true); }, 'x');
+    gsfX.setAttribute('aria-label', 'Fold Getting started into its button');
+    const gsfShow = Kit.btn('k-pill c-gsfgo', 'Show me', () => { const mi = SR.movesInfo; if (mi && mi.next && SR.showMove) SR.showMove(mi.next.id); });
+    const gsfAll = Kit.btn('k-pill c-gsfgo', 'See all', () => SR.openSel({ type: 'moves' }));
+    const gsfHead = h('div', 'c-gsfhead'), gsfActs = h('div', 'c-gsfacts');
+    gsfHead.append(gsfRing, h('span', 'c-gsfname', 'Getting started'), gsfN, gsfX);
+    gsfActs.append(gsfShow, gsfAll);
+    gsf.append(gsfHead, gsfNext, gsfActs);
+    /* the card, with its next thing, in the Planner while no panel, tip, tour, setup, or reset is up; the button on the
+       bar stands in for it while it shows. A side panel opening or closing redraws it too, since that isn't a render */
+    function drawGsf() {
+      const v = SR.view, mi = SR.movesInfo || { shown: false }, sheet = document.getElementById('sheet');
+      const busy = SR.inToday() || !!v.sel || !!v.reset || !!v.drawer || !!v.phone || !!document.querySelector('.coach, .c-coach, .c-mat') || !!(sheet && !sheet.hidden) || document.body.classList.contains('c-hello-on');
+      const on = !!mi.shown && !mi.folded && !!mi.next && !busy;
+      if (on) {
+        gsfN.textContent = mi.done + ' of ' + mi.total;
+        gsfRing.style.setProperty('--p', String(Math.round((100 * mi.done) / Math.max(1, mi.total))));
+        gsfNext.textContent = 'Next: ' + mi.next.name;
+        gsfShow.hidden = !mi.next.show;
+        gsfAll.lastChild.textContent = 'See all ' + mi.total;
+        gsfAll.setAttribute('aria-label', 'See all ' + mi.total + ' things in Getting started, ' + mi.done + ' done');
+      }
+      gs.hidden = on || !mi.shown || !!v.phone || !!v.reset;
+      if (gsf.hidden === on) { gsf.hidden = !on; requestAnimationFrame(() => SR.layoutInsets()); }
+      if (on) gsf.style.bottom = Math.round(16 + (br.hidden || !br.offsetHeight ? 0 : br.offsetHeight + 8)) + 'px';
+    }
+    { const sd = document.getElementById('side'); if (sd && window.MutationObserver) new MutationObserver(() => drawGsf()).observe(sd, { attributes: true, attributeFilter: ['hidden'] }); }
     /* V11 (the Planner walk, 15.1): Undo you can reach after its toast is gone, on every device: here while there's
        something to undo, naming what it takes back, and Redo beside it once something was undone. They lead the bar,
        which is anchored at the right, so the buttons after them never move when they come and go */
@@ -220,7 +260,7 @@
     window.SR_undoChanged = () => { drawUndo(); onScreen(); };
     br.append(undoP, redoP, add, todos, lib, gs);
     /* the Sunday Reset chip joins them once it's built, below */
-    app.append(tl, tc, tr, bl, br);
+    app.append(tl, tc, tr, bl, br, gsf);
 
     /* == Block library: the rack beside the board, in 3D == */
     const libOpen = () => {
@@ -638,6 +678,8 @@
     }
     /* V11 (the rituals walk): the chip's own words and way in, for How it works */
     window.SR_resetChip = () => { const s = chipState(); return s.kind === 'none' ? null : { label: s.label, go: s.go }; };
+    /* (V11-2: how long a run takes, the chip's and the intro's minutes, for the phone's reset line) */
+    window.SR_resetMinutes = (ws, catchup) => minutesOf(runSteps(ws, !!catchup), !!catchup);
     /* (and the intro itself, for Dev's ritual shortcuts) */
     window.SR_openIntro = (ws, catchup) => openIntro(ws, catchup);
     const rchip = h('button', 'c-rchip'); rchip.type = 'button';
@@ -647,7 +689,13 @@
       /* V11 (the Today walk): in Now, Monday and Tuesday's Set up this week is gold only when the open time you're in
          holds its minutes, or after 7 pm when you're neither asleep nor in a locked block (a late shift); otherwise
          it's a quiet pill. Sunday stays as it is */
-      const roomy = !s.setup || !SR.inToday() || (() => { const i = SR.nowNow(); return ((i.kind === 'open' || i.kind === 'free') && i.left >= s.setup) || (SR.nowMin >= 19 * 60 && i.kind !== 'sleep' && !(i.kind === 'block' && i.block && i.block.fixed)); })();
+      /* V11-2 (one gold a screen, Russell's rule): in Now it's the phone's ranking too (SR.nowGold): the reset is gold only
+         in open time, and inside a block the block's own move is the gold and the chip goes quiet, in the same place.
+         The sample week's door, Set up my week, stays its one gold */
+      /* (and while a side panel shows a gold move of its own, in Now or the Planner, the chip goes quiet until it closes) */
+      const who1 = SR.who(), door = !!(who1 && who1.sample && !SR.view.preview);
+      const g = typeof SR.nowGold === 'function' ? SR.nowGold() : undefined;
+      const roomy = g === 'panel' ? false : SR.inToday() && !door && g !== undefined ? g === 'now-reset' : !s.setup || !SR.inToday() || (() => { const i = SR.nowNow(); return ((i.kind === 'open' || i.kind === 'free') && i.left >= s.setup) || (SR.nowMin >= 19 * 60 && i.kind !== 'sleep' && !(i.kind === 'block' && i.block && i.block.fixed)); })();
       const look = s.kind === 'sunday' && !roomy ? 'quiet' : s.kind;
       rchip.className = 'c-rchip ' + look;
       /* V11: Now is the day as it happens; the reset shows there only when it's the moment for it (Sunday,
@@ -663,6 +711,8 @@
       rchip.title = s.title || s.label;
       rchip.setAttribute('aria-label', s.label + (s.meta ? ', ' + s.meta : '') + '. ' + (s.title || ''));
     }
+    /* V11-2: a side panel opening or closing redraws it too (app.js sideGoldWatch) */
+    window.SR_goldChanged = () => { if (!SR.view.reset) drawChip(); };
     /* V11: in Now the chip's gold follows the open time you're in, which moves with the clock, not only with a redraw */
     setInterval(() => { if (SR.inToday() && !SR.view.reset) drawChip(); }, 30000);
     /* a snoozed reset nudges once, at its time, while the page is open */
@@ -1127,7 +1177,9 @@
     function dueWords(t) {
       if (!t.due) return null;
       const n = M.diffDays(SR.today, t.due);
-      if (n < 0) return { text: 'Was due ' + (n === -1 ? 'yesterday' : n > -7 ? M.DAY_LONG[M.weekday(t.due)] : M.MONTH_SHORT[M.parts(t.due).m - 1] + ' ' + M.parts(t.due).d), ask: true };
+      /* V11-2 (a day that went by, said calmly): when it was due, in plain ink, the board's words (SR.wasDue); it waits in
+         its own group (From last week), and its button gives it a new day */
+      if (n < 0) return { text: SR.wasDue ? SR.wasDue(t.due) : 'Was due ' + (n === -1 ? 'yesterday' : n > -7 ? M.DAY_LONG[M.weekday(t.due)] : M.MONTH_SHORT[M.parts(t.due).m - 1] + ' ' + M.parts(t.due).d), ask: !SR.wasDue };
       return { text: 'Due ' + dayWord(t.due), ask: n <= 1 };
     }
     const whenText = (p) => M.DAY_SHORT[M.weekday(p.date)] + ', ' + M.clock(p.add.start);
@@ -1149,17 +1201,20 @@
       ck.appendChild(ring);
       ck.addEventListener('click', () => { SR.Snd.init(); doneTodo(t, ctx); });
       /* where it stands, in a line: the time it has, when it's due, what's left */
+      /* V11-2 (a day that went by, said calmly): one from an earlier day says when it was due, and when its time was,
+         plainly, and its button gives it a new day; it's never "after it's due" or "time passed" */
+      const past = !!(SR.pastDue && SR.pastDue(t)), after = plan.after && !past, newDay = past && !t.repeat;
       const bits = [], dw = dueWords(t);
       if (t.done) bits.push({ text: t.skipped ? 'Skipped this time' : 'Done' });
       else if (plan.status === 'planned') {
         const p = at || plan.next;
         if (p) bits.push({ text: whenText(p) });
-        if (plan.after) bits.push({ text: 'That’s after it’s due', ask: true });
+        if (after) bits.push({ text: 'That’s after it’s due', ask: true });
         else if (dw) bits.push({ text: dw.text });
       } else {
         if (dw) bits.push(dw);
         if (plan.status === 'partial') bits.push({ text: plan.timed + ' of ' + plan.open + ' steps ' + (plan.timed === 1 ? 'has' : 'have') + ' a time' });
-        else if (plan.status === 'missed') bits.push({ text: (at ? 'Was set for ' + whenText(at) : 'Time passed'), ask: true });
+        else if (plan.status === 'missed') { const was = at ? 'Was set for ' + whenText(at) : SR.wasSet ? SR.wasSet(t, ctx.where.get(t.id)) : ''; if (was) bits.push({ text: was }); }
         else bits.push({ text: 'No time yet' });
       }
       const main = h('button', 'c-td-main'); main.type = 'button';
@@ -1171,13 +1226,14 @@
       row.append(ck, main);
       /* a time: the place panel for the whole thing; with some steps timed, or a time after it's due, the
          to-do's own panel, where each step and each time is */
-      if (!t.done && (plan.status !== 'planned' || plan.after)) {
+      if (!t.done && (plan.status !== 'planned' || after)) {
         const tm = h('button', 'c-td-time'); tm.type = 'button';
-        const what = plan.after ? 'Move it before it’s due' : plan.status === 'partial' ? 'Give the rest a time' : 'Give it a time';
+        const what = newDay ? 'Give it a new day' : after ? 'Move it before it’s due' : plan.status === 'partial' ? 'Give the rest a time' : 'Give it a time';
         tm.setAttribute('aria-label', what + ': ' + t.name); tm.title = what;
         /* V11: a quiet raised button in white; gold is the surface's one call to action */
         tm.appendChild(SR.icon('calendar', 8, '#FFFFFF'));
-        tm.addEventListener('click', () => { SR.Snd.init(); if (plan.status === 'partial' || plan.after) openTodo(t, ctx); else giveTime(t, ctx); });
+        /* (a new day: the place panel, whose day becomes its own; one with steps left opens to its steps) */
+        tm.addEventListener('click', () => { SR.Snd.init(); if (newDay ? (t.steps || []).some((s) => !s.done) : plan.status === 'partial' || after) openTodo(t, ctx); else giveTime(t, ctx); });
         row.appendChild(tm);
       }
       const x = h('button', 'c-td-x'); x.type = 'button';
@@ -1403,12 +1459,22 @@
           let shown = 0;
           /* the next 7 days lead (V11: a rolling window, named for what it is, so it never reads as the week
              the reset plans) */
-          const dw = dueWeek(), dueRows = pick('soon', dw.map((x) => x.task.id));
+          /* V11-2 (a day that went by, said calmly): what was due before today waits in its own group after it, named for
+             when it's from (From last week), each row saying when it was due, with Give it a new day */
+          const isPast = (x) => !!(SR.pastDue && SR.pastDue(x.task));
+          const dwAll = dueWeek(), dw = dwAll.filter((x) => !isPast(x)), back = dwAll.filter(isPast);
+          const dueRows = pick('soon', dw.map((x) => x.task.id));
           shown += dueRows.length;
           if (!q || dueRows.length) {
             const later = st.tasks.filter((t) => !t.done && !t.archived && t.due && t.due > M.addDays(SR.today, 7)).sort(byDue)[0];
             frag.appendChild(section({ id: 'soon', name: 'Next 7 days', icon: 'flag', cat: 'yours', n: dw.length, rows: dueRows, cls: 'due', lay: true, out, pl, empty: 'Nothing due in the next 7 days.' + (later ? ' Next: ' + later.name + ', ' + dayWord(later.due) + '.' : '') }));
           }
+          if (back.length && SR.fromGroups) SR.fromGroups(back, (x) => x.task.due).forEach((g) => {
+            const rows = pick(g.id, g.rows.map((x) => x.task.id));
+            shown += rows.length;
+            if (q && !rows.length) return;
+            frag.appendChild(section({ id: g.id, name: g.name, icon: 'later', cat: 'open', n: g.rows.length, rows, cls: 'from', pl }));
+          });
           /* each list, in its own color */
           const colors = listColors();
           st.groups.forEach((g) => {
@@ -2973,7 +3039,9 @@
             cell.appendChild(t);
             return cell;
           }
-          if (!m) { cell.appendChild(SR.icon('plus', 9, '#5C4024')); cell.setAttribute('aria-label', dayWords(d, k) + ': nothing yet. Add a meal'); return cell; }
+          /* V11-2 (every dead end gets a next step): an empty day says what it's for, in words anyone sees, not only a
+             screen reader: a quiet + Add (deadends.css holds it at 4.5 to 1 on the wood) */
+          if (!m) { const add = h('span', 'c-madd'); add.append(SR.icon('plus', 7, '#2E1E0C'), h('span', '', 'Add')); cell.appendChild(add); cell.setAttribute('aria-label', dayWords(d, k) + ': nothing yet. Add a meal'); return cell; }
           const easy = notCooking(m.how);
           /* V11 goals: leftovers read as the dish they are, with the meal they come from under it ("From Sun
              dinner"); a meal cooked to last says how many meals it feeds ("For 3 meals") */
@@ -4375,7 +4443,11 @@
            instead of pointing at them) */
         const lead = dw.none + '. ' + numWord(later) + ' due ' + (later === 1 ? when : 'from ' + when);
         const under = 'Due after ' + (thisWeek ? M.DAY_LONG[M.weekday(end)] : endWords);
-        head.append(ok, document.createTextNode(dueAll ? dw.all : first ? (inWeek.length ? lead + (later === 1 ? ' waits' : ' wait') + ' under ' + under + ', if you want a head start.' : lead + ', if you want a head start:') : dw.none));
+        /* V11-2 (every dead end gets a next step): with nothing to place, the to-dos that have no day yet are the step's
+           next thing, said in the same line ("Nothing due this week. 3 things in your Inbox have no day yet.") */
+        const nd = !first ? body.querySelector(':scope > .c-noday') : null, ndw = nd ? '. ' + nd.dataset.words + '.' : '';
+        if (nd) nd.classList.add('said');
+        head.append(ok, document.createTextNode(dueAll ? dw.all + ndw : first ? (inWeek.length ? lead + (later === 1 ? ' waits' : ' wait') + ' under ' + under + ', if you want a head start.' : lead + ', if you want a head start:') : dw.none + ndw));
       }
       sum.appendChild(head);
       if (toPlace.length && need) {
@@ -4399,16 +4471,30 @@
       body.prepend(sum);
       /* the week's tiles, then New to-do with them (a to-do added here is most likely for this week), then
          what's due later under its own heading */
+      /* V11-2 (a day that went by, said calmly): what was due before today waits in its own group under the week's,
+         named for when it's from (From last week), each with Give it a new day (todoStepTile) */
+      const pastOf = (x) => !!(SR.pastDue && SR.pastDue(x.task)) && !gone.has(x.task.id);
       const grid = h('div', 'c-tilegrid');
-      if (inWeek.length) tiles.slice(0, inWeek.length).forEach((t) => grid.appendChild(t));
+      inWeek.forEach((x, i) => { if (!pastOf(x) && tiles[i]) grid.appendChild(tiles[i]); });
       adds.forEach((t) => { if (!t.querySelector('canvas')) t.prepend(SR.icon('plus', 8, '#CDCDCD')); grid.appendChild(t); });
       if (grid.children.length) sum.after(grid);
+      let last = grid.children.length ? grid : sum;
+      const back = inWeek.filter(pastOf);
+      if (back.length && SR.fromGroups) SR.fromGroups(back, (x) => x.task.due).forEach((g) => {
+        const gh = h('div', 'c-sumlater c-tdfrom', g.name), gg = h('div', 'c-tilegrid');
+        g.rows.forEach((x) => { const t = tiles[soon.indexOf(x)]; if (t) gg.appendChild(t); });
+        last.after(gh, gg); last = gg;
+      });
       if (later > 0 && tiles.length > inWeek.length) {
         const grid2 = h('div', 'c-tilegrid');
         tiles.slice(inWeek.length).forEach((t) => grid2.appendChild(t));
         const lh = h('div', 'c-sumlater', 'Due after ' + (thisWeek ? M.DAY_LONG[M.weekday(end)] : endWords));
-        (grid.children.length ? grid : sum).after(lh, grid2);
+        last.after(lh, grid2); last = grid2;
       }
+      /* V11-2: the to-dos with no day yet come right under the line that names them, or last when the line points
+         at what's due later */
+      const noDay = body.querySelector(':scope > .c-noday');
+      if (noDay) { if (noDay.classList.contains('said')) sum.after(noDay); else last.after(noDay); }
       /* V11 (the rituals walk): what this reset gave a time (Spread it out, Give it a time) stays in view under Has a
          time, with its first time and how far it runs, so it never vanishes: the to-dos the finish counts as
          given a time (placed in the week since the reset began, its first look) */
@@ -4943,12 +5029,23 @@
            time with people, the groceries), which any phone can read; the picture is the second way */
         const share = h('button', 'c-fin-share'); share.type = 'button';
         const thumb = h('span', 'c-fin-thumb'), words = h('span', 'c-fin-sharew');
-        words.append(h('b', '', 'Send this plan'), h('small', '', 'As words, for anyone: the dinners and who cooks, the to-dos, the groceries'));
+        /* V11-2 (Oct 20): private by default, so what it sends is said as it is: the to-dos only when they're added */
+        const todosOut = !!(SR.shareTodos && SR.shareTodos());
+        words.append(h('b', '', 'Send this plan'), h('small', '', 'As words, for anyone: the dinners and who cooks, ' + (todosOut ? 'the to-dos, ' : '') + 'the groceries'));
         share.append(thumb, words, SR.icon('share', 9, '#FFFFFF'));
         share.addEventListener('click', (e) => { e.stopPropagation(); SR.Snd.init(); sendPlanText(ws); });
         body.appendChild(share);
         const pic = Kit.btn('c-again c-fin-pic', 'Share a picture of it', () => { SR.Snd.init(); sharePlan(ws); }, 'share');
         body.appendChild(pic);
+        /* the share sheet's switch (the app's own, kept per device) and its line */
+        const sw = h('button', 'switch c-fin-sharesw'); sw.type = 'button';
+        sw.setAttribute('role', 'switch'); sw.setAttribute('aria-checked', String(todosOut)); sw.dataset.fk = 'fin-sharetodos';
+        sw.append(h('span', 'sw-label', 'Include to-dos'), h('span', 'sw-track'));
+        sw.addEventListener('click', () => {
+          SR.Snd.init(); SR.setShareTodos(!todosOut); SR.render();
+          requestAnimationFrame(() => { const x = document.querySelector('[data-fk="fin-sharetodos"]'); if (x) x.focus({ preventScroll: true }); });
+        });
+        body.append(sw, h('p', 'c-fin-shareline', SR.shareLine));
         planPicture(ws).then((p) => { if (p && thumb.isConnected) thumb.style.backgroundImage = 'url(' + p.url + ')'; }).catch(() => { /* the button still works; it draws again on tap */ });
       }
       /* the panel grows on a wide window for the two columns; the board makes room once it has */
@@ -4967,8 +5064,11 @@
     const PIC = { W: 1080, pad: 64, gap: 24, bg: '#18191D', card: '#25262A', rule: 'rgba(255, 255, 255, 0.09)', tx: '#FFFFFF', tx2: '#CDCDCD', tx3: '#AFAFAF', gold: '#F2CF7A', ink: '#1C1C1E', kept: '#25352F', keptKick: '#A9DCC2', keptTx: '#DCEFE5', them: '#C9A6D4', word: '#3A3B3F' };
     const nameFont = (w, s) => w + ' ' + s + 'px Gabarito, Onest, system-ui, sans-serif';
     const wordFont = (w, s) => w + ' ' + s + 'px Onest, system-ui, sans-serif';
+    /* V11-2 (Oct 20): what goes out is private by default: the plan less its to-dos, unless Include to-dos is on for
+       this device (the panel on screen still shows them; they're yours) */
+    const shareData = (ws) => { const f = finishData(ws); return SR.shareTodos && SR.shareTodos() ? f : Object.assign({}, f, { timed: [] }); };
     function planPicture(ws) {
-      const f = finishData(ws), who = SR.who() || {};
+      const f = shareData(ws), who = SR.who() || {};
       const sig = JSON.stringify([f, who.name || '']);
       if (picMemo.sig === sig && picMemo.p) return Promise.resolve(picMemo.p);
       /* one drawing at a time per plan: a redraw while it's drawing waits for the same picture */
@@ -5147,7 +5247,7 @@
     /* V11 (the rituals walk): the plan as words: the share sheet where there is one, else a copy to paste in a message.
        It always says what happened */
     async function sendPlanText(ws) {
-      const text = planText(finishData(ws), (SR.who() || {}).name || '');
+      const text = planText(shareData(ws), (SR.who() || {}).name || '');
       if (typeof navigator.share === 'function') {
         try { await navigator.share({ title: 'Our week', text }); SR.toast('Sent your plan.', 'good'); return; } catch (e) { if (e && e.name === 'AbortError') return; }
       }
@@ -5163,7 +5263,7 @@
         try { file = new File([p.blob], p.name, { type: 'image/png' }); } catch (e) { file = null; }
         if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
           /* V11: the plan as words too, in the same share, for an app that takes text and not pictures */
-          const text = planText(finishData(ws), (SR.who() || {}).name || '');
+          const text = planText(shareData(ws), (SR.who() || {}).name || '');
           const data = navigator.canShare({ files: [file], text }) ? { files: [file], title: 'My week', text } : { files: [file], title: 'My week' };
           navigator.share(data).then(() => SR.toast('Shared your plan.', 'good')).catch((e) => { if (!e || e.name !== 'AbortError') save(p); });
           return;
@@ -6291,7 +6391,8 @@
       coach.appendChild(row);
       coachRoom();
     }
-    function endCoach() { clearInterval(movesHold); if (coach) { coach.remove(); coach = null; } coachRoom(); document.querySelectorAll('.c-coach-ring, .c-coach-ghost').forEach((x) => x.remove()); if (coachPoll) clearInterval(coachPoll); coachPoll = null; }
+    /* (the Planner walk, 1.2: Getting started's card comes back once the tour is over) */
+    function endCoach() { clearInterval(movesHold); if (coach) { coach.remove(); coach = null; } coachRoom(); document.querySelectorAll('.c-coach-ring, .c-coach-ghost').forEach((x) => x.remove()); if (coachPoll) clearInterval(coachPoll); coachPoll = null; if (window.SR_onRender) window.SR_onRender(); }
     let coachPoll = null;
     function ringAt(x0, y0, x1, y1) {
       document.querySelectorAll('.c-coach-ring').forEach((x) => x.remove());
@@ -6404,7 +6505,7 @@
         document.querySelectorAll('.c-coach-ring').forEach((x) => x.remove());
         const t = OBX.RESET_TIMES.find((x) => x.day === a.resetAt.day && x.min === a.resetAt.min);
         placeCoach(null);
-        coachCard('You’re set', 'That’s Sunday Reset.', 'Your first reset is ' + (t ? t.name.toLowerCase() : M.DAY_LONG[a.resetAt.day]) + ', ' + M.clock(a.resetAt.min) + '. The button at the bottom right starts it. A few more things to try are in Getting started.', [Kit.btn('c-go', 'Done', () => endCoach()), Kit.btn('c-su-link', 'Open Getting started', () => { endCoach(); SR.openSel({ type: 'moves' }); })]);
+        coachCard('You’re set', 'That’s Sunday Reset.', 'Your first reset is ' + (t ? t.name.toLowerCase() : M.DAY_LONG[a.resetAt.day]) + ', ' + M.clock(a.resetAt.min) + '. The button at the bottom right starts it. A few more things to try are in Getting started.', [Kit.btn('c-go', 'Done', () => endCoach()), Kit.btn('c-su-link', 'Open Getting started', () => { endCoach(); if (SR.openMoves) SR.openMoves(); else SR.openSel({ type: 'moves' }); })]);
       }
     }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && coach && !mat) { endCoach(); } });
@@ -6434,6 +6535,8 @@
       meTag.hidden = !(p && p.sample);
       /* V11: Getting started, one tap away while it's unfinished (not on the phone, whose list carries its card) */
       { const mi = SR.movesInfo || { shown: false }; gs.hidden = !mi.shown || !!v.phone || !!v.reset; if (!gs.hidden) { gsN.textContent = mi.done + ' of ' + mi.total; gsRing.style.setProperty('--p', String(Math.round((100 * mi.done) / Math.max(1, mi.total)))); gs.setAttribute('aria-label', 'Getting started, ' + mi.done + ' of ' + mi.total + ' done'); gs.setAttribute('aria-pressed', String(!!(v.sel && v.sel.type === 'moves'))); } }
+      /* (the Planner walk, 1.2: Getting started's card, drawGsf) */
+      drawGsf();
       nowClock.hidden = !today; if (today) nowClock.textContent = M.clock(SR.nowMin);
       /* on a narrower window the date rides in the band's own top line, so Now keeps the room for the board */
       if (today) { const bd = document.getElementById('band'), bi = document.getElementById('band-in'); if (bd && bi && bandKick.parentElement !== bd) bd.insertBefore(bandKick, bi); bandKick.textContent = Kit.when().title + ' · ' + M.clock(SR.nowMin); }
@@ -6640,7 +6743,8 @@
        SR_ai.disable()     off on this device
        SR_ai.breakdown(name, { size })  a Promise of { steps: [{ name, dur }], total, source: 'claude' } or null
        SR_ai.goalParts(name, { date })  a Promise of { parts: [{ name, min }], note, total, source: 'claude' } or null
-       SR_ai.lastError()   what the last ask that settled as null ran into, { code, message }, or null
+       SR_ai.lastError()   what the last ask that settled as null ran into, { code, message }, or null (the codes,
+                           and the limit, most, and at of too_many, are at aiAsk)
      The same ask (name, and size or date) is answered once a page load; { fresh: true } asks again. A window
      event, sr-ai, says when the server answered ready or the switch changed. Characters past ASCII in the
      patterns here are \u{...} escapes, so no dash sits in this file. */
@@ -6796,10 +6900,18 @@
       return new Promise((done) => aiSheet(o.kind, (yes) => { if (yes) { aiEmit(); go(); } done(yes); }));
     }
     function disable() { aiSet(false); aiEmit(); }
-    /* one ask: only this one name (and its size or date) goes, and it settles within 15 seconds */
+    /* one ask: only this one name (and its size or date) goes, and it settles within 15 seconds. V11-2 (honest
+       errors): what it ran into is kept as what happened, so the page can say the real cause (lastError):
+       offline (no connection: said at once, with nothing sent), timeout (no answer in 15 seconds, here or at the
+       server), too_many (limit 'minute' or 'day', most, the number allowed, and at, when the next ask can go),
+       not_ready, odd (an answer that didn't fit the board), unreachable (the server didn't answer at all),
+       bad_request, off, or upstream (Claude answered with an error) */
+    const aiOffline = () => typeof navigator !== 'undefined' && !!navigator && navigator.onLine === false;
     function aiAsk(body, check, fresh) {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!available() || !name || name.length > 140 || aiCtrl.test(name)) return Promise.resolve(null);
+      if (!available()) { aiErr = { code: ready() ? 'off' : 'not_ready', message: '' }; return Promise.resolve(null); }
+      if (!name || name.length > 140 || aiCtrl.test(name)) { aiErr = { code: 'bad_request', message: '' }; return Promise.resolve(null); }
+      if (aiOffline()) { aiErr = { code: 'offline', message: 'You\u2019re offline.' }; return Promise.resolve(null); }
       const send = JSON.stringify(Object.assign({}, body, { name }));
       if (!fresh && aiAsked.has(send)) return aiAsked.get(send);
       const p = new Promise((done) => {
@@ -6813,16 +6925,27 @@
           /* switched off while it was out: what came back isn't used */
           done(v && aiOn() ? v : null);
         };
-        const t = setTimeout(() => finish(null, { code: 'upstream', message: 'Claude took longer than 15 seconds.' }), AI_WAIT);
+        const t = setTimeout(() => finish(null, { code: 'timeout', message: 'Claude didn\u2019t answer in time.' }), AI_WAIT);
         Promise.resolve().then(() => fetch(AI_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: send, cache: 'no-store', credentials: 'same-origin', signal: ac ? ac.signal : undefined }))
           .then((r) => r.json().then((d) => ({ r, d }), () => ({ r, d: null })))
           .then(({ r, d }) => {
-            if (r.ok) { const v = check(d); finish(v, v ? null : { code: 'upstream', message: 'Claude’s answer didn’t fit the board.' }); return; }
-            const code = d && typeof d.error === 'string' ? d.error : 'upstream';
+            if (r.ok) { const v = check(d); finish(v, v ? null : { code: 'odd', message: 'Claude\u2019s answer didn\u2019t fit the board.' }); return; }
+            let code = d && typeof d.error === 'string' ? d.error : 'upstream';
+            /* (the server's own 15 seconds ran out: the same as no answer here) */
+            if (r.status === 504) code = 'timeout';
             if (code === 'not_ready') { aiReady = false; aiEmit(); }
-            finish(null, { code, message: d && typeof d.message === 'string' ? d.message.slice(0, 200) : 'Claude didn’t answer this time.' });
+            const err = { code, message: d && typeof d.message === 'string' ? d.message.slice(0, 200) : '' };
+            if (code === 'too_many') {
+              const wait = Number(d && d.retry) || Number(r.headers && r.headers.get ? r.headers.get('retry-after') : 0) || 60;
+              const retry = Math.max(1, Math.min(86400, Math.ceil(wait)));
+              err.limit = d && (d.limit === 'day' || d.limit === 'minute') ? d.limit : retry > 120 ? 'day' : 'minute';
+              err.most = Number(d && d.most) || (err.limit === 'day' ? 100 : 10);
+              err.at = Date.now() + retry * 1000;
+            }
+            finish(null, err);
           })
-          .catch(() => finish(null, { code: 'upstream', message: 'Claude didn’t answer this time.' }));
+          /* (nothing answered: offline if the device says so, otherwise the server couldn't be reached) */
+          .catch(() => finish(null, aiOffline() ? { code: 'offline', message: 'You\u2019re offline.' } : { code: 'unreachable', message: 'Couldn\u2019t reach Claude.' }));
       });
       aiAsked.set(send, p);
       return p;

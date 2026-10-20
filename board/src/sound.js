@@ -13,14 +13,52 @@
   const nextOf = (last) => { let v = Math.floor(Math.random() * 3); if (v === last) v = (v + 1 + Math.floor(Math.random() * 2)) % 3; return v; };
   const VARIANT = [1, 1.05, 0.93];
 
-  function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  /* V11-2: the sound is made early and quietly (suspended), so the first press doesn't stop to start it. Making it
+     took about 100 ms, and on a phone at a quarter the speed the first lift caught for a third of a second. It's made
+     once sound is on (set), while the page is idle; a person's first touch or click only resumes it, inside that
+     gesture (iPhone Safari starts it on a touch that ends, so the app asks again on pointerup and click). Turned on
+     from a tap (Settings), it's made right then, so the chime that says so plays. With sound off there's no
+     context at all */
+  let warmT = 0, warmIdle = false;
+  function make() {
     try {
       const AC = root.AudioContext || root.webkitAudioContext;
-      if (!AC) return;
+      if (!AC) return false;
       ctx = new AC();
       master = ctx.createGain(); master.gain.value = 0.6; master.connect(ctx.destination);
-    } catch (e) { ctx = null; }
+      return true;
+    } catch (e) { ctx = null; master = null; return false; }
+  }
+  const resume = () => { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') { try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* fine */ } } };
+  /* (making it holds the page for a moment, about 200 ms in Chrome, so a desk still moving, the boards settling
+     after the page opens, waits for rest first; steam rising on its own counts as rest. After 2 s it's made anyway:
+     a hitch while the boards settle is better than one under the first press) */
+  let warmTries = 0;
+  function warm() {
+    warmT = 0;
+    if (!on || ctx) return;
+    const W = root.World;
+    if (W && W.idle === false && !W.lazy && warmTries++ < 8) { warmIdle = false; warmT = root.setTimeout(warm, 250); return; }
+    make();
+  }
+  function unwarm() { if (!warmT) return; if (warmIdle && root.cancelIdleCallback) root.cancelIdleCallback(warmT); else root.clearTimeout(warmT); warmT = 0; }
+  function warmSoon() {
+    if (warmT || ctx || !on) return;
+    warmTries = 0;
+    warmIdle = !!root.requestIdleCallback;
+    warmT = warmIdle ? root.requestIdleCallback(warm, { timeout: 1500 }) : root.setTimeout(warm, 600);
+  }
+  const inGesture = () => !!(root.navigator && root.navigator.userActivation && root.navigator.userActivation.isActive);
+  function init() {
+    if (!on) return;
+    if (ctx) { resume(); return; }
+    unwarm();
+    if (make()) resume();
+  }
+  function drop() {
+    unwarm();
+    if (ctx) { try { const p = ctx.close(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* fine */ } }
+    ctx = null; master = null; noiseBuf = null;
   }
   const ok = () => on && ctx && ctx.state === 'running';
   function env(g, t0, a, peak, d) {
@@ -51,7 +89,13 @@
 
   root.Sound = {
     init,
-    set(v) { on = !!v; },
+    set(v) {
+      on = !!v;
+      if (!on) { drop(); return; }
+      if (!ctx) { if (inGesture()) init(); else warmSoon(); }
+    },
+    /* (V11-2: 'none' before the sound is made, then the context's own state; for the gate's first press check) */
+    get state() { return ctx ? ctx.state : warmT ? 'soon' : 'none'; },
     /* the detent's tick under the finger, for touch screens */
     setHaptic(v) { haptic = !!v; },
     get on() { return on; },

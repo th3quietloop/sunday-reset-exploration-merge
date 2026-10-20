@@ -1,0 +1,77 @@
+/* == V11: picking things up with a finger, and what steps aside while something is in hand ==
+   Loads after frame.css (the files load in name order), so its sheet rules win where both speak. */
+
+/* A list full of tiles still scrolls under a thumb: a tile lets its list scroll until a press lifts it
+   (app.js dragSource, LIFT_MS), or a first move across the list does. The tray that scrolls sideways lets a
+   thumb scroll it sideways. A tile that adds something is a plain button. A handle (a step's grip) keeps
+   touch-action none and lifts as it moves. */
+body.feel .tile { touch-action: pan-y; }
+body.feel .rack:not(.resetting) .rack-body .tile { touch-action: pan-x; }
+body.feel .tile.add { touch-action: manipulation; }
+body.feel .c-drag { touch-action: pan-y; }
+body.feel .c-su-lane .c-su-lb.block { touch-action: pan-y; }
+/* (no gray flash on a tap, and a long press never opens the system's menu or selects the words) */
+body.feel { -webkit-tap-highlight-color: transparent; }
+body.feel .tile, body.feel .c-drag, body.feel .onb-piece, body.feel .c-ltile, body.feel .step .grip { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* The press: it dips (the :active press), then the tile rises as it's held, so the hold reads as a lift on
+   its way; held long enough, it's in hand (.held), and the carry takes over from there */
+body.feel .tile.pressing:not(.add), body.feel .tile.pressing:not(.add):active, body.feel .c-drag.c-pressing { transform: translateY(-2px) scale(1.04); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 14px 26px rgba(0, 0, 0, 0.36); transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s, box-shadow 0.24s ease-out 0.06s; }
+body.feel .tile.held:not(.add), body.feel .tile.held:not(.add):active, body.feel .c-drag.c-lifting { transform: translateY(-3px) scale(1.06); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 18px 32px rgba(0, 0, 0, 0.4); transition: transform 0.12s ease-out, box-shadow 0.12s ease-out; }
+/* (Calmer motion and the system's reduced motion: no rise, the press still shows by its shadow) */
+body.calm .tile.pressing, body.calm .tile.held, body.calm .c-drag.c-pressing, body.calm .c-drag.c-lifting { transform: none; transition: none; }
+@media (prefers-reduced-motion: reduce) { body.feel .tile.pressing, body.feel .tile.held, body.feel .c-drag.c-pressing, body.feel .c-drag.c-lifting { transform: none; transition: none; } }
+
+/* While something is in hand (body.carrying: a tile, a piece, a block being moved or stretched, a meal), a
+   toast never stands between it and the board: a drop goes through, and the toasts step aside until it's
+   put down, so the rows under them show. They come back as they were, Undo and all */
+body.carrying #toasts, body.carrying #toasts .toast { pointer-events: none !important; }
+body.feel #toasts { transition: opacity 0.12s ease-out; }
+body.carrying #toasts { opacity: 0; visibility: hidden; transition: opacity 0.12s ease-out, visibility 0s linear 0.12s; }
+body.calm #toasts, body.calm.carrying #toasts { transition: none; }
+@media (prefers-reduced-motion: reduce) { body.feel #toasts, body.carrying #toasts { transition: none; } }
+
+/* The reset's sheet along the bottom of a phone, or an upright tablet, clears the home indicator */
+@media (max-width: 759px) { body.c-resetting .rack.resetting { bottom: max(8px, env(safe-area-inset-bottom)) !important; } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { body.c-resetting .rack.resetting { bottom: max(12px, env(safe-area-inset-bottom)) !important; } }
+
+/* A place to drop is never cut off: on a board too narrow for the name's nine slots beside its label (an
+   upright iPad, a phone on its side), the name's row stacks, the label over the rack, and the slots share
+   the row's whole width. The ninth slot sat under the board's edge there, and a letter dropped on it
+   landed nowhere */
+@container (max-width: 440px) {
+  .c-su-row.on:has(.c-su-rackslot) { grid-template-columns: minmax(0, 1fr); }
+  .c-su-row.on .c-su-rackslot { --slot: clamp(22px, calc((100cqw - 56px) / 9 - 6px), 46px); }
+}
+
+/* == V11, lift and place (docs/LIFT-AND-PLACE.md) ==
+   The press shows from a class set at pointerdown (.pressed), not :active, so iOS shows it too: down 1 px,
+   0.985, in 60 ms. A tile held in a list that scrolls rises instead (.pressing, above) */
+body.feel .tile.pressed:not(.add):not(.pressing):not(.held) { transform: translateY(1px) scale(0.985); transition: transform 0.06s ease-out, box-shadow 0.06s ease-out; }
+/* The tile left behind while it's carried is a socket: its words step out of sight (never faded with alpha)
+   and its place shows as a sunken outline in a real color, until the card comes home and fills it */
+body.feel .tile.socket, body.feel .tile.socket:hover, body.feel .tile.socket:active { transform: none; background: #2A2723; box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.55); outline: 2px dashed #8C877E; outline-offset: -5px; transition: none; }
+body.feel .tile.socket > * { visibility: hidden; }
+/* The card in hand comes up on the lift's spring (0.22 s, 0.62: a small overshoot), with a deeper shadow */
+body.feel .dragtile { transition: scale 0.36s linear(0, 0.127 5.6%, 0.388 11.1%, 0.656 16.7%, 0.866 22.2%, 1 27.8%, 1.066 33.3%, 1.084 38.9%, 1.073 44.4%, 1.051 50%, 1.029 55.6%, 1.011 61.1%, 1 66.7%, 0.995 72.2%, 0.993 77.8%, 0.994 83.3%, 0.996 88.9%, 0.998 94.4%, 1); }
+body.feel .dragtile .tile { box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -5px 0 rgba(0, 0, 0, 0.16), 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+/* The note about what's in hand rides above the block, and above the card in hand too; near the top edge it
+   sits beside the block. On a phone's desk it's one compact line instead of none */
+body.feel #chip { z-index: 61; }
+body.feel #chip.beside { transform: translate(-50%, -50%); }
+body.feel.phone-desk.carrying #chip:not([hidden]) { display: block !important; max-width: min(300px, calc(100vw - 32px)); padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.feel.phone-desk.carrying #chip small { display: inline; margin: 0 0 0 6px; white-space: nowrap; }
+/* A finger stretches a picked block from its handle: 44 px, half past the block's end */
+#sgrip { position: absolute; z-index: 45; width: 44px; height: 44px; margin: -22px 0 0 -22px; padding: 0; border: 0; background: transparent; cursor: ew-resize; touch-action: none; -webkit-touch-callout: none; user-select: none; }
+#sgrip[hidden] { display: none; }
+#sgrip::before { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 30px; margin: -15px 0 0 -7px; border-radius: 7px; background: #FFFFFF; box-shadow: 0 0 0 2px #1E1A14, 0 3px 8px rgba(0, 0, 0, 0.35); }
+#sgrip::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 14px; margin: -7px 0 0 -1px; border-radius: 1px; background: #1E1A14; box-shadow: -4px 0 0 #1E1A14, 4px 0 0 #1E1A14; }
+/* (Calmer motion and the system's reduced motion: the card comes up at once; the press still shows) */
+body.calm .dragtile, body.calm .tile.pressed { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { body.feel .dragtile, body.feel .tile.pressed { transition: none !important; } }
+/* The meal board's piece and the setup's letters in hand: the same lift (to 1.06 on the lift's spring) and the
+   same deeper shadow as a card; the setup's Try it piece shrinks toward its slot as it nears the day (140 ms) */
+body.feel .c-ghost-block { transition: scale 0.36s linear(0, 0.127 5.6%, 0.388 11.1%, 0.656 16.7%, 0.866 22.2%, 1 27.8%, 1.066 33.3%, 1.084 38.9%, 1.073 44.4%, 1.051 50%, 1.029 55.6%, 1.011 61.1%, 1 66.7%, 0.995 72.2%, 0.993 77.8%, 0.994 83.3%, 0.996 88.9%, 0.998 94.4%, 1); box-shadow: 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+body.feel .onb-float.onb-feel { transition: scale 0.14s cubic-bezier(0.2, 0.8, 0.2, 1); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -4px 0 rgba(0, 0, 0, 0.18), 0 22px 30px -10px rgba(30, 15, 4, 0.55); }
+body.calm .c-ghost-block, body.calm .onb-float.onb-feel { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { body.feel .c-ghost-block, body.feel .onb-float.onb-feel { transition: none !important; } }

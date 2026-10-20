@@ -125,7 +125,13 @@ test('a goal set up early starts on its own start date', () => {
 });
 
 test('sessions keep to the part of the day the rhythm asks for', () => {
+  /* (V11-2: your own time stays yours, so Sam's Free evenings hold no session; with the evening open instead, the
+     evening sessions go there) */
+  const kept = board(), k = withGoal(kept, { rhythm: { wd: 60, we: 60, when: 'evening' } });
+  M.planGoal(kept, k.id, NOV1, 600);
+  assert.ok(sessions(kept, k).every((x) => !M.calendarDay(kept, x.date).blocks.some((b) => b.free && b.start < x.add.start + x.add.dur && x.add.start < b.start + b.dur)), 'never in a Free evening');
   const st = board(), g = withGoal(st, { rhythm: { wd: 60, we: 60, when: 'evening' } });
+  for (let k2 = 0; k2 < 7; k2++) { const t = M.templateFor(st, M.addDays(NOV1, k2)); t.blocks = t.blocks.filter((b) => !b.free); }
   M.planGoal(st, g.id, NOV1, 600);
   assert.ok(sessions(st, g).length > 0);
   assert.ok(sessions(st, g).every((x) => x.add.start >= 1080), 'evening only');
