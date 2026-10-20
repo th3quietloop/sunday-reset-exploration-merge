@@ -305,7 +305,7 @@ export function makeHandler(opts = {}) {
   return async function handle(request) {
     const method = request.method;
     /* the readiness check: yes or no, never an error (real errors are for asks, the POSTs) */
-    if (method === 'GET' || method === 'HEAD') return reply(200, { ready: !!env.ANTHROPIC_API_KEY });
+    if (method === 'GET' || method === 'HEAD') return reply(200, { ready: !!String(env.ANTHROPIC_API_KEY || '').trim() });
     if (method !== 'POST') return fail(405, 'bad_request', 'Ask with GET or POST.', { allow: 'GET, POST' });
     if (!sameSite(request)) return fail(403, 'bad_request', 'This answers Sunday Reset’s own page only.');
     if (!/^application\/json\b/i.test(request.headers.get('content-type') || '')) return fail(415, 'bad_request', 'Send the ask as JSON.');
@@ -317,7 +317,9 @@ export function makeHandler(opts = {}) {
     try { body = JSON.parse(text); } catch (e) { return fail(400, 'bad_request', 'Send the ask as JSON.'); }
     const ask = readAsk(body);
     if (ask.error) return fail(400, 'bad_request', ask.error);
-    const key = env.ANTHROPIC_API_KEY;
+    /* a key pasted into a host's settings can carry what came with it: spaces or a newline, quotes, or the
+       whole line from a .env file (ANTHROPIC_API_KEY=...). Only the key itself goes to Claude. */
+    const key = String(env.ANTHROPIC_API_KEY || '').trim().replace(/^ANTHROPIC_API_KEY\s*=\s*/, '').replace(/^["']+|["']+$/g, '').trim();
     if (!key) return fail(503, 'not_ready', 'Smart breakdowns aren’t set up on this site yet.');
     const turn = limits.take(clientIp(request));
     if (!turn.ok) return reply(429, { error: 'too_many', message: turn.message, limit: turn.limit, most: turn.most, retry: turn.retry }, { 'retry-after': String(turn.retry) });
