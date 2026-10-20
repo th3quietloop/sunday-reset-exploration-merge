@@ -1,6 +1,6 @@
 # Corners V11-2 (Oct 20, 2026)
 
-Live: https://sunday-reset-corners-v11-2.vercel.app (Vercel project `sunday-reset-corners-v11-2`, root `v/corners11-2`). V11 stays at https://sunday-reset-corners-v11.vercel.app, frozen as it went live on Oct 15.
+Live: https://sunday-reset-corners-v11-2.vercel.app (Vercel project `sunday-reset-corners-v11-2`, root `v/corners11-2`), live since Oct 20, 2026 from commit cb4572a (deployment `dpl_4SoPUqPkU8sNVyfwRK8ydSYcwFub`). Its own ANTHROPIC_API_KEY is set in that project; the server reads only the key from what was pasted. V11 stays at https://sunday-reset-corners-v11.vercel.app, frozen as it went live on Oct 15.
 
 ## Why it exists
 
