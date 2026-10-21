@@ -103,6 +103,8 @@ test('the bar exam’s road: its stages in order across the months, practice exa
   for (const k of Object.keys(D.CATS)) {
     const sh = r.cdShades(D.CATS[k].base, L.stages);
     sh.forEach((x, i) => assert.ok(r.cdRatio(x.ink, x.bg) >= 4.5, k + ' stage ' + i + ': ' + x.ink + ' on ' + x.bg));
+    // (V11-3, D36) and a glance tells Learn, Practice, and Review apart: each a step lighter or deeper than the next
+    for (let i = 1; i < Math.min(3, sh.length); i++) assert.ok(r.cdRatio(sh[i - 1].bg, sh[i].bg) >= 1.25, k + ': stages ' + (i - 1) + ' and ' + i + ' read as one color, ' + sh[i - 1].bg + ' and ' + sh[i].bg);
   }
 });
 

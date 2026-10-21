@@ -28,6 +28,7 @@ function rig(board, nowMin) {
   const script = `
     const FEEL = true;
     let state = __board, today = __today, nowMin = __now;
+    const bigOn = () => [];
     let tdrag = null, dayChipMemo = null;
     const view = { got: {}, zoom: 'month', calm: true }, undoStack = [], toasts = [], landings = [];
     const day = (d) => M.calendarDay(state, d);

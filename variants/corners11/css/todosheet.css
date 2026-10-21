@@ -107,9 +107,11 @@ body.calm .c-ts-brick, body.calm .c-ts-brick.pressed, body.calm .c-ts-brick.pres
 /* in hand (the copy that rides the pointer, #dragtile): the brick, lifted, without the tag that belongs to the sheet */
 .dragtile .c-ts-brick { box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.24), 0 18px 30px -8px rgba(30, 15, 4, 0.5); }
 .dragtile .c-ts-next { display: none; }
-/* the phone's list has no board to drag to: there a brick is a tap, with no grip saying otherwise */
-body.phone:not(.phone-desk) .c-ts-brick { cursor: pointer; grid-template-columns: minmax(0, 1fr); }
-body.phone:not(.phone-desk) .c-ts-brick .c-ts-grip { display: none; }
+/* the phone's list has no board to drag to: there a brick is a tap, and the tap puts it on a day (the place panel, or
+   a step's Give it a time). V11-3 (D19, the mock): the grip shows anyway, the mark of a block that goes on a day; a
+   step that's done, or one waiting for a fuzzy date's day, has none */
+body.phone:not(.phone-desk) .c-ts-brick { cursor: pointer; }
+body.phone:not(.phone-desk) .c-ts-brick.c-cd-nodrag:not(.done):not(.c-cd-wait) .c-ts-grip { visibility: visible; }
 /* the sheet's own gap color behind the tag and the ring: the desk's panel, or the phone's sheet */
 #side { --c-ts-gap: #202125; }
 body.feel.phone #side, body.feel.phone-desk #side { --c-ts-gap: var(--sf-sheet, #1E1F23); }
@@ -205,6 +207,7 @@ textarea.c-msg-box::placeholder { color: #E8EEFB; opacity: 1; }
 .c-msg-back { position: relative; display: inline-block; min-height: 44px; margin: 0 0 4px; padding: 0; border: 0; background: none; color: var(--tx-2); font: 500 14px/44px var(--k-font); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
 .c-msg-back[hidden] { display: none; }
 .c-msg-back:hover { color: var(--tx); }
+.c-msg-back:not([hidden]) + .c-msg-back { margin-left: 16px; }
 .c-msg-back:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; border-radius: 4px; }
 .c-msg-row { display: flex; gap: 8px; align-items: center; }
 .c-msg-row > button { min-height: 52px; padding: 0 16px; border: 0; border-radius: 16px; font: 600 16px/1.2 var(--k-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -232,10 +235,11 @@ body.feel.c-kb #side .c-msg.editing .c-msg-row { position: sticky; bottom: 0; z-
 .c-ts-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .c-ts-opt { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 52px; padding: 12px 14px; border: 0; border-radius: 16px; background: var(--sf-raised); color: var(--tx); text-align: left; cursor: pointer; }
 .c-ts-opt:hover { background: var(--sf-hover); }
-.c-ts-opt.on { box-shadow: inset 0 0 0 1.5px #FFFFFF; }
+/* (V11-3, D16: an answer is a tile, and the picked one is filled white, the way a pick is everywhere; no radio circle
+   beside the steps' Done circles) */
+.c-ts-opt.on, .c-ts-opt.on:hover { background: #FFFFFF; color: var(--sf-ink, #1C1C1E); }
+.c-ts-opt.on .c-ts-ow small { color: #3A3A3F; }
 .c-ts-opt:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
-.c-ts-rd { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.55); }
-.c-ts-opt.on .c-ts-rd { box-shadow: inset 0 0 0 7px #FFFFFF; }
 .c-ts-ow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .c-ts-ow b { font: 600 16px/1.3 var(--k-font); }
 .c-ts-ow small { font: 500 13px/1.35 var(--k-font); color: var(--tx-2); }

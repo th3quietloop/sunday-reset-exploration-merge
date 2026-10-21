@@ -53,13 +53,13 @@ function sheet(o) {
 const kids = (e) => e.children.filter((c) => c.tagName);
 const words = (e) => (e.textContent || '') + e.children.map((c) => (c.tagName ? words(c) : c.text)).join('');
 
-test('on a phone the sheet\'s corner says Done, in its header; on the desk the panel keeps its x where it was', () => {
+test('on a phone the sheet\'s corner is its x, named Close, in its header; on the desk the panel keeps its x where it was', () => {
   const s = sheet({ phone: true });
   s.sheetChrome();
   const head = s.p.side.querySelector('.c-shead');
   assert.ok(head, 'a header row joined the sheet');
-  assert.equal(s.p.x.parentNode, head, 'Done stands in the header, beside More');
-  assert.equal(s.p.x.getAttribute('aria-label'), 'Done', 'its name is the word it shows');
+  assert.equal(s.p.x.parentNode, head, 'the x stands in the header, beside More');
+  assert.equal(s.p.x.getAttribute('aria-label'), 'Close', 'an x, never the word Done (V11-3, D18: Done belongs to the Done circles)');
   assert.ok(head.querySelector('.c-grab'), 'with a grabber');
   assert.equal(kids(s.p.side).indexOf(head) < kids(s.p.side).indexOf(s.p.inn), true, 'the header comes before the body');
   // the window grows past a phone (the Duo opens): the x goes back to its own place, first in the panel

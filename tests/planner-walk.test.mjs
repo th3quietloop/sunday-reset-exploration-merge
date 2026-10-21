@@ -339,8 +339,8 @@ test('on the desk More stands beside the panel\'s x, one row in its corner; on a
   f.sheetChrome();
   assert.equal(more.parentNode, head);
   assert.equal(pg.x.parentNode, head);
-  assert.ok(head.children.indexOf(more) < head.children.indexOf(pg.x), 'More before Done');
-  assert.equal(pg.x.getAttribute('aria-label'), 'Done');
+  assert.ok(head.children.indexOf(more) < head.children.indexOf(pg.x), 'More before the x');
+  assert.equal(pg.x.getAttribute('aria-label'), 'Close', 'an x, named Close (V11-3, D18)');
   /* and back */
   view.phone = false;
   f.sheetChrome();

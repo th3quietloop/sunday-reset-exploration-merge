@@ -62,15 +62,18 @@ body.feel.phone #side.scrolled .c-shead, body.feel.phone-desk #side.scrolled .c-
 #side .c-sback-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
 /* Done: the sheet's corner on a phone (its x on the desk) */
 #side .c-sx-done { display: none; }
+/* (V11-3, D18: an x, drawn in icons.js, the way the mock closes a sheet: the word Done belonged to the Done circles and
+   the band's Done. 44 to a finger, a round 36 to the eye, beside More) */
 body.feel.phone #side .c-shead > .side-x, body.feel.phone-desk #side .c-shead > .side-x {
-  position: static; float: none; flex: none;
-  width: auto; height: 44px; margin: 0; padding: 0 10px;
-  border-radius: 12px; background: transparent !important; color: var(--tx);
-  font: 600 16px var(--k-font); display: inline-flex; align-items: center;
+  position: relative; inset: auto; float: none; flex: none;
+  width: 44px; height: 44px; margin: 0; padding: 0;
+  border-radius: 50%; background: transparent !important; color: var(--tx);
+  display: inline-flex; align-items: center; justify-content: center;
 }
-body.feel.phone #side .c-shead > .side-x canvas, body.feel.phone-desk #side .c-shead > .side-x canvas { display: none; }
-body.feel.phone #side .c-shead > .side-x .c-sx-done, body.feel.phone-desk #side .c-shead > .side-x .c-sx-done { display: inline; }
-body.feel.phone #side .c-shead > .side-x:hover, body.feel.phone-desk #side .c-shead > .side-x:hover { background: var(--sf-hover) !important; }
+body.feel.phone #side .c-shead > .side-x::before, body.feel.phone-desk #side .c-shead > .side-x::before { content: ''; position: absolute; width: 36px; height: 36px; border-radius: 50%; background: var(--sf-raised); }
+body.feel.phone #side .c-shead > .side-x canvas, body.feel.phone-desk #side .c-shead > .side-x canvas { position: relative; display: block; width: 16px; height: 16px; }
+body.feel.phone #side .c-shead > .side-x .c-sx-done, body.feel.phone-desk #side .c-shead > .side-x .c-sx-done { display: none; }
+body.feel.phone #side .c-shead > .side-x:hover::before, body.feel.phone-desk #side .c-shead > .side-x:hover::before { background: var(--sf-hover); }
 body.feel.phone #side .c-shead > .side-x:active, body.feel.phone-desk #side .c-shead > .side-x:active { transform: translateY(1px); }
 body.feel.phone #side .c-shead > .side-x:focus-visible, body.feel.phone-desk #side .c-shead > .side-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
 

@@ -41,7 +41,7 @@ function quickRig(board, today, nowMin) {
     const W = quiet, Snd = quiet;
     const node = () => ({ value: '', hidden: true, style: {}, dataset: {}, appendChild(c) { return c; }, append() {}, setAttribute() {}, addEventListener() {}, focus() {}, classList: { add() {}, toggle() {} } });
     const $ = () => node(), el = () => node();
-    const closeSel = () => {}, noteMove = () => {}, weekOf = () => [], phoneDay = () => false, render = () => {}, openSel = () => {};
+    const closeSel = () => {}, noteMove = () => {}, landed = () => {}, weekOf = () => [], phoneDay = () => false, render = () => {}, openSel = () => {};
     const inboxId = () => 'inbox', bdFor = () => ({ match: false, steps: [] });
     function toast(text, kind, act) { toasts.push({ text, kind: kind || '', act: act || null }); }
     function undoAct(what) { return { label: 'Undo', what }; }
@@ -291,11 +291,14 @@ test('anywhere else a meal would move out, the refusal asks the question and its
   assert.equal(r.blockedText({ reason: 'meal', meal: Object.assign({}, meal, { date: '2026-10-21', to: 30 }) }, 'tap'), 'This moves Dinner to 12:30 am on Wed Oct 21. Move it?');
   // a change tried and refused for a meal is remembered for the question; one that works forgets it
   const add = { name: 'Errands', cat: 'yours', icon: 'star', dur: 120, src: { type: 'custom' } };
-  const tr = r.tryOn(() => M.placeAdd(r.state, TODAY, add, 1050));
+  const tr = r.tryOn(() => M.placeAdd(r.state, TODAY, add, 1050), true);
   assert.equal(tr.r.reason, 'meal');
   assert.equal(r.mealAsk.words, 'This moves Dinner to 4:45 pm. Move it?');
   const a = r.mealAsk;
+  // (C15) a probe or a preview nobody sees leaves the question be
   r.tryOn(() => M.placeAdd(r.state, TODAY, add, 600));
+  assert.equal(r.mealAsk, a, 'a probe leaves it');
+  r.tryOn(() => M.placeAdd(r.state, TODAY, add, 600), true);
   assert.equal(r.mealAsk, null);
   // the yes runs the same change with meals allowed, and says what moved
   r.mealYes(a);
@@ -304,6 +307,11 @@ test('anywhere else a meal would move out, the refusal asks the question and its
   assert.equal(sp(t.text), 'Dinner moves to 4:45 pm.');
   assert.equal(t.kind, 'good');
   assert.equal(t.act.label, 'Undo');
+  // (C15) a yes once the board changed since asks again, and changes nothing
+  const n = r.state.dates[TODAY].adds.length;
+  r.mealYes(a);
+  assert.equal(r.toasts[r.toasts.length - 1].text, 'The board changed since then. Try it again.');
+  assert.equal(r.state.dates[TODAY].adds.length, n);
   // and the page's own toast gives that question its yes (the real toast, cut out with its Feel half as a stub)
   const shown = [];
   const w = runInNewContext(`const FEEL = true; let mealAsk = __ask; const mealYes = (x) => __shown.push(['yes', x.words]); const toastFeel = (text, kind, act) => __shown.push([text, kind, act && act.label]);

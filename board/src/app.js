@@ -420,9 +420,15 @@
     const snap = JSON.stringify(state);
     let r;
     try { r = fn(); } catch (e) { console.error(e); logError('change', e); r = false; oops('That didn’t work, and nothing changed.'); }
-    /* (V11-2: a meal's refusal is remembered for its question; a world without it, a test's, skips it) */
-    if (typeof noteMeal === 'function') noteMeal(fn, r);
-    if (r === false || (r && r.ok === false)) { state = JSON.parse(snap); cache.clear(); render(); return r || false; }
+    if (r === false || (r && r.ok === false)) {
+      /* (V11-2: a meal's refusal is remembered for its question, only while the change left the board as it was, so
+         its yes runs on the same board its closure knows; a world without it, a test's, skips it) */
+      const same = !!(r && r.reason === 'meal') && JSON.stringify(state) === snap;
+      if (typeof noteMeal === 'function') noteMeal(same ? fn : null, r);
+      if (!same) state = JSON.parse(snap);
+      cache.clear(); render(); return r || false;
+    }
+    if (typeof noteMeal === 'function') noteMeal(null, r);
     /* (V11-2: a to-do from an earlier day given a time from today on takes that day as its own, in this same change;
        a world without it, a test's, skips it) */
     if (FEEL && typeof newDayOf === 'function') newDayOf(r);
@@ -641,22 +647,32 @@
   /* V11-2 (meals keep their time): the last change tried or made that was refused because it would move a meal out of
      its usual time (Model.canPlace's reason meal), so the toast that says so can ask once: This moves Dinner to 4:45 pm.
      Move it? (toast, blockedText). The yes runs that same change again with Model.withMeals, and says what it moved */
+  /* (C15: it remembers which board it was refused on, the board itself, and the last change Undo holds, so a yes after
+     anything else changed asks again instead of running a change against a board that's gone; and only a refusal the
+     person sees asks: a drop, a drag's aim, the place panel, quick add. Probes and previews of a kind leave it be) */
   let mealAsk = null;
-  function noteMeal(fn, r) { mealAsk = FEEL && r && r.ok === false && r.reason === 'meal' && r.meal ? { fn, words: mealWords(r.meal), at: Date.now() } : null; }
+  function noteMeal(fn, r) { mealAsk = FEEL && fn && r && r.ok === false && r.reason === 'meal' && r.meal ? { fn, words: mealWords(r.meal), at: Date.now(), board: state, top: undoStack[undoStack.length - 1], n: undoStack.length } : null; }
   function mealYes(a) {
     mealAsk = null;
+    if (a.board !== state || a.top !== undoStack[undoStack.length - 1] || a.n !== undoStack.length) { Snd.bad(); toast('The board changed since then. Try it again.', 'bad'); return; }
     const r = commit(() => M.withMeals(true, a.fn));
-    if (r && r.ok !== false) { Snd.slide(); toast((movesWords(r, true) || 'Done') + '.', 'good', { label: 'Undo', fn: undo }); }
-    else { Snd.bad(); toast(blockedText(r || {}, 'tap'), 'bad'); }
+    if (r && r.ok !== false) {
+      Snd.slide();
+      /* (it lands the way any placing does, and counts as one) */
+      if (r.add && r.add.id && r.date) landed(r.date, 'add:' + r.add.id, Math.min(1, (r.add.dur || 60) / 60));
+      noteMove('place');
+      toast((movesWords(r, true) || 'Done') + '.', 'good', { label: 'Undo', fn: undo });
+    } else { Snd.bad(); toast(blockedText(r || {}, 'tap'), 'bad'); }
   }
-  function tryOn(fn) {
+  /* ask: the refusal is one the person sees, so a meal's can ask its question (noteMeal) */
+  function tryOn(fn, ask) {
     const saved = state.dates;
     state.dates = M.clone(saved);
     let r;
     try { r = fn(); } catch (e) { r = { ok: false }; }
     const dates = state.dates;
     state.dates = saved;
-    noteMeal(fn, r);
+    if (ask) noteMeal(fn, r);
     return { r: r || { ok: false }, dates };
   }
   function daysWith(dates, list) {
@@ -721,6 +737,14 @@
   function nothingBehind(ws) { return !!(state.created && state.created > M.addDays(ws, -7)) && firstReset(ws); }
   /* V11: every step goes by its own title (People, not You and {partner}); the version sets them */
   const stepTitle = (st) => (st.key === 'kim' && !FEEL ? usName() : st.key === 'done' && !FEEL && view.reset && view.reset.catchup ? 'The rest of your week' : named(st.title));
+  /* V11-3 (D37, docs/BIG-MOMENTS.md D): the big things on a day, for the Month and Year cards: a goal's own date, and a
+     date with steps to get ready (a countdown's) that the board would otherwise leave as a timed event */
+  function bigOn(date) {
+    if (!FEEL || !state) return [];
+    const goals = ((state.goals || []).filter((g) => !g.archived && g.date === date)).map((g) => ({ kind: 'goal', name: g.name, icon: 'flag' }));
+    const dates = M.timedOn(state, date).filter((e) => !e.big && cdWorth(cdEvent(e.id) || e)).map((e) => ({ kind: 'timed', name: e.name, icon: e.icon || 'star' }));
+    return goals.concat(dates);
+  }
   function monthCells(focus) {
     const mk = M.monthKey(focus);
     const ahead = aheadMode();
@@ -741,7 +765,7 @@
       return {
         date, num: M.parts(date).d, inMonth: ahead || date.slice(0, 7) === mk, today: date === today, past: date < today, weekend: d.wd === 0 || d.wd === 6, yours: c.yours >= 60 && !sameYours ? M.hours(c.yours) : '',
         open: free >= 60 && !sameFree ? M.hours(free) : '',
-        trip: d.trip ? d.trip.name : '', flags: c.flags.filter((f) => f.kind !== 'trip').map((f) => ({ kind: f.kind, name: f.name, icon: f.icon })).concat(FEEL ? ownThings(date, d) : []),
+        trip: d.trip ? d.trip.name : '', flags: bigOn(date).concat(c.flags.filter((f) => f.kind !== 'trip').map((f) => ({ kind: f.kind, name: f.name, icon: f.icon })), FEEL ? ownThings(date, d).filter((x) => !bigOn(date).some((b) => x.name.indexOf(b.name + ' ') === 0)) : []),
         due: c.due.length, todo: c.tasks.length, dinner: !!c.dinner,
         blocks: d.blocks.map((b) => ({ start: b.start, dur: b.dur, cat: b.cat, soft: !!b.soft, sleep: !!b.sleep }))
       };
@@ -758,6 +782,7 @@
       const date = M.addDays(ms, k);
       for (const m of M.markersOn(state, date)) list.push({ kind: 'marker', when: M.MONTH_SHORT[p.m - 1] + ' ' + (k + 1), name: m.name, sort: date });
       for (const e of M.timedOn(state, date)) if (e.big) list.push({ kind: 'timed', when: M.MONTH_SHORT[p.m - 1] + ' ' + (k + 1), name: e.name, sort: date });
+      for (const b of bigOn(date)) list.push({ kind: b.kind, when: M.MONTH_SHORT[p.m - 1] + ' ' + (k + 1), name: b.name, sort: date });
     }
     const due = state.tasks.filter((t) => !t.done && t.due && t.due.slice(0, 7) === mk).length;
     list.sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
@@ -779,7 +804,7 @@
       for (let k = 0; k < n; k++) {
         const date = M.addDays(ms, k), d = day(date);
         yours += M.totals(d).yours || 0;
-        days.push({ num: k + 1, col: (off + k) % 7, row: Math.floor((off + k) / 7), trip: !!d.trip, marker: d.markers.length > 0, big: M.timedOn(state, date).some((e) => e.big), today: date === today, due: d.due.length > 0 });
+        days.push({ num: k + 1, col: (off + k) % 7, row: Math.floor((off + k) / 7), trip: !!d.trip, marker: d.markers.length > 0, big: M.timedOn(state, date).some((e) => e.big) || bigOn(date).length > 0, today: date === today, due: d.due.length > 0 });
       }
       /* a version can mark a month nobody has planned yet as the usual week's hours (window.SR_usualYears) */
       /* (V11 goals: a skipped session takes no time, so it doesn't make a month planned) */
@@ -3773,9 +3798,16 @@
   /* a session wears its goal's color and this mark, so it reads as a goal's on the board */
   const GOAL_MARK = 'star';
   const goalById = (id) => ((state && state.goals) || []).find((g) => g.id === id) || null;
+  /* V11-3 (D3): one goal, one panel. Anything that opens a goal opens its countdown (the plan's own panel is under the
+     countdown's More, Open the plan) */
+  const openGoal = (id) => (FEEL ? openCountdown({ goal: id }) : openSel({ type: 'goal', id }));
   /* a goal still in play: not removed, and its date still ahead (V11-2: or no date at all, a few times a week for as
      long as it runs; docs/BIG-MOMENTS.md) */
   const liveGoal = (g) => !!g && !g.archived && (!g.date || g.date > today);
+  /* V11-3 (D5, never invent a number): hours a goal's parts came with from the library, which nobody typed, are its
+     plan's quiet guide and never said as a total: no 0 of 400 h, no Your days hold about, no Behind by, no Make it
+     fit. Typing any part's hours makes them the person's own (hoursGuess comes off) */
+  const guessHours = (g) => !!(g && g.hoursGuess);
   /* V11-2: how often a goal with no date runs (its rhythm's n, or once on each of its days with time), and what it says
      in place of a date: 3 times a week, Every day */
   const goalTimes = (g) => { const r = (g && g.rhythm) || {}, n = Math.round(Number(r.n)); return n >= 1 ? Math.min(7, n) : (r.days || []).filter((d) => ((d === 0 || d === 6) ? r.we : r.wd) > 0).length; };
@@ -3791,8 +3823,9 @@
      said as 2.5 h */
   /* (a number and its unit never break across two lines) */
   const goalHrs = (m) => (m < 60 ? Math.round(m) + ' min' : m < 600 && Math.round(m) % 30 ? M.dur(m).replace(/(\d) /g, '$1 ') : M.hours(m).replace(' ', ' '));
-  /* a day's hours in a narrow cell of the week strip, exactly and short: 45 min, 2 h, 1.5 h, 1.75 h */
-  const stripHrs = (m) => (m < 60 ? Math.round(m) + ' min' : Math.round(m) % 30 ? Math.round((m / 60) * 100) / 100 + ' h' : M.hours(m).replace(' ', ' '));
+  /* a day's hours in a narrow cell of the week strip, exactly and short, one way of saying it (V11-3, D34): 45 min,
+     2 h, 1 h 30, 1 h 45 (hours, then the minutes past them; a screen reader hears the whole words) */
+  const stripHrs = (m) => { const v = Math.round(m), h = Math.floor(v / 60), r = v % 60; return v < 60 ? v + '\u00a0min' : r ? h + '\u00a0h\u00a0' + String(r).padStart(2, '0') : h + '\u00a0h'; };
   /* the same, shorter still, for the reset's Goals step, whose cells are narrower: 45m, 2h, 1.5h, 1.75h */
   const cellHrs = (m) => (m < 60 ? Math.round(m) + 'm' : Math.round((m / 60) * 100) / 100 + 'h');
   /* what's done of all of it: 0 of 35 h, 12 of 400 h, 30 min of 2 h */
@@ -3839,7 +3872,7 @@
   const someChoices = (total) => [0.25, 0.5, 0.75].map((k) => Math.round((total * k) / 15) * 15).filter((m, i, all) => m >= 15 && m < total && all.indexOf(m) === i);
   /* where a goal stands, in two words: On track, Behind by 4 h, Paused, or its date gone by */
   /* (V11-2: a goal's first week never says Behind, Model.goalProgress's firstWeek: what its days hold, calmly) */
-  const standWords = (g, st) => (g.paused ? 'Paused' : !liveGoal(g) ? 'Its date has gone by' : st.behindMin < 15 ? 'On track' : st.firstWeek ? 'Days hold about ' + goalHrs(aboutMin(st.totalMin - st.behindMin)) : 'Behind by ' + goalHrs(st.behindMin));
+  const standWords = (g, st) => (g.paused ? 'Paused' : !liveGoal(g) ? 'Its date has gone by' : st.behindMin < 15 || guessHours(g) ? 'On track' : st.firstWeek ? 'Days hold about ' + goalHrs(aboutMin(st.totalMin - st.behindMin)) : 'Behind by ' + goalHrs(st.behindMin));
   /* a part's hours as a person types them (35, 1.5, 2 h) to minutes on the grid, up to a thousand hours; null
      when it doesn't read */
   const PART_MAX_H = 1000;
@@ -3949,14 +3982,14 @@
       box.append(bar, nums);
       return box;
     }
-    const k = st.totalMin ? Math.min(1, st.doneMin / st.totalMin) : 0;
+    const guess = guessHours(g), k = st.totalMin && !guess ? Math.min(1, st.doneMin / st.totalMin) : 0;
     fill.style.width = (k > 0 ? Math.max(2, k * 100) : 0).toFixed(1) + '%';
     fill.style.setProperty('--bg', cat(g.cat).base);
     bar.appendChild(fill);
     bar.setAttribute('aria-hidden', 'true');
     const nums = el('span', 'c-gl-nums');
-    const sw = holdWords(g, st), cls = g.paused || !liveGoal(g) ? 'quiet' : st.behindMin >= 15 ? 'behind' : 'ok';
-    nums.append(el('b', '', ofHrs(st.doneMin, st.totalMin)), el('span', 'c-gl-stand ' + cls, sw));
+    const sw = holdWords(g, st), cls = g.paused || !liveGoal(g) ? 'quiet' : st.behindMin >= 15 && !guess ? 'behind' : 'ok';
+    nums.append(el('b', '', guess ? (st.doneMin > 0 ? goalHrs(st.doneMin) + ' done' : 'Started') : ofHrs(st.doneMin, st.totalMin)), el('span', 'c-gl-stand ' + cls, sw));
     box.append(bar, nums);
     /* done is only what someone said happened; time that went by with no word says so, apart from it */
     if (st.unconfirmedMin >= 15) box.appendChild(el('span', 'c-gl-unc', unconfWords(st.unconfirmedMin)));
@@ -3965,7 +3998,7 @@
   const unconfWords = (m) => goalHrs(m) + ' not confirmed yet';
   /* V11 (docs/PHONE-REDESIGN.md, 7.2): where a goal stands on its card, calmly: short isn't behind, so a plan its days
      can't hold says what they hold (Days hold about 287 h) the way its sheet does, never Behind by */
-  const holdWords = (g, st) => (g.paused || !liveGoal(g) || st.behindMin < 15 ? standWords(g, st) : 'Days hold about ' + goalHrs(st.totalMin - st.behindMin));
+  const holdWords = (g, st) => (g.paused || !liveGoal(g) || st.behindMin < 15 || guessHours(g) ? standWords(g, st) : 'Days hold about ' + goalHrs(st.totalMin - st.behindMin));
   /* this week's share in a line: This week: 14 h planned, 2 h done */
   function weekShare(g, st) {
     if (g.paused) return 'Paused. Nothing new goes on the board.';
@@ -3994,7 +4027,7 @@
       /* (V11-2: a goal opens its countdown, the road to its date or its weeks as dots; its plan is under the countdown's More) */
       const opens = FEEL ? '. Opens its countdown' : '. Opens the goal';
       if (!g.date && st.perWeek) b.setAttribute('aria-label', (g.name || 'Your goal') + ', ' + goalWhenOf(g) + '. ' + weekShare(g, st) + opens);
-      else b.setAttribute('aria-label', (g.name || 'Your goal') + ', ' + goalWhen(g.date) + '. ' + ofHrs(st.doneMin, st.totalMin) + ' done' + (st.unconfirmedMin >= 15 ? ', ' + unconfWords(st.unconfirmedMin) : '') + '. ' + holdWords(g, st) + (st.behindMin >= 15 && liveGoal(g) && !g.paused ? ' of ' + goalHrs(st.totalMin) : '') + opens);
+      else b.setAttribute('aria-label', (g.name || 'Your goal') + ', ' + goalWhen(g.date) + '. ' + (guessHours(g) ? goalHrs(st.doneMin) : ofHrs(st.doneMin, st.totalMin)) + ' done' + (st.unconfirmedMin >= 15 ? ', ' + unconfWords(st.unconfirmedMin) : '') + '. ' + holdWords(g, st) + (st.behindMin >= 15 && liveGoal(g) && !g.paused && !guessHours(g) ? ' of ' + goalHrs(st.totalMin) : '') + opens);
       b.addEventListener('click', () => { Snd.init(); Snd.pick(); if (FEEL) openCountdown({ goal: g.id }); else openSel({ type: 'goal', id: g.id }); });
       box.appendChild(b);
     });
@@ -4019,7 +4052,7 @@
   }
   function goalDraftOf(g, step) {
     /* (V11-2: a goal with no end date is changed as one, unless it's being given a date) */
-    return { edit: g.id, step, name: g.name, date: g.date || '', noDate: !g.date && step !== 'date', partsNoDate: !g.date && step !== 'date', start: g.start || today, parts: (g.parts || []).map((p) => Object.assign({}, p)), partsFor: g.name, kind: g.kind, cat: g.cat, mix: g.mix, exam: null, note: '', source: 'goal', rhythm: Object.assign({}, g.rhythm) };
+    return { edit: g.id, step, name: g.name, date: g.date || '', noDate: !g.date && step !== 'date', partsNoDate: !g.date && step !== 'date', start: g.start || today, parts: (g.parts || []).map((p) => Object.assign({}, p)), partsFor: g.name, kind: g.kind, cat: g.cat, mix: g.mix, exam: null, note: '', source: 'goal', rhythm: Object.assign({}, g.rhythm), libHours: !!g.hoursGuess };
   }
   function keepGoalDraft() {
     const d = view.goalDraft;
@@ -4042,7 +4075,7 @@
   function openGoalFlow(name, step, editId, more) {
     if (inToday()) setMode('planner');
     const g = editId ? goalById(editId) : null, m = more || {};
-    if (g) view.goalDraft = goalDraftOf(g, step || 'rhythm');
+    if (g) { view.goalDraft = goalDraftOf(g, step || 'rhythm'); view.goalDraft.fromPlan = !!(view.sel && view.sel.type === 'goal'); }
     else if (!view.goalDraft || view.goalDraft.edit || (name && view.goalDraft.seed !== name) || (m.task && view.goalDraft.fromTask !== m.task)) view.goalDraft = (!m.task && savedGoalDraft(name)) || freshGoalDraft(name, m);
     openSel({ type: 'newGoal', id: editId || null, kind: view.goalDraft.step });
   }
@@ -4055,6 +4088,8 @@
     d.note = ex.note ? ex.note + ' Change any of it.' : 'A start. Change the parts and their hours to fit.';
     /* V11-2: a goal with no end date has no hours to divide: one part named for it, its sessions' name (more take turns) */
     d.partsNoDate = !!d.noDate;
+    /* (V11-3, D5: hours from the library are a guess until the person types some) */
+    d.libHours = !d.noDate;
     if (d.noDate && ex.source !== 'exam') { d.parts = [{ id: M.newId('gp'), name: d.name.trim() || 'Your goal', min: 0 }]; d.mix = null; d.note = 'Its sessions take this name. Add more parts and they take turns.'; }
   }
   /* the goal a draft would make: the same id as the goal it changes, so its sessions count */
@@ -4128,7 +4163,7 @@
       if (!g) return false;
       /* (Back is Cancel, and so is the corner: nothing changes until Save) */
       sheetCloseWord('Close');
-      sheetBack(g.name, () => { view.goalDraft = null; openSel({ type: 'goal', id: d.edit }); });
+      sheetBack(g.name, () => { view.goalDraft = null; if (d.fromPlan) openSel({ type: 'goal', id: d.edit }); else openGoal(d.edit); });
       glTitle(p, { date: 'Move the date', parts: 'Change the parts', rhythm: 'Change the plan', name: 'Rename it' }[step] || 'Change the plan');
     } else {
       sheetCloseWord('Close');
@@ -4194,7 +4229,7 @@
   /* what the draft's days hold against what it needs, for the foot's line (Holds about 300 of 400 h by Feb 23.) and the
      plan's plate (Your days hold about ...), with the one quiet way to add more */
   function goalHolds(d) {
-    if (!d.date || !(d.date > today)) return null;
+    if (!d.date || !(d.date > today) || d.libHours) return null;
     const g = draftGoal(d), st = goalStand(g), by = dayText(d.date);
     const part = { morning: 'mornings', afternoon: 'afternoons', evening: 'evenings' }[(d.rhythm || {}).when];
     if (st.behindMin < 15) {
@@ -4215,6 +4250,7 @@
     const m = (r && r.message) || '';
     if (!/^Behind\b/.test(m)) return m;
     const x = goalById(g.id) || g, st = goalStand(x);
+    if (guessHours(x)) return '';
     return x.date ? 'Your days hold about ' + ofHrs(aboutMin(st.totalMin - st.behindMin), st.totalMin) + ' by ' + dayText(x.date) + '.' : '';
   }
   /* a few days in a line: Thu, Thu and Sat, Thu, Fri, and Sat (a day more than a week off by its date) */
@@ -4266,9 +4302,9 @@
       const ex = v ? M.goalForExam(v, D) : null;
       match.hidden = !(ex && ex.source === 'exam' || (ex && ex.match && ex.match !== 'other'));
       if (match.hidden) return;
-      const n = ex.parts.length, h = ex.parts.reduce((a, x) => a + x.min, 0);
+      const n = ex.parts.length;
       const words = el('span', 'c-gl-mw');
-      words.append(el('b', '', ex.source === 'exam' ? ex.exam : cap(v)), el('span', '', ex.source === 'exam' ? plural(n, 'part', 'parts') + ', about ' + goalHrs(h) + '. You can change them later.' : 'Starts with ' + plural(n, 'part', 'parts') + ' you can change later.'));
+      words.append(el('b', '', ex.source === 'exam' ? ex.exam : cap(v)), el('span', '', ex.source === 'exam' ? plural(n, 'part', 'parts') + ' you can change later.' : 'Starts with ' + plural(n, 'part', 'parts') + ' you can change later.'));
       match.append(icon(ex.source === 'exam' ? 'book' : GOAL_MARK, 10, '#CDCDCD'), words);
     };
     const inp = goalInput(d.name, d.edit ? '' : 'An exam, a race, a project', 'gl-name', (v) => {
@@ -4298,15 +4334,15 @@
   }
   /* by when, on the first page: the date, three quick ones under it, and a later start only when it's wanted */
   function askWhen(p, d) {
-    const date = dateInput(d.date, (v) => { d.date = v; d.noDate = false; renderSide(); });
-    date.min = M.addDays(d.start > today ? d.start : today, 1);
-    date.dataset.fk = 'gl-date';
+    const min = M.addDays(d.start > today ? d.start : today, 1);
+    const date = FEEL ? dayPicker(d.date, min, (v) => { d.date = v; d.noDate = false; renderSide(); }, 'gl-date') : dateInput(d.date, (v) => { d.date = v; d.noDate = false; renderSide(); });
+    if (!FEEL) { date.min = min; date.dataset.fk = 'gl-date'; }
     date.setAttribute('aria-describedby', 'gl-date-say');
     field(p, 'By when?', date);
     const sug = el('div', 'c-gl-suggest');
     sug.setAttribute('role', 'group'); sug.setAttribute('aria-label', 'Quick dates');
     [['In a month', M.addMonths(today, 1)], ['In 3 months', M.addMonths(today, 3)], ['In 6 months', M.addMonths(today, 6)]].forEach(([n, v], k) => {
-      const b = button(n, 'c-gl-pill', () => { d.date = v; d.noDate = false; Snd.pick(); renderSide(); });
+      const b = button(n, 'c-gl-pill', () => { d.date = v; d.noDate = false; if (view.got.dp) view.got.dp['gl-date'] = M.monthStart(v); Snd.pick(); renderSide(); });
       b.setAttribute('aria-pressed', String(!d.noDate && d.date === v));
       b.dataset.fk = 'gl-qd-' + k;
       sug.appendChild(b);
@@ -4324,9 +4360,8 @@
     say.hidden = !d.date && !d.noDate;
     p.appendChild(say);
     if (d.askStart || (d.start && d.start > today)) {
-      const start = dateInput(d.start || today, (v) => { d.start = v < today ? today : v; renderSide(); });
-      start.min = today;
-      start.dataset.fk = 'gl-start-date';
+      const start = FEEL ? dayPicker(d.start || today, today, (v) => { d.start = v < today ? today : v; renderSide(); }, 'gl-start-date') : dateInput(d.start || today, (v) => { d.start = v < today ? today : v; renderSide(); });
+      if (!FEEL) { start.min = today; start.dataset.fk = 'gl-start-date'; }
       field(p, 'Starts', start);
     } else {
       const l = el('p', 'c-gl-say c-gl-starts', 'Starts today. ');
@@ -4339,9 +4374,9 @@
   /* a goal's own date, moved (a new goal asks it on the first page) */
   function askDate(p, d) {
     p.appendChild(el('p', 'c-ts-facts c-gl-lead', 'Sessions spread over the days before it.'));
-    const date = dateInput(d.date, (v) => { d.date = v; renderSide(); });
-    date.min = M.addDays(d.start > today ? d.start : today, 1);
-    date.dataset.fk = 'gl-date';
+    const min = M.addDays(d.start > today ? d.start : today, 1);
+    const date = FEEL ? dayPicker(d.date, min, (v) => { d.date = v; renderSide(); }, 'gl-date') : dateInput(d.date, (v) => { d.date = v; renderSide(); });
+    if (!FEEL) { date.min = min; date.dataset.fk = 'gl-date'; }
     date.setAttribute('aria-describedby', 'gl-date-say');
     field(p, 'The date', date);
     const say = el('p', 'c-gl-say c-gl-dsay', d.date ? (d.date > today ? cap(goalWhen(d.date)) + '.' : 'Pick a day after today.') : 'No date yet.');
@@ -4349,9 +4384,8 @@
     p.appendChild(say);
     /* (a goal already under way keeps its start; moving its date is all this asks) */
     if (!(d.start > today)) return;
-    const start = dateInput(d.start || today, (v) => { d.start = v < today ? today : v; renderSide(); });
-    start.min = today;
-    start.dataset.fk = 'gl-start-date';
+    const start = FEEL ? dayPicker(d.start || today, today, (v) => { d.start = v < today ? today : v; renderSide(); }, 'gl-start-date') : dateInput(d.start || today, (v) => { d.start = v < today ? today : v; renderSide(); });
+    if (!FEEL) { start.min = today; start.dataset.fk = 'gl-start-date'; }
     field(p, 'Starts', start);
   }
   function askParts(p, d) {
@@ -4368,7 +4402,7 @@
       hrs.type = 'text'; hrs.inputMode = 'decimal'; hrs.value = partHours(x.min || 0); hrs.maxLength = 7;
       hrs.dataset.fk = 'gl-ph-' + x.id; hrs.dataset.v0 = hrs.value;
       hrs.setAttribute('aria-label', 'Hours for ' + (x.name || 'part ' + (k + 1)));
-      hrs.addEventListener('input', () => { hrs.dataset.v0 = hrs.value; const m = partMinutes(hrs.value); if (m != null) { x.min = m; d.partsFor = d.name; sum(); keepGoalDraft(); } });
+      hrs.addEventListener('input', () => { hrs.dataset.v0 = hrs.value; const m = partMinutes(hrs.value); if (m != null) { x.min = m; d.partsFor = d.name; d.libHours = false; sum(); keepGoalDraft(); } });
       /* (a part takes a thousand hours at most, and says so when more was typed) */
       hrs.addEventListener('change', () => { const typed = parseFloat(String(hrs.value).replace(',', '.')), m = partMinutes(hrs.value); hrs.value = partHours(m != null ? m : x.min || 0); hrs.dataset.v0 = hrs.value; if (typed > PART_MAX_H) toast('A part can take up to 1,000' + ' ' + 'h, so ' + (x.name || 'this part') + ' is 1,000' + ' ' + 'h.'); });
       hrs.addEventListener('keydown', (e) => e.stopPropagation());
@@ -4461,7 +4495,9 @@
       field(p, 'When', sg);
       return;
     }
-    const n = draftNeed(d);
+    /* (V11-3, D5: hours nobody typed are never said as a total: the library's guess guides the time it starts with, quietly) */
+    const n = d.libHours ? null : draftNeed(d);
+    if (d.libHours) p.appendChild(el('p', 'c-gl-need', 'A start that fits your week. Change the days and the time any way you like.'));
     if (n) {
       const need = el('p', 'c-gl-need'), more = d.edit && n.done > 0;
       need.append(more ? 'To fit the ' : 'To fit ', el('b', '', goalHrs(n.left)), (more ? ' left' : '') + ' by ' + M.dateText(d.date) + ': about ', el('b', '', keepUnit(M.dur(Math.max(15, Math.ceil(n.perDay / 15) * 15)))), ' a day, every day.');
@@ -4552,7 +4588,7 @@
     wk.days.forEach((x) => {
       const li = el('li', x.min ? '' : 'none');
       /* a day the rhythm leaves out is Off; one it uses with no quiet time left that week takes 0 h */
-      li.append(el('span', 'c-gl-sd', M.DAY_SHORT[M.weekday(x.date)]), el('b', '', x.min ? stripHrs(x.min) : (d.rhythm.days || []).includes(M.weekday(x.date)) ? '0 h' : 'Off'));
+      li.append(el('span', 'c-gl-sd', M.DAY_SHORT[M.weekday(x.date)]), el('b', '', x.min ? stripHrs(x.min) : (d.rhythm.days || []).includes(M.weekday(x.date)) ? 'None' : 'Off'));
       li.setAttribute('aria-label', M.DAY_LONG[M.weekday(x.date)] + ', ' + (x.min ? goalHrs(x.min) : 'nothing'));
       strip.appendChild(li);
     });
@@ -4561,7 +4597,7 @@
     p.appendChild(sec);
     planSummary(p, d);
     const rows = el('div', 'c-ts-rows');
-    glRow(rows, 'list', 'Parts', d.noDate ? (d.parts.length > 1 ? plural(d.parts.length, 'part', 'parts') + ', taking turns' : (d.parts[0] && d.parts[0].name) || 'One part') : plural(d.parts.length, 'part', 'parts') + ' · about ' + goalHrs(d.parts.reduce((a, x) => a + (x.min || 0), 0)), () => goStepTo('parts'), 'gl-parts');
+    glRow(rows, 'list', 'Parts', d.noDate ? (d.parts.length > 1 ? plural(d.parts.length, 'part', 'parts') + ', taking turns' : (d.parts[0] && d.parts[0].name) || 'One part') : plural(d.parts.length, 'part', 'parts') + (d.libHours ? '' : ' · about ' + goalHrs(d.parts.reduce((a, x) => a + (x.min || 0), 0))), () => goStepTo('parts'), 'gl-parts');
     p.appendChild(rows);
   }
   /* V11 goals: starting a plan, and the changes a goal's panel makes */
@@ -4594,6 +4630,7 @@
     if (!goalStepOk(d, 'date') || !goalStepOk(d, 'parts') || !goalStepOk(d, 'rhythm') || !d.name.trim()) return;
     const g = draftGoal(d), hw = how || {};
     g.id = M.newId('g');
+    if (d.libHours) g.hoursGuess = true;
     if (hw.next) { const nw = M.addDays(M.weekStart(today), 7); if (!(g.start > nw)) g.start = nw; }
     const from = g.start > today ? g.start : today;
     /* a to-do made into a goal comes off the list in the same change (its times too), so one Undo brings both back */
@@ -4614,7 +4651,7 @@
     const took = hw.own && r && r.own && r.own.min ? ' It uses ' + keepUnit(M.dur(r.own.min)) + ' of your own time this week.' : '';
     toast(g.name + ' is planned. ' + (hw.next ? 'It starts ' + M.dateText(g.start) + '.' : planSaid(g, r)) + took + (t0 ? ' The to-do is off your list.' : ''), 'good', undoAct(g.name + ' is off your goals' + (t0 ? ', and the to-do is back.' : '.')));
     showSessions(ids);
-    if (view.phone) closeSel(); else openSel({ type: 'goal', id: g.id });
+    openGoal(g.id);
   }
   /* the sessions a change placed: the board goes to the week of the first, and the ones in view drop into place */
   function showSessions(ids) {
@@ -4644,6 +4681,7 @@
       /* the draft holds the whole goal: the fixes under the plan can change its rhythm, date, or parts on any step */
       g.date = d.date || g.date; g.start = d.start || g.start; g.rhythm = Object.assign({}, d.rhythm);
       g.parts = d.parts.map((p) => ({ id: p.id, name: p.name.trim() || 'A part', min: p.min, done: !!p.done }));
+      if (d.libHours) g.hoursGuess = true; else delete g.hoursGuess;
       r = M.planGoal(state, g.id, today, nowMin, { horizon: horizonOf(g) });
       return { ok: true };
     });
@@ -4653,7 +4691,7 @@
     const g = goalById(d.edit);
     const what = d.step === 'name' ? was.name + ' is ' + g.name + ' now.' : g.date !== was.date ? g.name + ' is due ' + M.dateText(g.date) + ' now.' : JSON.stringify(g.rhythm) !== was.rhythm ? g.name + ' has a new rhythm.' : JSON.stringify(g.parts) !== was.parts ? g.name + '’s parts changed.' : g.name + ' is as it was.';
     toast(what + (r && r.message ? ' ' + planSaid(g, r) : ''), 'good', undoAct(g.name + ' is back to its plan before.'));
-    openSel({ type: 'goal', id: g.id });
+    if (d.fromPlan) openSel({ type: 'goal', id: g.id }); else openGoal(g.id);
   }
   /* how far ahead a goal's plan reaches: two weeks from today, or from its start when that's later */
   const horizonOf = (g) => M.diffDays(today, g.start && g.start > today ? g.start : today) + 14;
@@ -4681,9 +4719,9 @@
     const when = g.date ? M.dateText(g.date) + (Math.abs(M.diffDays(today, g.date)) > 300 ? ', ' + g.date.slice(0, 4) : '') + ' · ' + goalAway(g.date) : 'No date yet';
     /* (V11-2: a goal with no date says how often it runs, and this week's times, never hours of a whole) */
     const dateless = !g.date && st.perWeek;
-    p.appendChild(el('p', 'c-ts-facts', (g.paused ? 'Paused · ' : '') + (dateless ? timesWords(g) + ' · no end date · ' + st.perWeek.done + ' of ' + st.perWeek.n + ' this week' : when + ' · ' + ofHrs(st.doneMin, st.totalMin))));
+    p.appendChild(el('p', 'c-ts-facts', (g.paused ? 'Paused · ' : '') + (dateless ? timesWords(g) + ' · no end date · ' + st.perWeek.done + ' of ' + st.perWeek.n + ' this week' : when + (guessHours(g) ? (st.doneMin > 0 ? ' · ' + goalHrs(st.doneMin) + ' done' : '') : ' · ' + ofHrs(st.doneMin, st.totalMin)))));
     goalWeekSec(p, g, st);
-    if (live && !g.paused && g.date) {
+    if (live && !g.paused && g.date && !guessHours(g)) {
       const short = st.behindMin >= 15, plate = el('section', 'c-gs-plate' + (short ? ' short' : ''));
       plate.setAttribute('aria-live', 'polite');
       plate.appendChild(el('p', 'c-gs-pl', short ? 'Your days hold about ' + ofHrs(aboutMin(st.totalMin - st.behindMin), st.totalMin) + ' by ' + dayText(g.date) + '.' : 'Your days hold all ' + goalHrs(st.totalMin) + ' by ' + dayText(g.date) + '.'));
@@ -4703,7 +4741,9 @@
       p.appendChild(plate);
     }
     const rows = el('div', 'c-ts-rows');
-    glRow(rows, 'list', 'Parts', plural(st.parts.length, 'part', 'parts') + (st.partsLeft ? ' · ' + st.partsLeft + ' to go' : ' · all done'), () => { got.glPage = 'parts'; Snd.pick(); renderSide(); }, 'gl-parts');
+    /* (D35: a goal with no date has parts that take turns, never done; all done only when every part is checked) */
+    const partsWord = !g.date ? (st.parts.length > 1 ? ' · taking turns' : '') : st.partsLeft ? ' · ' + st.partsLeft + ' to go' : (g.parts || []).length && (g.parts || []).every((x) => x.done) ? ' · all done' : '';
+    glRow(rows, 'list', 'Parts', plural(st.parts.length, 'part', 'parts') + partsWord, () => { got.glPage = 'parts'; Snd.pick(); renderSide(); }, 'gl-parts');
     glRow(rows, 'sliders', 'Change the plan', g.date ? rhythmWords(g.rhythm).replace(/\.$/, '') : timesWords(g) + ', ' + M.dur((g.rhythm && g.rhythm.chunk) || 45) + ' each', () => openGoalFlow(null, 'rhythm', g.id), 'gl-edit-rhythm');
     p.appendChild(rows);
     sheetFoot(p, goalSheetFoot(g, st, live));
@@ -4739,7 +4779,7 @@
       const dm = el('span', 'c-gs-dm');
       if (done) dm.appendChild(icon('check', 6, sel ? '#1C1C1E' : '#8FD3B1'));
       else if (ask) dm.appendChild(el('i', ''));
-      const hrs = min ? stripHrs(min) : d < (g.start || ws) ? '' : (g.rhythm.days || []).includes(M.weekday(d)) ? '0 h' : 'Off';
+      const hrs = min ? stripHrs(min) : d < (g.start || ws) ? '' : (g.rhythm.days || []).includes(M.weekday(d)) ? 'None' : 'Off';
       b.append(el('span', 'c-gs-dn', M.DAY_SHORT[M.weekday(d)]), el('b', '', hrs || ' '), dm);
       b.setAttribute('aria-label', M.DAY_LONG[M.weekday(d)] + (d === today ? ', today' : '') + ', ' + (min ? goalHrs(min) : 'nothing') + (ask ? ', not confirmed yet' : done ? ', done' : ''));
       strip.appendChild(b);
@@ -4789,7 +4829,7 @@
     const nx = st.nextSession, next = nx ? 'Next: ' + nx.name + ', ' + toWords(nx.date, nx.start) + ', ' + keepUnit(M.dur(nx.dur)) + '.' : '';
     const wk = M.goalSessions(state, g.id).filter((x) => x.date >= ws && x.date <= we);
     if (!wk.some((x) => !x.add.skipped && x.date >= today) && (g.start || today) <= we) return { line: next || 'Nothing on the rest of this week yet.', gold: ['Place this week’s share', () => placeShare(g, ws), 'gl-place'] };
-    if (st.behindMin >= 15 && !got.glFix && goalFixes(g, st).some((f) => f.id !== 'fewer')) return { line: next, gold: ['Make it fit', () => openFixes(), 'gl-fit'] };
+    if (st.behindMin >= 15 && !guessHours(g) && !got.glFix && goalFixes(g, st).some((f) => f.id !== 'fewer')) return { line: next, gold: ['Make it fit', () => openFixes(), 'gl-fit'] };
     return { line: next || 'Nothing planned yet.' };
   }
   /* More, in the goal sheet's header: what isn't the next move */
@@ -4830,7 +4870,7 @@
   function goalPartsPage(p, g, st) {
     sheetBack(g.name, () => { view.got.glPage = null; renderSide(); });
     glTitle(p, 'Parts');
-    p.appendChild(el('p', 'c-ts-facts c-gl-lead', st.partsLeft ? plural(st.partsLeft, 'part', 'parts') + ' to go. ' + cap(ofHrs(st.doneMin, st.totalMin)) + ' done.' : 'Every part is done.'));
+    p.appendChild(el('p', 'c-ts-facts c-gl-lead', st.partsLeft ? plural(st.partsLeft, 'part', 'parts') + ' to go.' + (guessHours(g) ? '' : ' ' + cap(ofHrs(st.doneMin, st.totalMin)) + ' done.') : 'Every part is done.'));
     const pl = el('div', 'c-gl-plist');
     st.parts.forEach((x) => {
       const lab = el('label', 'c-gl-prow' + (x.done ? ' done' : ''));
@@ -4986,7 +5026,7 @@
     p.appendChild(el('p', 'c-ts-facts', (g ? g.name + (g.archived ? ', no longer a goal' : '') : 'A goal that’s gone') + ' · ' + tsDay(at.date) + ', ' + timeSpan(date, a.start, a.start + a.dur)));
     const rows = el('div', 'c-ts-rows'), moving = view.got.stMove === a.id && !started;
     if (!started && !a.skipped) glRow(rows, 'later', 'Move it', null, () => { view.got.stMove = moving ? null : a.id; renderSide(); requestAnimationFrame(() => { const x = $('side-in').querySelector('[data-fk="st-move"]'); if (x) x.focus({ preventScroll: true }); }); }, 'st-move', moving);
-    if (g && !g.archived) glRow(rows, GOAL_MARK, 'Open the goal', null, () => openSel({ type: 'goal', id: g.id }), 'gl-open-goal');
+    if (g && !g.archived) glRow(rows, GOAL_MARK, 'Open the goal', null, () => openGoal(g.id), 'gl-open-goal');
     if (rows.children.length) p.appendChild(rows);
     if (moving) {
       /* the day, the start, and the length: the same controls a step's block has; moved by hand, it stays put */
@@ -5244,7 +5284,7 @@
       words.append(el('b', 'c-gl-name', g.name), el('span', 'c-gl-when', goalWhenOf(g) + (g.date ? ' · ' + standWords(g, st) : '')));
       head.append(goalMark(g), words);
       head.setAttribute('aria-label', g.name + ', ' + goalWhenOf(g) + (g.date ? ', ' + standWords(g, st) : '') + '. Opens the goal');
-      head.addEventListener('click', () => { Snd.init(); Snd.pick(); openSel({ type: 'goal', id: g.id }); });
+      head.addEventListener('click', () => { Snd.init(); Snd.pick(); openGoal(g.id); });
       head.dataset.fk = 'gls-' + g.id;
       card.appendChild(head);
       /* (a goal that starts after this week has no week to show yet; the line under says when it starts) */
@@ -5277,7 +5317,7 @@
         b.dataset.fk = 'gls-place-' + g.id;
         card.appendChild(b);
       }
-      if (st.behindMin >= 15) {
+      if (st.behindMin >= 15 && !guessHours(g)) {
         /* (V11-2: in its first week, what its days hold, never Behind by; the ways to fit more stay) */
         card.appendChild(el('p', 'c-gl-behind', st.firstWeek ? 'Your days hold about ' + ofHrs(aboutMin(st.totalMin - st.behindMin), st.totalMin) + ' by ' + dayText(g.date) + '.' : M.behindText(g, st.behindMin).replace(/(\d) h\b/g, '$1\u00a0h')));
         const fx = el('div', 'c-gl-fixes');
@@ -5310,7 +5350,7 @@
     main.appendChild(nm);
     const row = el('div', 'c-ah-prep c-gl-ahline');
     row.appendChild(icon(GOAL_MARK, 9, '#CDCDCD'));
-    row.appendChild(el('p', 'c-ah-pw', standWords(g, st) + '. ' + ofHrs(st.doneMin, st.totalMin) + ' done.'));
+    row.appendChild(el('p', 'c-ah-pw', standWords(g, st) + '.' + (guessHours(g) ? (st.doneMin > 0 ? ' ' + goalHrs(st.doneMin) + ' done.' : '') : ' ' + ofHrs(st.doneMin, st.totalMin) + ' done.')));
     main.appendChild(row);
     card.append(aheadDateCol(g.date, far), main);
     return card;
@@ -5659,12 +5699,14 @@
   const cdLum = (h) => { const l = cdHex(h).map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
   const cdRatio = (a, b) => { const x = cdLum(a), y = cdLum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   const cdInk = (bg) => (cdRatio('#FFFFFF', bg) >= 4.5 ? '#FFFFFF' : '#1C1C1E');
+  /* (V11-3, D36: three shades a glance tells apart, the first lighter than the color, then the color, then deeper) */
   function cdShades(base, stages) {
-    const deep = [0, 0.18, 0.32];
+    /* (a light color, gold, can't go lighter: it steps deeper twice instead) */
+    const light = cdLum(base) > 0.35, shade = (k) => (light ? (k === 0 ? base : cdMix(base, '#000000', k === 1 ? 0.3 : 0.52)) : k === 0 ? cdMix(base, '#FFFFFF', 0.3) : k === 1 ? base : cdMix(base, '#000000', 0.38));
     /* (a shade neither ink reads on goes a little deeper until white does) */
     const fit = (bg) => { for (let n = 0; n < 12 && cdRatio('#FFFFFF', bg) < 4.5 && cdRatio('#1C1C1E', bg) < 4.5; n++) bg = cdMix(bg, '#000000', 0.12); return bg; };
     let k = 0;
-    return stages.map((s) => { const bg = fit(s.name === 'Lighter days' ? cdMix(base, '#5B616C', 0.6) : cdMix(base, '#000000', deep[Math.min(k++, deep.length - 1)])); return { bg, ink: cdInk(bg) }; });
+    return stages.map((s) => { const bg = fit(s.name === 'Lighter days' ? cdMix(base, '#5B616C', 0.6) : shade(Math.min(k++, 2))); return { bg, ink: cdInk(bg) }; });
   }
   /* the road in words, for a screen reader: from today to its last day, and what's on it */
   function cdSaid(c, L) {
@@ -5693,6 +5735,8 @@
     const shades = cdShades(cat(c.cat).base, L.stages);
     L.stages.forEach((s, i) => {
       const b = put(el('span', 'c-cd-stage' + (i === 0 ? ' first' : '') + (i === L.stages.length - 1 ? ' last' : '')), s.l, s.w);
+      /* (the last one ends where its days end, however narrow: a sliver never pokes past the track) */
+      if (i === L.stages.length - 1) { b.style.left = 'auto'; b.style.right = Math.max(0, 100 - s.l - s.w).toFixed(2) + '%'; }
       b.style.setProperty('--c', shades[i].bg); b.style.setProperty('--ink', shades[i].ink);
       if ((s.w / 100) * 340 >= s.name.length * 7 + 12) b.textContent = s.name;
     });
@@ -5802,13 +5846,38 @@
     return taskById(t.id);
   }
   /* a tap on a step: a goal's session opens its own sheet; a slot of the week nothing is on yet finds a time; a fuzzy
-     date's pick opens the picker; a step opens its to-do's sheet, made a to-do first when it isn't one */
+     date's pick opens the picker; a step that's a to-do opens its sheet. A step that isn't one yet opens in place, to
+     read, and changes nothing (V11-3, D2): it becomes a to-do only when the person acts on it there */
   function cdTap(x, it) {
     const c = x.c;
     if (c.shape === 'goal' || c.shape === 'rhythm') { if (it.placed) openSession(it.placed.date, it.id); else cdFindTime(x); return; }
     if (/^pickdate\b/.test(String(it.id))) { cdOpenPick(x); return; }
-    const t = it.task ? taskById(it.task) : cdMakeNow(x, it);
+    if (!it.task) {
+      const got = view.got.cd;
+      got.peek = got.peek === it.id ? null : it.id;
+      renderSide();
+      requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + CSS.escape(got.peek ? 'cd-peek-time-' + it.id : 'cd-step-' + it.id) + '"]'); if (b) b.focus({ preventScroll: true }); });
+      return;
+    }
+    const t = taskById(it.task);
     if (t) openSel({ type: 'task', id: t.id });
+  }
+  /* a step opened in place, read only: what it is and when, and the two ways to act on it (each makes the to-do in one
+     change, with Undo): Give it a time, which goes on to place it, and Add to my to-dos */
+  function cdPeek(x, it) {
+    const box = el('div', 'c-cd-peek');
+    box.id = 'cd-peek-' + String(it.id).replace(/[^A-Za-z0-9_-]/g, '_');
+    box.setAttribute('role', 'region'); box.setAttribute('aria-label', it.name);
+    const when = it.start && it.start > today ? 'It starts asking ' + (M.diffDays(today, it.start) < 7 ? tsDay(it.start).replace(/^(Today|Tomorrow)\b/, (y) => y.toLowerCase()) : M.dateText(it.start)) + '. ' : '';
+    box.appendChild(el('p', 'c-cd-peekw', 'Not a to-do yet. ' + when + 'About ' + M.dur(it.dur || 15) + '.'));
+    const row = el('div', 'c-cd-peekrow');
+    const give = button('Give it a time', 'small c-cd-peekb', () => { view.got.cd.peek = null; const t = cdMakeNow(x, it); if (t) openSel({ type: 'place', spec: { kind: 'task', id: t.id } }); });
+    give.dataset.fk = 'cd-peek-time-' + it.id;
+    const add = button('Add to my to-dos', 'small c-cd-peekb', () => { view.got.cd.peek = null; cdMakeNow(x, it); });
+    add.dataset.fk = 'cd-peek-add-' + it.id;
+    row.append(give, add);
+    box.appendChild(row);
+    return box;
   }
   /* the circle: Done, and only Done. A session is done (or not); a step's to-do is done (or open again); a step that
      isn't a to-do yet becomes one, done, in one change */
@@ -5851,16 +5920,18 @@
     const words = el('span', 'c-ts-bt'), sn = el('b', 'c-ts-sn');
     sn.appendChild(wholeWords(it.name));
     words.append(sn, el('span', 'c-ts-sm', w.words));
+    /* (a step whose kind says why it starts when it does says so inside its brick, a line of its own: A month's notice.
+       Leaves time for tailoring and shipping. V11-3, D22: never floating under it) */
+    if (it.why && it.status !== 'done') words.appendChild(el('span', 'c-ts-sm c-cd-why', it.why + '.'));
     br.append(el('span', 'c-ts-grip'), words);
     if (isNext) br.appendChild(el('span', 'c-ts-next', 'Next'));
     li.appendChild(br);
-    /* (a step whose kind says why it starts when it does says so under it: A month's notice. Leaves time for tailoring
-       and shipping) */
-    if (it.why && it.status !== 'done') li.appendChild(el('p', 'c-cd-why', it.why + '.'));
     if (wait) return li;
     br.type = 'button'; br.dataset.fk = 'cd-step-' + it.id;
-    const what = goal ? (it.placed ? 'Opens the session' : 'Finds it a time') : pick ? 'Picks the date' : t ? 'Opens the to-do' : 'Makes it a to-do';
-    br.setAttribute('aria-label', it.name + (isNext ? ', next' : '') + ', ' + w.said + '. ' + what);
+    const peek = !goal && !pick && !t, open = peek && view.got.cd && view.got.cd.peek === it.id;
+    const what = goal ? (it.placed ? 'Opens the session' : 'Finds it a time') : pick ? 'Picks the date' : t ? 'Opens the to-do' : open ? 'Folds it away' : 'Shows what it is';
+    br.setAttribute('aria-label', it.name + (isNext ? ', next' : '') + ', ' + w.said + (it.why && it.status !== 'done' ? '. ' + it.why : '') + '. ' + what);
+    if (peek) br.setAttribute('aria-expanded', String(open));
     const tap = () => cdTap(x, it);
     if (drag) dragSource(br, goal ? { kind: 'quick', add: cdSlotAdd(x, it) } : { kind: 'task', id: t.id }, tap);
     else br.addEventListener('click', () => { Snd.init(); Snd.pick(); tap(); });
@@ -5879,6 +5950,7 @@
       requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + CSS.escape('cd-tick-' + it.id) + '"]'); if (b) b.focus({ preventScroll: true }); });
     });
     li.appendChild(ck);
+    if (open) { const pk = cdPeek(x, it); br.setAttribute('aria-controls', pk.id); li.appendChild(pk); }
     return li;
   }
   /* bricks in a list, as the to-do sheet lays them out */
@@ -6103,7 +6175,7 @@
     if (rest.length) {
       /* (the fold counts what's left to do, and names it; what's done comes after it, said as a count) */
       const open = rest.filter((it) => it.status !== 'done'), done = rest.filter((it) => it.status === 'done');
-      const fold = button('', 'c-cd-fold', () => { got.fold = !got.fold; Snd.pick(); renderSide(); requestAnimationFrame(() => { const f = $('side-in').querySelector('[data-fk="cd-fold"]'); if (f) f.focus({ preventScroll: true }); }); });
+      const fold = button('', 'c-cd-fold', (ev) => { const key = !ev || !ev.detail; got.fold = !got.fold; Snd.pick(); renderSide(); requestAnimationFrame(() => { const f = $('side-in').querySelector('[data-fk="cd-fold"]'); if (f) f.focus({ preventScroll: true, focusVisible: key }); }); });
       fold.dataset.fk = 'cd-fold';
       fold.setAttribute('aria-expanded', String(!!got.fold));
       const fw = el('span', 'c-cd-fw');
@@ -6132,8 +6204,9 @@
     const give = ['Give it a time', () => { const t = nx.task ? taskById(nx.task) : cdMakeNow(x, nx); if (t) openSel({ type: 'place', spec: { kind: 'task', id: t.id } }); }, 'cd-give'];
     /* (a message's card is the next move, its Text the gold: nothing more at the foot) */
     if (card) return { line: '' };
-    const t = nx.task ? taskById(nx.task) : null;
-    return { hint: t && !t.done && dragsHere() ? 'Drag it onto a day, or' : '', gold: give };
+    /* (V11-3, D52: the foot says which step its gold is for, by name) */
+    const t = nx.task ? taskById(nx.task) : null, drag = !!(t && !t.done && dragsHere());
+    return drag ? { hint: 'Drag ' + nx.name + ' onto a day, or', gold: give } : { line: nx.name + ' isn’t on your week yet.', gold: give };
   }
   /* a goal: with a date, the road with its stages and practice exams, and this week's share; with none, the weeks as
      dots and this week's times. Its foot follows goals' own: the session under way, this week's share to place, Make it
@@ -6164,7 +6237,7 @@
     else p.appendChild(el('p', 'c-cd-say', g.paused ? 'Paused. Nothing new goes on the board.' : 'Nothing on this week yet.'));
     if (folded.length) {
       const got = view.got.cd;
-      const fold = button('', 'c-cd-fold', () => { got.fold = !got.fold; Snd.pick(); renderSide(); requestAnimationFrame(() => { const f = $('side-in').querySelector('[data-fk="cd-fold"]'); if (f) f.focus({ preventScroll: true }); }); });
+      const fold = button('', 'c-cd-fold', (ev) => { const key = !ev || !ev.detail; got.fold = !got.fold; Snd.pick(); renderSide(); requestAnimationFrame(() => { const f = $('side-in').querySelector('[data-fk="cd-fold"]'); if (f) f.focus({ preventScroll: true, focusVisible: key }); }); });
       fold.dataset.fk = 'cd-fold';
       fold.setAttribute('aria-expanded', String(!!got.fold));
       const fw = el('span', 'c-cd-fw');
@@ -6184,6 +6257,10 @@
     if (!liveGoal(g)) return { line: 'Its date has gone by.' };
     const now = goalNowSession(g);
     if (now) return sessionNowFoot(now.date, now.add);
+    /* (V11-3, D5: the next session today, half an hour off or less, is the gold, by its name: Start Contracts. It starts
+       now, for its own length) */
+    const nx = c.next, soon = nx && nx.placed && nx.placed.date === today && window.SR_focusBlock ? nx.placed.start - nowMin : null;
+    if (soon != null && soon > 0 && soon <= 30) return { line: 'At ' + M.clock(nx.placed.start) + ', ' + keepUnit(M.dur(nx.dur || 45)) + '.', gold: ['Start ' + nx.name, () => { const d0 = nx.dur || 45; window.SR_focusBlock({ name: nx.name, until: nowMin + d0, left: d0 }); if (view.phone) closeSel(); }, 'cd-start'] };
     const loose = items.filter((it) => !it.placed && it.status !== 'done');
     if (c.shape === 'rhythm' && loose.length) return { hint: dragsHere() ? 'Drag it onto a day, or' : '', gold: ['Find it a time', () => cdFindTime(x), 'cd-find'] };
     /* (the next session is its own brick, so the foot never says it again) */
@@ -6292,7 +6369,7 @@
     if (!e || !asksGoing(e)) return false;
     if (sel.change) sheetBack(e.name, () => openCountdown({ event: e.id }));
     glTitle(p, 'Who’s going?');
-    p.appendChild(el('p', 'c-ts-facts c-gl-lead', 'The texts for ' + e.name + ' will say I or we to match.'));
+    p.appendChild(el('p', 'c-ts-facts c-gl-lead', 'Your texts about ' + e.name + ' will say “I’ll be” or “we’ll be” to match.'));
     const box = el('div', 'c-cd-going');
     box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'Who’s going');
     goingTiles().forEach((x) => {
@@ -6379,8 +6456,9 @@
     const e = state.events.find((v) => v.id === x.id);
     if (!e) return;
     const id = M.newId('t');
-    /* V11: it comes broken into its steps when the library knows it, ready to spread over the days before the date */
-    const bd = FEEL ? bdFor(r.todo) : null, steps = bd && bd.match ? bd.steps : [];
+    /* V11: it comes broken into its steps when the library knows it, ready to spread over the days before the date.
+       prepMake does that, so the steps are worked out once, there (before V11 it came whole) */
+    const steps = [];
     /* (V11-2: made the way every step of a date is, Model.prepTodo: a message with its person and text, a trip's packing
        list, the date it belongs to) */
     let made = null;
@@ -8719,7 +8797,7 @@
         chip(d.cAim.title, d.cAim.sub);
         return;
       }
-      const tr = tryOn(() => (d.mode === 'move' ? M.moveAdd(state, b.add, date, snapStart) : M.moveTemplate(state, sourceDate(b, date), b.tpl, sourceMinute(b, date, snapStart))));
+      const tr = tryOn(() => (d.mode === 'move' ? M.moveAdd(state, b.add, date, snapStart) : M.moveTemplate(state, sourceDate(b, date), b.tpl, sourceMinute(b, date, snapStart))), true);
       /* (V11, lift and place: the day's window: a block that would run past the end of the day says so,
          instead of going to tomorrow at midnight) */
       const hv = M.visibleHours(state);
@@ -8743,7 +8821,7 @@
       const want = M.snap(t.min - full.start);
       if (FEEL && d.ck === 'r' + want) { if (d.cAim) showChipAt(e.clientX, e.clientY - 30, d.cAim.title, d.cAim.sub); return; }
       if (FEEL) { d.ck = 'r' + want; d.cAim = null; }
-      const tr = tryOn(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want));
+      const tr = tryOn(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want), true);
       d.preview = tr.r.ok ? { dur: tr.r.dur } : null;
       if (FEEL) d.why = tr.r.ok ? null : blockedText(tr.r, true);
       /* (V11, lift and place: one tick a step, at least 50 ms apart; against what's in the way, a low one) */
@@ -9480,9 +9558,8 @@
       if (sx.parentNode !== side) side.insertBefore(sx, side.firstChild);
       if (more.parentNode !== side) side.insertBefore(more, h.parentNode === side ? h : $('side-in'));
     }
-    sx.setAttribute('aria-label', on ? 'Done' : 'Close');
-    const w = sx.querySelector('.c-sx-done');
-    if (w) w.textContent = 'Done';
+    /* (V11-3, D18: an x on a phone too, named Close) */
+    sx.setAttribute('aria-label', 'Close');
     h.querySelector('.c-sback').replaceChildren();
     h.querySelector('.c-sgap').replaceChildren();
     more.replaceChildren();
@@ -9501,9 +9578,8 @@
   /* the corner's word on a phone, when Done would say the wrong thing (a new goal put away isn't done; its answers
      wait on this device) */
   function sheetCloseWord(word) {
-    const sx = $('side-x'), w = sx && sx.querySelector('.c-sx-done');
-    if (!w || !phoneSheet()) return;
-    w.textContent = word;
+    const sx = $('side-x');
+    if (!sx || !phoneSheet()) return;
     sx.setAttribute('aria-label', word);
   }
   /* a page inside the sheet (Break it down, Change) says where Back goes: ‹ Study for exam */
@@ -9777,6 +9853,62 @@
     i.addEventListener('change', () => { committing = i.dataset.fk; try { onDone(i.value.trim()); } finally { committing = null; } });
     i.addEventListener('keydown', (e) => { if (e.key === 'Enter') i.blur(); e.stopPropagation(); });
     return i;
+  }
+  /* V11-3 (D53): a day picked the app's own way, never the browser's mm/dd/yyyy box: a month at a time, its days the
+     place panel's day cells (white fill is the pick, a dot under today), the arrows drawn marks. Days before min can't
+     be picked. Arrow keys move a day or a week, Page Up and Page Down a month. fk keys the month it shows, which
+     starts on the pick (or the first day it can be) */
+  function dayPicker(value, min, onPick, fk) {
+    const got = view.got.dp || (view.got.dp = {});
+    const first = value || (min && min > today ? min : today);
+    let month = got[fk] || M.monthStart(first);
+    const lo = M.monthStart(min || today);
+    if (month < lo) month = lo;
+    got[fk] = month;
+    const box = el('div', 'c-dp');
+    box.dataset.fk = fk;
+    const head = el('div', 'c-dp-head');
+    const go = (n) => { got[fk] = M.addMonths(month, n); Snd.pick(); renderSide(); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + fk + (n < 0 ? '-prev' : '-next') + '"]'); if (b && !b.disabled) b.focus({ preventScroll: true }); }); };
+    const pt = M.parts(month), name = M.MONTH_LONG[pt.m - 1] + ' ' + pt.y;
+    const prev = button('', 'c-dp-arrow', () => go(-1));
+    prev.appendChild(icon('left', 8, '#FFFFFF')); prev.setAttribute('aria-label', 'The month before'); prev.dataset.fk = fk + '-prev';
+    prev.disabled = month <= lo;
+    const next = button('', 'c-dp-arrow', () => go(1));
+    next.appendChild(icon('right', 8, '#FFFFFF')); next.setAttribute('aria-label', 'The month after'); next.dataset.fk = fk + '-next';
+    const title = el('p', 'c-dp-month', name);
+    title.setAttribute('aria-live', 'polite');
+    head.append(prev, title, next);
+    box.appendChild(head);
+    const grid = el('div', 'c-dp-grid');
+    const days = M.monthGrid(month);
+    days.slice(0, 7).forEach((x) => { const w = el('span', 'c-dp-dw', M.DAY_SHORT[M.weekday(x)].slice(0, 2)); w.setAttribute('aria-hidden', 'true'); grid.appendChild(w); });
+    const pick = (x) => { Snd.init(); Snd.pick(); onPick(x); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + fk + '-' + x + '"]'); if (b) b.focus({ preventScroll: true }); }); };
+    days.forEach((x) => {
+      if (M.monthStart(x) !== month) { grid.appendChild(el('span', 'c-dp-gap')); return; }
+      const b = el('button', 'wkcell c-dp-cell' + (x === today ? ' today' : ''));
+      b.type = 'button';
+      b.appendChild(el('span', 'dn', String(M.parts(x).d)));
+      b.setAttribute('aria-pressed', String(x === value));
+      b.setAttribute('aria-label', M.dateText(x, 'long') + (x === today ? ', today' : ''));
+      b.dataset.fk = fk + '-' + x;
+      b.disabled = !!min && x < min;
+      b.addEventListener('click', () => pick(x));
+      b.addEventListener('keydown', (e) => {
+        const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+        const mo = { PageUp: -1, PageDown: 1 }[e.key];
+        if (step == null && mo == null) return;
+        e.preventDefault(); e.stopPropagation();
+        let to = step != null ? M.addDays(x, step) : M.addMonths(x, mo);
+        if (min && to < min) to = min;
+        got[fk] = M.monthStart(to);
+        const moved = got[fk] !== month;
+        const land = () => { const c = $('side-in').querySelector('[data-fk="' + fk + '-' + to + '"]'); if (c) c.focus({ preventScroll: true }); };
+        if (moved) { renderSide(); requestAnimationFrame(land); } else land();
+      });
+      grid.appendChild(b);
+    });
+    box.appendChild(grid);
+    return box;
   }
   function dateInput(value, onDone) {
     const i = el('input', 'input');
@@ -11007,7 +11139,10 @@
     const fit = () => { ta.style.height = 'auto'; if (ta.scrollHeight) ta.style.height = ta.scrollHeight + 'px'; };
     const back = fkd(button('Back to the suggestion', 'c-msg-back', () => { set(m.suggested); say('Back to the suggested text.'); ta.focus({ preventScroll: true }); }), 'back');
     const go = fkd(button(textWord, 'go c-msg-go', () => { const v = ta.value.trim(); if (!v) return; msgKeep(t, v, true); msgText(t, v); }), 'text');
-    const sync = () => { ed.text = ta.value; back.hidden = !m.suggested || ta.value.trim() === m.suggested; go.disabled = !ta.value.trim(); };
+    /* (V11-3, D23: words the person typed are never lost to a quick version: a version tried over them keeps them, and
+       Back to your words brings them back) */
+    const mine = fkd(button('Back to your words', 'c-msg-back', () => { set(ed.mine || ''); say('Back to your words.'); ta.focus({ preventScroll: true }); }), 'mine');
+    const sync = () => { ed.text = ta.value; back.hidden = !m.suggested || ta.value.trim() === m.suggested; mine.hidden = !ed.mine || ta.value === ed.mine; go.disabled = !ta.value.trim(); };
     const set = (v) => { ta.value = v; sync(); fit(); const n = v.length; try { ta.setSelectionRange(n, n); } catch (e) { /* fine */ } };
     const done = () => { msgKeep(t, ta.value); msgLift(false); view.got.msgEdit = null; renderSide(); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + k + '-edit"]'); if (b) b.focus({ preventScroll: true }); }); };
     ta.addEventListener('input', () => { sync(); fit(); });
@@ -11020,10 +11155,11 @@
     if (m.versions.length) {
       const pills = el('div', 'c-msg-pills');
       pills.setAttribute('role', 'group'); pills.setAttribute('aria-label', 'Quick versions');
-      m.versions.forEach((v) => pills.appendChild(fkd(button(v.name, 'c-msg-pill', () => { set(v.text); say(v.name + ': ' + v.text); ta.focus({ preventScroll: true }); }), 'v-' + v.id)));
+      const made = (x) => { const w = String(x || '').trim(); return !w || w === m.suggested || m.versions.some((y) => String(y.text || '').trim() === w); };
+      m.versions.forEach((v) => pills.appendChild(fkd(button(v.name, 'c-msg-pill', () => { if (!made(ta.value)) ed.mine = ta.value; set(v.text); say(v.name + ': ' + v.text + (ed.mine ? '. Your words are kept: Back to your words.' : '')); ta.focus({ preventScroll: true }); }), 'v-' + v.id)));
       box.appendChild(pills);
     }
-    box.appendChild(back);
+    box.append(mine, back);
     const row = el('div', 'c-msg-row');
     row.append(go, fkd(button('Save', 'small c-msg-q', done), 'keep'));
     box.appendChild(row);
@@ -11163,14 +11299,15 @@
       b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(pick.n === i)); b.dataset.fk = 'td-opt-' + i;
       const sub = ch.kind === 'cap' ? 'All of it fits by ' + tsDay(by || t.due || today) + '.' : ch.kind === 'by' ? 'It’s due ' + tsDay(ch.by) + ' then.' : ch.kind === 'own' ? 'All of it fits by ' + tsDay(by || t.due || today) + ', in time that’s yours.' : 'The rest fit by ' + tsDay(by || today) + '.';
       const w = el('span', 'c-ts-ow'); w.append(el('b', '', shortChoiceWords(ch)), el('small', '', sub));
-      b.append(el('i', 'c-ts-rd'), w);
+      b.append(w);
       b.addEventListener('click', () => { Snd.init(); Snd.pick(); pick.n = i; renderSide(); requestAnimationFrame(() => { const x2 = $('side-in').querySelector('[data-fk="td-opt-' + i + '"]'); if (x2) x2.focus({ preventScroll: true }); }); });
       opts.appendChild(b);
     });
     box.appendChild(opts);
     if (!choices.length) box.appendChild(el('p', 'c-ts-way', tsFixedDay(t) ? 'Its day stays where it is. Open a step to give it a time by hand, or take one off.' : 'Nothing in the next eight weeks holds all of it. Open a step to give it a time by hand, or take one off.'));
     p.appendChild(box);
-    return choices.length ? { line: '', gold: ['Use this', () => { const ch = choices[pick.n]; if (ch) { view.got.tsPick = null; shortChoose(x, ch); } }, 'td-use'] } : { line: 'Open a step to give it a time by hand.' };
+    /* (V11-3, D17: the mock's words. The pick says how; the gold puts the rest on the week that way) */
+    return choices.length ? { line: '', hint: dragsHere() ? 'Drag a step onto a day, or' : '', gold: ['Put the rest on my week', () => { const ch = choices[pick.n]; if (ch) { view.got.tsPick = null; shortChoose(x, ch); } }, 'td-use'] } : { line: 'Open a step to give it a time by hand.' };
   }
   /* Make it a goal: only when it fits (weeks of work, or a name like an exam with no day yet), in More and as one
      quiet line under the steps */
@@ -11927,7 +12064,25 @@
      later day moves the due date), and taking steps off takes them off */
   function shortChoose(x, c) {
     if (view.got.shortAsk && view.got.shortAsk.id === x.task.id) view.got.shortAsk = null;
-    if (c.kind === 'drop') { dropSteps(x.task.id, c.steps || [c.step]); return; }
+    /* (V11-3, D17: taking a step off is one way of putting the rest on the week, so it does both, in one change) */
+    if (c.kind === 'drop') {
+      const ids = c.steps || [c.step], t0 = taskById(x.task.id), list = ((t0 && t0.steps) || []).filter((y) => ids.includes(y.id));
+      if (!list.length) return;
+      const was0 = new Set((M.placements(state).get(t0.id) || []).map((p) => p.add.id)), opts0 = spreadOptsOf(x.f);
+      let n0 = 0;
+      const r0 = commit(() => {
+        t0.steps = t0.steps.filter((y) => !ids.includes(y.id));
+        Object.values(state.dates).forEach((dd) => { if (dd.adds) dd.adds = dd.adds.filter((a) => !(a.src && a.src.type === 'step' && ids.includes(a.src.id))); });
+        try { n0 = M.applySpread(state, t0.id, M.spreadPlan(state, t0.id, opts0, today, nowMin), opts0) || 0; } catch (e) { n0 = 0; }
+        return { ok: true };
+      });
+      if (!r0) return;
+      Snd.slide();
+      const names = joinNames(list.map((y) => y.name)), fresh0 = (M.placements(state).get(t0.id) || []).filter((p) => !was0.has(p.add.id));
+      toast(names + (list.length === 1 ? ' is' : ' are') + ' off ' + t0.name + '.' + (n0 ? ' The rest ' + (fresh0.length === 1 ? 'is' : 'are') + ' on your week.' : ''), 'good', undoSay(t0.name + ' is as it was.'));
+      landAdds(fresh0.map((p) => ({ date: p.date, id: p.add.id, dur: p.add.dur })));
+      return;
+    }
     const t = taskById(x.task.id);
     if (!t) return;
     const f = Object.assign({}, x.f, c.kind === 'cap' ? { cap: c.cap } : c.kind === 'by' ? { by: c.by } : {}), opts = Object.assign(spreadOptsOf(f), c.kind === 'own' ? { own: true } : {});
@@ -13052,7 +13207,7 @@
       heroTime.textContent = (M.dateTime(date, start).date === date ? M.dateText(date, 'day') + ' · ' : '') + timeSpan(date, start, start + sel.dur) + ' · ' + M.dur(sel.dur);
       /* V11: the line breaks only between its parts, so "30 min" never splits across two lines */
       if (FEEL) heroTime.textContent = heroTime.textContent.split(' · ').map((x) => x.replace(/ /g, ' ')).join(' · ');
-      const tr = tryOn(() => M.placeAdd(state, date, add, start));
+      const tr = tryOn(() => M.placeAdd(state, date, add, start), true);
       /* V11: as with a drop, time that's over keeps what happened in it */
       if (FEEL && tr.r.ok && !keepPast(tr.r).ok) tr.r = { ok: false, reason: 'past' };
       const ok = !!tr.r.ok;
@@ -18060,7 +18215,7 @@
       const f = M.firstFit(state, date, dur, date === today ? Math.max(r[0], Math.ceil(nowMin / 15) * 15) : r[0]);
       if (f != null && f + dur <= r[1]) want = f;
     }
-    const tr = tryOn(() => M.placeAdd(state, date, add, want));
+    const tr = tryOn(() => M.placeAdd(state, date, add, want), true);
     /* V11-2: sleep is a wall from bed on. An ask that starts before bed and runs past it isn't carried into the night on
        its own: it takes the ways on (Make it 2 h tomorrow, before bed), not a nudge. One asked for at bed or later keeps
        V11's late night */
@@ -21131,7 +21286,7 @@
       tick.dataset.fk = 'ds-tick-' + t.id;
       const words = button('', 'c-ds-words', () => openSel({ type: 'task', id: t.id }));
       const went = x.status === 'missed' ? (FEEL ? wasSet(t, M.placements(state).get(t.id)) : 'its time went by') : '';
-      words.append(el('span', 'c-ds-name', t.name), el('span', 'c-ds-line', (past ? wasDue(t.due) : 'Due ' + tdDay(t.due)) + (x.status === 'partial' ? ' · ' + x.plan.timed + ' of ' + x.plan.open + ' steps have a time' : went ? ' · ' + went : x.status === 'planned' ? ' · has its times' : '')));
+      words.append(el('span', 'c-ds-name', t.name), el('span', 'c-ds-line', (past ? wasDue(t.due) : 'Due ' + tdDay(t.due)) + (x.status === 'partial' ? ' · ' + x.plan.timed + ' of ' + x.plan.open + ' steps ' + (x.plan.timed === 1 ? 'has' : 'have') + ' a time' : went ? ' · ' + went : x.status === 'planned' ? ' · has its times' : '')));
       words.dataset.fk = 'ds-open-' + t.id;
       const give = x.status === 'planned' ? null : past ? button('Give it a new day', 'c-ds-give', () => giveNewDay(t)) : button('Give it a time', 'c-ds-give', () => openSel({ type: 'place', spec: { kind: 'task', id: t.id } }));
       if (give) give.dataset.fk = 'ds-give-' + t.id;
