@@ -14998,6 +14998,8 @@
     d.appendChild(sum);
     return d;
   }
+  /* the check a picked answer wears beside its words (Kim's test, Oct 20: white alone didn't read as picked) */
+  const onbTick = () => { const t = el('span', 'onb-tick'); t.appendChild(icon('check', 7, UI.dark)); return t; };
   const onbWords = (name, line) => { const w = el('span', 'onb-words'); w.appendChild(el('b', '', name)); if (line) w.appendChild(el('small', '', line)); return w; };
   /* the week these answers build, made once per set of answers; a try step works on a copy of it */
   let onbMemo = { key: '', json: '' };
@@ -15038,6 +15040,14 @@
       if (!o.thin && (w > 0.06 || mine)) {
         x.appendChild(el('b', mine && w <= 0.13 ? 'onb-tag' : '', b.label || b.name));
         if (w > 0.13) x.appendChild(el('small', '', M.span(b.start, b.start + b.dur)));
+      }
+      /* Kim's test (Oct 20): on a board to try, a locked block wears its lock where it can be read, and a Locked tag over
+         it (a dot in its corner went unseen) */
+      if (o.locks && b.fixed && !b.sleep && !b.free) {
+        x.classList.add('lockt');
+        const tag = el('span', 'onb-lockt');
+        tag.append(icon('lock', 7, UI.dark), document.createTextNode('Locked'));
+        x.appendChild(tag);
       }
       x.title = (b.label || b.name) + ', ' + M.span(b.start, b.start + b.dur);
       if (b.add) x.dataset.add = b.add;
@@ -15307,10 +15317,10 @@
      Data.EXAMS) over the weeks until its date; anything else, a little time on the days before it */
   function goalWords(name, date) {
     const L = OB.goalLoad(M, D, name, date, today), when = M.dateText(date);
-    if (L.days != null && L.days < 7) return 'That’s ' + (L.days <= 1 ? 'tomorrow' : 'in ' + L.days + ' days') + '. As a goal it gets time on the days before it.';
+    if (L.days != null && L.days < 7) return 'That’s ' + (L.days <= 1 ? 'tomorrow' : 'in ' + L.days + ' days') + ', so as a goal it gets time on the days before it.';
     if (L.hours && L.weeks) {
       const per = Math.max(1, Math.round(L.perWeek));
-      return (L.exam || cap(name)) + ' is about ' + L.hours + ' hours of study, a common estimate. That’s about ' + per + (per === 1 ? ' hour' : ' hours') + ' a week until ' + when + '.';
+      return (L.exam || cap(name)) + ' is about ' + L.hours + ' hours of study by a common estimate, about ' + per + (per === 1 ? ' hour' : ' hours') + ' a week until ' + when + '.';
     }
     return 'As a goal it gets a little time on your days until ' + when + ', and a day that doesn’t happen moves forward on its own.';
   }
@@ -15738,7 +15748,7 @@
       const b = el('button', 'onb-pick');
       b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(f.id === x.id)); b.dataset.fk = 'fill-' + x.id;
       if (f.id === x.id) b.dataset.first = '1';
-      b.append(onbWords(x.name, x.line));
+      b.append(onbWords(x.name, x.line), onbTick());
       b.addEventListener('click', () => {
         Snd.init(); Snd.pick();
         a.noWork = x.id === 'none';
@@ -15767,9 +15777,9 @@
       const two = chips([{ id: 'plan', name: 'Mine to plan' }, { id: 'set', name: 'Set, like a shift' }], workFixed(a) ? 'set' : 'plan', (v) => { a.work.fixed = v === 'set'; redraw(); });
       two.classList.add('onb-two');
       field(more, 'These hours are', two);
-      more.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked. Nothing you add goes inside them.' : 'Focus blocks and to-dos can go inside them.'));
+      more.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked, so nothing you add goes inside them.' : 'Focus blocks and to-dos can go inside them.'));
       more.appendChild(toggle('My hours change week to week', !!a.work.varies, (v) => { a.work.varies = v; redraw(); }));
-      if (a.work.varies) more.appendChild(el('div', 'field-hint', setupOnPhone() ? 'Set your usual hours. On a computer, Getting started brings your schedule in.' : 'Set your usual hours. Next, bring in your schedule.'));
+      if (a.work.varies) more.appendChild(el('div', 'field-hint', setupOnPhone() ? 'Set your usual hours, and bring in your schedule later on a computer.' : 'Set your usual hours, and bring in your schedule next.'));
       more.appendChild(toggle('The same hours every day', a.work.same, (v) => { a.work.same = v; redraw(); }));
       if (!a.work.same) {
         /* shifts: each day its own hours */
@@ -15805,7 +15815,7 @@
     const { a, h, body } = c;
     const many = a.pains.includes('head');
     h.textContent = 'Anything you need to get done?';
-    body.appendChild(el('p', 'sheet-line', many ? 'One per line, the way you’d say them. Empty your head.' : 'Type it the way you’d say it.'));
+    body.appendChild(el('p', 'sheet-line', many ? 'One per line, the way you’d say them.' : 'Type it the way you’d say it.'));
     const lines0 = [a.todo ? a.todo.text : ''].concat((a.more || []).map((x) => x.text)).filter((x, i) => i === 0 || x).join('\n');
     let inp;
     if (many) {
@@ -15868,7 +15878,7 @@
           p.steps.forEach((x) => ol.appendChild(el('li', '', x.name + ', ' + M.dur(x.dur))));
           out.appendChild(ol);
         }
-        out.appendChild(el('p', 'onb-groc', 'It waits in your to-dos until you give it a time. Due soon and the notepad on the desk keep it in sight.'));
+        out.appendChild(el('p', 'onb-groc', 'It waits in your to-dos until you give it a time.'));
       }
       (a.more || []).forEach((m) => out.appendChild(card(m)));
     };
@@ -15945,11 +15955,11 @@
       const when = big.date ? M.DAY_SHORT[M.weekday(big.date)] + ', ' + M.dateText(big.date) : '';
       const L = big.date ? OB.goalLoad(M, D, big.name, big.date, today) : null;
       const per = L && L.perWeek && L.days >= 7 ? Math.max(1, Math.round(L.perWeek)) : null;
-      words.append(el('b', '', big.name + (when ? ', ' + when : '')), el('p', '', per ? 'About ' + per + (per === 1 ? ' hour' : ' hours') + ' a week from now.' : big.date ? goalWords(big.name, big.date) : 'A goal puts a little time on each day before its date. It asks for the date first.'));
+      words.append(el('b', '', big.name + (when ? ', ' + when : '')), el('p', '', per ? 'About ' + per + (per === 1 ? ' hour' : ' hours') + ' a week from now.' : big.date ? goalWords(big.name, big.date) : 'A goal asks for its date, then puts a little time on each day before it.'));
       if (big.made) words.appendChild(el('p', 'onb-lead-s', 'A goal: when your week opens, it opens first, and you pick how much time a day it gets.'));
       else act = button('Make it a goal', 'small quiet onb-nextbtn', () => set({ name: big.name, date: big.date || null, from: big.from }, big.name + ' will be a goal. Its plan opens with your week.', big.name + ' isn’t a goal.'));
     } else if (a.goal && a.goal.ask) {
-      words.append(el('b', '', 'A goal with a date'), el('p', 'onb-lead-s', 'New goal opens first when your week opens. Name it there, and it gets a little time each day.'));
+      words.append(el('b', '', 'A goal with a date'), el('p', 'onb-lead-s', 'New goal opens first with your week, so you can name it and give it time each day.'));
     } else {
       words.append(el('b', '', 'Something big, with a date?'), el('p', '', 'A goal puts a little time on each day before its date, and moves it when a day doesn’t happen.'));
       act = button('Set one up when my week opens', 'small quiet onb-nextbtn', () => set({ name: '', ask: true, from: 'plan' }, 'New goal opens first when your week opens.', 'No goal opens with your week.'));
@@ -15968,24 +15978,26 @@
     h.textContent = a.name ? 'Here’s your week, ' + a.name : 'Here’s your week';
     /* V11-2: their week, the one that filled in on every step, whole, with what each color is */
     body.appendChild(liveWeek(su, { state: su.built, all: true, big: true }));
-    onbLead(c);
     const big = OB.bigThing(M, D, a, today);
     const partnered = (a.home === 'partner' || a.home === 'family') && a.partner.trim();
-    const stats = el('div', 'onb-stats onb-stats2');
+    /* Kim's test (Oct 20): the plan leads with three numbers and what's already on the board; the rest is shorter
+       and comes after, and the full list stays folded */
+    const stats = el('div', 'onb-stats onb-stats2 onb-stats3');
     const stat = (n, l) => { const x = el('div', 'onb-stat'); x.append(el('b', '', n), el('span', '', l)); stats.appendChild(x); };
-    const day1 = Math.round(s.yours / 7 / 30) * 30;
+    const day1 = Math.round(s.yours / 7 / 30) * 30, open1 = Math.round(s.open / 60);
     stat(day1 >= 60 ? 'About ' + M.hours(day1) : day1 > 0 ? 'About ' + M.dur(day1) : 'Some', 'a day that’s yours');
     if (a.help.dinners) stat(String(s.dinners), s.dinners === 1 ? 'dinner night this week' : 'dinner nights this week');
     else stat(String(s.evenings), partnered ? 'evenings together' : 'free evenings');
+    stat(open1 > 0 ? 'About ' + open1 + ' h' : 'None', 'open this week');
     body.appendChild(stats);
-    const plain = (title, rows) => {
+    const plain = (title, rows, into) => {
       if (!rows.length) return;
       const sec = el('div', 'onb-sec');
       sec.appendChild(el('div', 'lbl', title));
       const ul = el('ul', 'onb-plainlist');
       rows.forEach(([ic, t, sub]) => { const li = el('li'); li.append(icon(ic, 9, UI.gold), sub ? onbWords(t, sub) : el('span', '', t)); ul.appendChild(li); });
       sec.appendChild(ul);
-      body.appendChild(sec);
+      (into || body).appendChild(sec);
     };
     plain('Already on your board', su.extras.filter((x) => !(x.kind === 'soon' && big && big.made && sameThing(x.name, big.name))).map((x) => {
       const t = x.kind === 'block' ? x.name + ', ' + M.relText(x.date, today) + ' ' + M.span(x.start, x.start + x.dur)
@@ -15996,6 +16008,7 @@
         : x.name + ', ' + plural(x.count, 'event', 'events');
       return [{ block: 'check', soon: OB.markFor(x.name), dinner: 'pot', todo: 'flag', calendar: 'calendar' }[x.kind], t];
     }));
+    onbLead(c);
     const nx = OB.nextSteps(M, today, nowMin, a.resetAt, { dinners: a.help.dinners });
     const tl = el('div', 'onb-sec');
     tl.appendChild(el('div', 'lbl', 'What happens next'));
@@ -16006,15 +16019,16 @@
        (onbCalRow), so it claims the reminder only once they say it's in their calendar */
     tl.appendChild(onbCalRow(a, { none: 'Nothing reminds you yet.' }));
     body.appendChild(tl);
+    /* (Kim's test: what to lean on, for each thing they said, waits in the fold with the rest) */
+    const more = disclosure('Everything on it');
     if (a.pains.length || (a.painOther || '').trim()) {
       const ctx = { partnered: !!partnered, dinners: a.help.dinners !== false, together: !!partnered && a.help.together !== false };
       const rows = a.pains.map(OB.painById).filter(Boolean).map((p) => [p.icon, OB.leanFor(p, ctx), p.name]);
       /* their own words: the big thing above answers them; anything else waits for the first reset, as a to-do */
       const own = (a.painOther || '').trim();
-      if (own && !(big && big.from === 'other') && !(a.goal && a.goal.from === 'other')) rows.push(['note2', own, 'It’s in your to-dos as Look at. Bring it to your first Sunday Reset.']);
-      plain('Lean on', rows);
+      if (own && !(big && big.from === 'other') && !(a.goal && a.goal.from === 'other')) rows.push(['note2', own, 'It’s in your to-dos, so it has a place.']);
+      plain('Lean on', rows, more);
     }
-    const more = disclosure('Everything on it');
     setupSummary(a).forEach((x) => more.appendChild(el('p', '', x)));
     body.appendChild(more);
     c.label(su.mode === 'preview' ? 'Show me the preview' : 'Open my week');
@@ -16135,7 +16149,7 @@
     pains(c) {
       const { a, h, body } = c;
       h.textContent = a.name ? 'What gets in the way, ' + a.name + '?' : 'What gets in the way of your week?';
-      body.appendChild(el('p', 'sheet-line', 'Pick any. The rest of the setup follows.'));
+      body.appendChild(el('p', 'sheet-line', 'Pick any, and the rest of the setup follows.'));
       const list = el('div', 'onb-picks onb-tiles2');
       list.setAttribute('role', 'group'); list.setAttribute('aria-labelledby', 'sheet-h');
       const sync = () => c.label('Next');
@@ -16180,7 +16194,7 @@
           const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(160, ta.scrollHeight + 2) + 'px'; };
           const read = () => {
             const v = ta.value.trim(), goal = v && M.looksLikeGoal(v, D) ? M.goalForExam(v, D) : null;
-            heard.textContent = goal ? (goal.exam || 'That') + ' can be a goal with a date. You’ll be offered one in a few steps.' : '';
+            heard.textContent = goal ? (goal.exam || 'That') + ' can be a goal with a date, offered in a few steps.' : '';
             heard.hidden = !goal;
           };
           ta.addEventListener('input', () => { a.painOther = ta.value; oth.classList.toggle('said', said()); grow(); read(); sync(); });
@@ -16201,19 +16215,21 @@
       sync();
     },
     /* What changes, from what they picked: their own words on cards that turn over, one after another,
-       from a quiet Now side to a gold With Sunday Reset side, like blocks turning over on the desk.
-       Then why it works: the strongest study picked, its number big, its finding, what the board does
-       about it, and the source, linked; a second study waits folded. Calmer motion shows both sides at
-       once, the way they read after the turn. */
+       from a quiet Now side to the side that says what the board does about it, like blocks turning over
+       on the desk. Kim's test (Oct 20): the turned side's title is their own words, and one plain line under
+       it says what they'll see; no bold label of ours above or below it. Then why it works, folded under one
+       line so the cards and Next stay in view: each study's finding in a plain sentence, who and when small
+       under it, and the source, linked. Calmer motion shows both sides at once, the way they read after the
+       turn. */
     why(c) {
       const { a, h, body } = c;
       const r = OB.reflect(a.pains), calm = onbCalm();
       h.textContent = a.name ? 'Here’s what changes, ' + a.name + '.' : 'Here’s what changes.';
       /* V11 (Oct 15, the first-visit walk): their own words get a card too, answered when the board knows them (an exam,
-         a race: a goal with a date), and promised a place on the plan when it doesn't */
+         a race: a goal with a date), and otherwise said where they go: a Look at to-do (Onboard.applyExtras) */
       const own = FEEL ? String(a.painOther || '').trim() : '';
       const ownGoal = own && M.looksLikeGoal(own, D) ? M.goalForExam(own, D) : null;
-      const rows = r.rows.concat(own ? [{ id: 'other', name: own, icon: ownGoal ? 'star' : 'note2', after: ownGoal ? (ownGoal.exam || 'That') + ': a goal with a date' : 'We’ll come back to this', how: ownGoal ? 'Spread over the weeks before it, a little each day.' : 'It’s on your plan, at the end of the setup.' }] : []);
+      const rows = r.rows.concat(own ? [{ id: 'other', name: own, icon: ownGoal ? 'star' : 'note2', how: ownGoal ? 'It becomes a goal with a date, with a little time each day before it.' : 'It’s in your to-dos, so it has a place.' }] : []);
       const cards = el('ul', 'onb-flips' + (calm ? ' calm' : '') + (rows.length === 1 ? ' one' : ''));
       cards.setAttribute('aria-label', 'What you picked, and what changes');
       rows.forEach((x) => {
@@ -16223,26 +16239,20 @@
         const nk = el('span', 'onb-face-k'); nk.append(icon(x.icon, 9, UI.soft), document.createTextNode('Now'));
         now.append(nk, el('b', '', x.name));
         const then = el('div', 'onb-face onb-face-then');
-        /* (V11: the turned card keeps what they said beside what changes, in the quiet surface with a gold mark) */
-        const tk = el('span', 'onb-face-k'); tk.append(icon(x.icon, 9, FEEL ? UI.gold : UI.dark), document.createTextNode(FEEL ? 'You said: ' + (x.name.length > 60 ? x.name.slice(0, 58).trim() + '…' : x.name) : 'With Sunday Reset'));
-        then.append(tk, el('b', '', x.after), el('small', '', x.how || ''));
+        const said = x.name.length > 60 ? x.name.slice(0, 58).trim() + '…' : x.name;
+        const t = el('b', 'onb-face-t'); t.append(icon(x.icon, 9, UI.soft), document.createTextNode(said));
+        then.append(t, el('small', '', x.how || ''));
         inner.append(now, then);
         li.appendChild(inner);
         cards.appendChild(li);
       });
       body.appendChild(cards);
-      /* why it works: the strongest study first; a second waits behind Another study */
-      const s = r.cards[0];
-      if (s) {
-        const why = el('figure', 'onb-proof');
-        const k = el('div', 'onb-proof-k'); k.append(icon('book', 9, UI.gold), document.createTextNode('Why it works'));
-        const link = el('a', '', s.who + ', ' + s.year);
-        link.href = s.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-        link.setAttribute('aria-label', s.who + ', ' + s.where + ', ' + s.year + '. Opens the study in a new tab.');
-        const cite = el('figcaption', 'onb-proof-c'); cite.appendChild(link);
-        why.append(k, el('b', 'onb-proof-big', s.big), el('p', 'onb-proof-f', s.small || s.finding), el('p', 'onb-proof-m', s.means), cite);
-        body.appendChild(why);
-        if (r.cards[1]) { const more = disclosure('Another study'); more.classList.add('onb-more2'); more.appendChild(onbFact(r.cards[1], true)); body.appendChild(more); }
+      /* why it works: one line, folded; the strongest study first */
+      if (r.cards.length) {
+        const more = disclosure(r.cards.length > 1 ? 'Why it works: ' + r.cards.length + ' studies' : 'Why it works: a study');
+        more.classList.add('onb-more2', 'onb-why');
+        r.cards.forEach((s) => more.appendChild(onbFact(s, true)));
+        body.appendChild(more);
       }
       if (calm) return;
       /* the turn: a beat to read their words, then each card turns over in turn, with a soft tick */
@@ -16281,15 +16291,15 @@
       if (a.home === 'partner' || a.home === 'family') {
         const ppl = el('div', 'onb-people-row');
         peopleField(ppl, { label: 'Partner', cat: 'us', ph: 'Their first name, optional', one: true, next: a.home === 'family' ? 'pp-family' : null, get: () => (a.partner.trim() ? [a.partner.trim()] : []), set: (v) => { a.partner = v[0] || ''; } });
-        if (a.home === 'family') peopleField(ppl, { label: 'Kids', cat: 'family', ph: 'Add a kid', hint: FEEL ? 'Add each name. Each gets their own drop off and pick up times.' : 'Press Enter after each name. Each gets their own drop off and pick up times.', addBtn: FEEL, get: () => a.kids.slice(), set: (v) => { a.kids = v; } });
+        if (a.home === 'family') peopleField(ppl, { label: 'Kids', cat: 'family', ph: 'Add a kid', hint: FEEL ? 'Add each name, and each gets their own drop off and pick up times.' : 'Press Enter after each name. Each gets their own drop off and pick up times.', addBtn: FEEL, get: () => a.kids.slice(), set: (v) => { a.kids = v; } });
         body.appendChild(ppl);
       }
-      if (a.home === 'shared') body.appendChild(el('div', 'field-hint', 'Your board is yours. Everyone shares it only if you turn on sync and link their device.'));
+      if (a.home === 'shared') body.appendChild(el('div', 'field-hint', 'Others see your board only if you turn on sync and link their device.'));
     },
     help(c) {
       const { a, h, body } = c;
       h.textContent = 'What should it help with?';
-      body.appendChild(el('p', 'sheet-line', 'Pick what matters to you. Settings can change it later.'));
+      body.appendChild(el('p', 'sheet-line', 'Pick what matters, and change it any time in Settings.'));
       const partnered = a.home === 'partner' || a.home === 'family';
       a.meals = a.meals || { breakfast: true, lunch: true };
       a.focus = a.focus || [];
@@ -16333,7 +16343,7 @@
           else a.meals[m.id] = !a.meals[m.id];
         }, null, row, 'meal-' + m.id));
         field(body, 'Which meals?', row);
-        body.appendChild(el('div', 'field-hint', 'Breakfast and lunch get a time each day. Dinner also asks who’s cooking and makes the grocery list.'));
+        body.appendChild(el('div', 'field-hint', 'Each meal gets a time, and dinner also gets a cook and a grocery list.'));
       }
       /* what every board has, said once and plainly */
       body.appendChild(el('p', 'onb-also', 'Every board also has to-dos, time of your own, and the Sunday Reset, about 20 minutes each week to plan it.'));
@@ -16382,7 +16392,7 @@
           const b = el('button', 'onb-pick');
           b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.shape = x.id; b.dataset.fk = 'shape-' + x.id;
           b.setAttribute('aria-checked', String(a.wake.wd === x.wake && a.wake.we === x.wake && a.bed.wd === x.bed && a.bed.we === x.bed));
-          b.append(onbWords(x.name, M.clock(x.wake) + ' to ' + M.clock(x.bed % 1440)));
+          b.append(onbWords(x.name, M.clock(x.wake) + ' to ' + M.clock(x.bed % 1440)), onbTick());
           b.addEventListener('click', () => { Snd.init(); Snd.pick(); a.wake.wd = a.wake.we = x.wake; a.bed.wd = a.bed.we = x.bed; redraw(); say(x.name + ': up at ' + M.clock(x.wake) + ', bed at ' + M.clock(x.bed % 1440) + ', every day.'); });
           tiles.appendChild(b);
         });
@@ -16437,9 +16447,9 @@
         const two = chips([{ id: 'plan', name: 'Mine to plan' }, { id: 'set', name: 'Set, like a shift' }], workFixed(a) ? 'set' : 'plan', (v) => { a.work.fixed = v === 'set'; redraw(); });
         two.classList.add('onb-two');
         field(body, 'Your work hours are', two);
-        body.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked. Nothing you add goes inside it.' : 'Focus blocks and to-dos can go inside it.'));
+        body.appendChild(el('div', 'field-hint', workFixed(a) ? 'Locked, so nothing you add goes inside it.' : 'Focus blocks and to-dos can go inside it.'));
         body.appendChild(toggle('My hours change week to week', !!a.work.varies, (v) => { a.work.varies = v; redraw(); }));
-        if (a.work.varies) body.appendChild(el('div', 'field-hint', 'Set your usual hours. Next, bring in your schedule.'));
+        if (a.work.varies) body.appendChild(el('div', 'field-hint', 'Set your usual hours, and bring in your schedule next.'));
         body.appendChild(toggle('The same hours every day', a.work.same, (v) => { a.work.same = v; redraw(); }));
         if (a.work.same) {
           const r = el('div', 'row2');
@@ -16518,7 +16528,7 @@
       const { su, h, body } = c;
       const varies = !c.a.noWork && c.a.work.varies;
       h.textContent = varies ? 'Bring in your schedule?' : 'Bring in a calendar?';
-      body.appendChild(el('p', 'sheet-line', varies ? 'A schedule file puts each shift where it is, locked.' : 'Shifts, school dates, appointments. You can hide it any time.'));
+      body.appendChild(el('p', 'sheet-line', varies ? 'A schedule file puts each shift where it is, locked.' : 'Shifts, school dates, or appointments, and you can hide it any time.'));
       const slot = el('div', 'onb-parts');
       body.appendChild(slot);
       const draw = () => {
@@ -16551,7 +16561,7 @@
         const card = el('div', 'onb-part');
         const b = button('Choose a file', 'small', () => pick.click());
         b.dataset.first = '1';
-        card.append(icon('calendar', 11, UI.gold), onbWords('From a calendar file', FEEL && !setupOnPhone() ? 'A file ending in .ics, from Google, Apple, or Outlook. Drop it here, or choose it.' : 'A file ending in .ics, exported from Google, Apple, or Outlook.'), b, pick);
+        card.append(icon('calendar', 11, UI.gold), onbWords('From a calendar file', FEEL && !setupOnPhone() ? 'Drop a file ending in .ics here, from Google, Apple, or Outlook.' : 'A file ending in .ics, exported from Google, Apple, or Outlook.'), b, pick);
         /* V11 (Oct 15, the first-visit walk): the file is often right there in Finder, so it can be dropped on the card */
         if (FEEL) {
           /* (anywhere on the step takes it, so a file that misses the card never opens in place of the page) */
@@ -16605,11 +16615,21 @@
       let lane = null, mineId = null, hintT = null;
       const toMin = (x) => { const r = lane.getBoundingClientRect(); return lo + ((x - r.left) / r.width) * (hi - lo); };
       const near = (x, y) => { const r = lane.getBoundingClientRect(); return x >= r.left - 12 && x <= r.right + 12 && y >= r.top - 48 && y <= r.bottom + 48; };
+      /* Kim's test (Oct 20): one block named, one way to do it; what a lock means comes on a second line once something
+         is on the day, named for the locked block that's there (a pick up, work) */
+      const first = pieces.find((p) => p.id === 'walk') || pieces[0];
+      const lockedOn = M.resolveWindow(base, date).blocks.filter((b) => b.fixed && !b.sleep && !b.free);
       const words = {
-        place: 'Drag a block into tomorrow, or tap one. It slides in where it fits; locked things' + (a.home === 'family' && a.kids.length ? ', like a pick up,' : setupInput(a).work && workFixed(a) ? ', like work,' : '') + ' never move.',
-        stretch: 'Now drag its right edge to make it longer. Everything after it makes room.',
-        done: 'That’s the whole idea: everything on your board moves like this. Next, see further ahead.'
+        place: first ? 'Drag ' + first.name + ' onto tomorrow, or tap it.' : 'Drag a block onto tomorrow, or tap it.',
+        stretch: 'Now drag its right edge to make it longer.',
+        done: 'Everything on your board moves like this.'
       };
+      const lockLine = () => {
+        const near = a.placed ? lockedOn.slice().sort((x, y) => Math.abs(x.start - a.placed.start) - Math.abs(y.start - a.placed.start)) : lockedOn;
+        const b = near.find((x) => x.start < hi && x.start + x.dur > lo) || near[0];
+        return b ? (b.label || b.name) + ' has a lock, so it stays put.' : '';
+      };
+      const line2 = el('p', 'sheet-line onb-say2');
       const ghost = el('div', 'onb-ghost');
       const ghostAt = (start, dur, ok) => {
         if (start == null) { ghost.remove(); return; }
@@ -16624,7 +16644,7 @@
         mineId = w.add ? w.add.id : null;
         frame();
         board.replaceChildren();
-        lane = onbLane(w.st, date, lo, hi, { mine: mineId });
+        lane = onbLane(w.st, date, lo, hi, { mine: mineId, locks: true });
         const zoomed = lo !== fullLo || hi !== fullHi;
         board.classList.toggle('zoomed', zoomed);
         board.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(date)] + (zoomed ? ', ' + M.span(lo, hi) : '')), lane, onbTicks(lo, hi, zoomed ? 1 : 3));
@@ -16651,6 +16671,11 @@
           }
         }
         line.textContent = words[phase];
+        line2.textContent = phase === 'place' ? '' : lockLine();
+        line2.hidden = !line2.textContent;
+        if (!line2.isConnected) line.after(line2);
+        /* a Locked tag gives way to the name of the block being placed, where the two would meet */
+        requestAnimationFrame(() => { const t = lane.querySelector('.onb-tag'); if (!t) return; const r = t.getBoundingClientRect(); lane.querySelectorAll('.onb-lockt').forEach((k) => { const q = k.getBoundingClientRect(); k.classList.toggle('hide', q.left < r.right + 4 && r.left < q.right + 4); }); });
         /* once something is placed it's kept, so the way on says Next, and it can be taken back */
         c.label('Next');
         hint();
@@ -16783,7 +16808,7 @@
         if (!spot.ok) {
           Snd.bad();
           const by = spot.fit && spot.fit.blocker;
-          line.textContent = (by ? (by.label || by.name) + ' is locked there' : 'Something locked is there') + ', so nothing goes over it. Try open time.';
+          line.textContent = (by ? (by.label || by.name) + ' is locked there' : 'Something locked is there') + ', so try open time.';
           hint();
           return;
         }
@@ -16799,7 +16824,10 @@
         draw();
         /* (V11, Oct 15: a block inside work that's yours to plan cuts it, and the line says so instead of Nothing else moved) */
         const room = FEEL && !moved.length ? M.calendarDay(base, date).blocks.find((x) => x.soft && !x.free && x.cat === 'work' && x.start < spot.start + p.dur && spot.start < x.start + x.dur) : null;
-        line.textContent = p.name + ', ' + M.span(spot.start, spot.start + p.dur) + '. ' + (moved.length ? moved.join(', ') + ' to make room. ' : room ? (room.label || room.name) + ' makes room around it. ' : 'Nothing else moved. ') + words.stretch;
+        /* (Kim's test: the line on the page is the next thing to do, one sentence; where it landed and what made room is
+           what the day shows, and what a screen reader hears) */
+        line.textContent = words.stretch;
+        say(p.name + ', ' + M.span(spot.start, spot.start + p.dur) + '. ' + (moved.length ? moved.join(', ') + ' to make room.' : room ? (room.label || room.name) + ' makes room around it.' : 'Nothing else moved.'));
         const g = lane.querySelector('.onb-grip');
         if (g) g.focus({ preventScroll: true });
         /* the stretch is shown once too, after a beat to read where it landed (V11: four seconds, so reading comes first) */
@@ -16820,7 +16848,8 @@
         phase = 'done';
         saveDraft();
         draw();
-        line.textContent = a.placed.add.name + ' is ' + M.dur(dur) + ' now, ' + M.span(a.placed.start, a.placed.start + dur) + '. ' + words.done;
+        line.textContent = words.done;
+        say(a.placed.add.name + ' is ' + M.dur(dur) + ' now, ' + M.span(a.placed.start, a.placed.start + dur) + '.');
         if (keep) { const g = lane.querySelector('.onb-grip'); if (g) g.focus({ preventScroll: true }); }
         Snd.good();
       };
@@ -17139,6 +17168,7 @@
         two.setAttribute('role', 'group'); two.setAttribute('aria-label', 'What ' + name + ' should be');
         const mk = button('Make it a goal', 'onb-half', () => setGoal(true)), only = button('Mark the date only', 'onb-half', () => setGoal(false));
         mk.setAttribute('aria-pressed', String(made)); only.setAttribute('aria-pressed', String(!made && a.goalNo === name));
+        mk.appendChild(onbTick()); only.appendChild(onbTick());
         mk.dataset.fk = 'goal-make'; only.dataset.fk = 'goal-only';
         two.append(mk, only);
         offer.append(top, two);
@@ -17155,7 +17185,7 @@
       const keep = () => {
         a.soon = own() && s.date ? { name: s.name.trim(), date: s.date } : null;
         saveDraft();
-        sayNow.textContent = own() ? s.name.trim() + ' goes on your board' + (FEEL && goalOf() ? ' as a goal with a date, ' : ' as a marker, ') + M.dateText(s.date, 'day') + '.' : EX + ' is an example. Only what you keep or type goes on your board.';
+        sayNow.textContent = own() ? s.name.trim() + ' goes on your board' + (FEEL && goalOf() ? ' as a goal with a date, ' : ' as a marker, ') + M.dateText(s.date, 'day') + '.' : EX + ' is an example, and only what you keep or type goes on your board.';
         const k = nameCol.querySelector('.onb-suggest[data-ex]') || (FEEL ? null : nameCol.querySelector('.onb-suggest'));
         if (k) k.textContent = own() ? EX : 'Keep ' + EX;
         drawOffer();
@@ -17187,7 +17217,7 @@
       const { a, h, body } = c;
       const late = nowMin >= 20 * 60, date = late ? M.addDays(today, 1) : today, word = late ? 'tomorrow' : 'tonight';
       h.textContent = 'How’s dinner happening ' + word + '?';
-      body.appendChild(el('p', 'sheet-line', 'On Sundays you’ll decide the whole week. Try one night.'));
+      body.appendChild(el('p', 'sheet-line', 'Try one night, and plan the rest when you plan your week.'));
       const base = onbBase(a), partnered = (a.home === 'partner' || a.home === 'family') && a.partner.trim();
       const d = a.dinner && a.dinner.date === date ? Object.assign({}, a.dinner) : { date, name: '', recipe: null, cook: '', items: [] };
       const cooking = () => ['me', 'kim', 'home'].includes(d.cook);
@@ -17199,7 +17229,7 @@
         const b = el('button', 'onb-dish');
         b.type = 'button';
         b.setAttribute('aria-pressed', String(on));
-        b.append(icon(x.icon, 10, on ? UI.dark : UI.gold), el('b', '', x.name));
+        b.append(icon(x.icon, 10, on ? UI.dark : UI.gold), el('b', '', x.name), onbTick());
         b.addEventListener('click', () => { Snd.init(); Snd.pick(); fn(); keep(); draw(); });
         return b;
       };
@@ -17228,8 +17258,8 @@
         res.appendChild(blk);
         if (d.items.length) {
           const names = d.items.map((id) => (base.pantry.find((p) => p.id === id) || { name: id }).name);
-          res.appendChild(el('p', 'onb-groc', 'On the grocery list: ' + names.join(', ') + '. Check them off in the store, on your phone.'));
-        } else res.appendChild(el('p', 'onb-groc', !cooking() ? 'Nothing to buy. It’s on the board as ' + word + '’s dinner.' : d.name ? 'On the board as ' + word + '’s dinner. What it needs can go on the grocery list from Dinners.' : 'Pick what you’re making and the grocery list fills in.'));
+          res.appendChild(el('p', 'onb-groc', 'On the grocery list: ' + names.join(', ') + '.'));
+        } else res.appendChild(el('p', 'onb-groc', !cooking() ? 'It’s on the board as ' + word + '’s dinner, with nothing to buy.' : d.name ? 'It’s on the board as ' + word + '’s dinner.' : 'Pick what you’re making and the grocery list fills in.'));
       };
       draw();
       c.label('Next');
@@ -17254,7 +17284,7 @@
         const card = el('div', 'onb-part');
         if (p.kind === 'task') {
           card.append(icon('flag', 11, UI.gold), onbWords(p.name, p.due ? 'Due ' + M.relText(p.due, today) + (M.diffDays(today, p.due) < 7 && M.diffDays(today, p.due) > 1 ? ', ' + M.dateText(p.due) : '') : 'No due date yet'));
-          out.append(card, el('p', 'onb-groc', 'It waits in your to-dos until you give it a time. Due soon and the notepad on the desk keep it in sight.'));
+          out.append(card, el('p', 'onb-groc', 'It waits in your to-dos until you give it a time.'));
         } else {
           const lk = W.look(p);
           const blk = el('div', 'onb-chip');
@@ -17273,8 +17303,10 @@
        in the person's own calendar as a weekly event. */
     reset(c) {
       const { su, a, h, body } = c;
-      h.textContent = 'When’s your Sunday Reset?';
-      body.appendChild(el('p', 'sheet-line', 'About 20 minutes, at a time that’s usually quiet.'));
+      /* Kim's test (Oct 20): the question asks, and never assumes they already have a Sunday Reset; Sunday is the
+         suggestion, and the feature gets its name on the line under the answers */
+      h.textContent = 'When do you want to plan your week?';
+      body.appendChild(el('p', 'sheet-line', 'About 20 minutes, once a week.'));
       const list = el('div', 'onb-picks onb-times');
       list.setAttribute('role', 'radiogroup'); list.setAttribute('aria-labelledby', 'sheet-h');
       const first = el('p', 'onb-first');
@@ -17295,8 +17327,8 @@
           b.setAttribute('aria-checked', String(on));
           /* three times as tiles in a row (Morning, 9 am); another time is the fourth, under them. V11-2: chips that say
              their time beside their name, with no mark and no circle; white is the one picked */
-          const words = onbWords(t.other ? 'Another time' : t.name.replace(/^Sunday /, '').replace(/^./, (c) => c.toUpperCase()), t.other ? 'Any day and time' : M.clock(t.min));
-          if (FEEL) b.append(words);
+          const words = onbWords(t.other ? 'Another day' : FEEL ? t.name : t.name.replace(/^Sunday /, '').replace(/^./, (c) => c.toUpperCase()), t.other ? 'Any day and time' : M.clock(t.min));
+          if (FEEL) b.append(words, onbTick());
           else { const tick = el('span', 'onb-tick'); tick.appendChild(icon('check', 7, UI.dark)); b.append(icon(t.other ? 'calendar' : t.min < 720 ? 'sunrise' : t.min < 1020 ? 'sun' : 'moon', 11, UI.gold), words, tick); }
           if (t.other) b.classList.add('onb-time-other');
           if (on || (!k && !custom && !isPreset())) b.dataset.first = '1';
@@ -17315,7 +17347,7 @@
         }
         sayFirst();
       };
-      const sayFirst = () => { first.textContent = 'Your first one: ' + onbWhenReset(OB.nextReset(M, today, nowMin, a.resetAt), a.resetAt) + '.'; };
+      const sayFirst = () => { const w = onbWhenReset(OB.nextReset(M, today, nowMin, a.resetAt), a.resetAt); first.textContent = 'Your first Sunday Reset is ' + w + '.'; };
       body.append(list, other, first);
       draw();
       /* V11-2: the calendar, said the way it happens (onbCalRow): Add it to my calendar saves the file, the line after it
@@ -17409,7 +17441,7 @@
         const ctx = { partnered: !!partnered, dinners: a.help.dinners !== false, together: !!partnered && a.help.together !== false };
         a.pains.map(OB.painById).filter(Boolean).forEach((p) => { const r = el('div', 'onb-on'); r.append(icon(p.icon, 9, UI.gold), onbWords(OB.leanFor(p, ctx), p.name)); ln.appendChild(r); });
         /* their own words get an answer too: the reset is where it gets looked at */
-        if ((a.painOther || '').trim()) { const r = el('div', 'onb-on'); r.append(icon('note2', 9, UI.gold), onbWords(a.painOther.trim(), 'It’s in your to-dos as Look at. Bring it to your first Sunday Reset.')); ln.appendChild(r); }
+        if ((a.painOther || '').trim()) { const r = el('div', 'onb-on'); r.append(icon('note2', 9, UI.gold), onbWords(a.painOther.trim(), 'It’s in your to-dos, so it has a place.')); ln.appendChild(r); }
         body.appendChild(ln);
       }
       const more = disclosure('Everything on it');

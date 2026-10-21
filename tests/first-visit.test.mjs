@@ -153,7 +153,7 @@ test('a goal\'s words: an exam\'s hours over the weeks to its date, anything els
     ${app('  function goalWords(name, date) {', '  /* A study as a phone reads it')}
     ({ goalWords });`;
   const f = runInNewContext(script, { M, D, __today: today, __OB: OB });
-  assert.equal(f.goalWords('Bar exam', '2027-02-23'), 'The bar exam is about 400 hours of study, a common estimate. That’s about 21 hours a week until Feb 23.');
+  assert.equal(f.goalWords('Bar exam', '2027-02-23'), 'The bar exam is about 400 hours of study by a common estimate, about 21 hours a week until Feb 23.');
   assert.match(f.goalWords('Run a half marathon', '2027-02-23'), /^As a goal it gets a little time on your days until Feb 23/);
   assert.match(f.goalWords('Bar exam', '2026-10-17'), /^That’s in 3 days/);
 });
