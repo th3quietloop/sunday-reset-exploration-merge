@@ -321,6 +321,8 @@
         start: a.start, dur: a.dur, done: addDone(state, a, tasks)
       };
       if (a.dinner) b.dinner = true;
+      if (a.meal) b.meal = true;
+      if (a.mealAt != null) b.mealAt = a.mealAt;
       if (a.pinned) b.pinned = true;
       if (a.makes) b.makes = a.makes;
       list = lay(list, b);
@@ -399,7 +401,7 @@
     }
     timedOn(state, ownerDate).forEach((e) => put({ key: 'ev:' + e.id, base: 'ev:' + e.id, event: e.id, cal: e.cal || null, name: e.name, cat: e.cat || 'family', icon: e.icon || 'star', start: e.start, dur: e.dur, fixed: true, big: !!e.big }, 3));
     if (!trip && !off) state.meetings.filter((m) => (m.days || []).includes(weekday(ownerDate))).forEach((m) => put({ key: 'mt:' + m.id, base: 'mt:' + m.id, meeting: m.id, name: m.name, cat: 'work', icon: 'people', start: m.start, dur: m.dur, fixed: true }, 4));
-    (dd.adds || []).filter((a) => !a.skipped).forEach((a) => put(Object.assign({ key: 'add:' + a.id, base: 'add:' + a.id, add: a.id, src: a.src || null, name: addName(state, a, tasks), cat: a.cat || 'yours', icon: a.icon || 'star', start: a.start, dur: a.dur, done: addDone(state, a, tasks) }, a.dinner ? { dinner: true } : {}, a.pinned ? { pinned: true } : {}, a.makes ? { makes: a.makes } : {}), 5));
+    (dd.adds || []).filter((a) => !a.skipped).forEach((a) => put(Object.assign({ key: 'add:' + a.id, base: 'add:' + a.id, add: a.id, src: a.src || null, name: addName(state, a, tasks), cat: a.cat || 'yours', icon: a.icon || 'star', start: a.start, dur: a.dur, done: addDone(state, a, tasks) }, a.dinner ? { dinner: true } : {}, a.meal ? { meal: true } : {}, a.mealAt != null ? { mealAt: a.mealAt } : {}, a.pinned ? { pinned: true } : {}, a.makes ? { makes: a.makes } : {}), 5));
     records.forEach((b) => {
       if (!b.dinner) return;
       const dinner = state.dinners[ownerDate];
@@ -489,16 +491,18 @@
   const awake = (t) => Object.keys(t).reduce((a, k) => a + (k === 'sleep' ? 0 : t[k]), 0);
 
   /* == placing == */
-  /* V11-2: meals keep their time. A meal is a Dinner block, anything that's Meals, or a template Breakfast, Lunch, or
-     Dinner ("Lunch, pack them up" too). Its window is its usual time, an hour either way: the template's start, or a
-     placed meal's own start. Making room never moves a meal further out than its window without a yes, the way a plan
+  /* V11-2: meals keep their time. A meal is a Dinner block, a template Breakfast, Lunch, or Dinner ("Lunch, pack them
+     up" too), or a block marked meal: true (V11-3: Meals as a kind of time no longer is). Its window is its usual time,
+     an hour either way: the template's start, or where a placed meal was put (mealAt, V11-3), else its own start. Making room never moves a meal further out than its window without a yes, the way a plan
      never takes own time without one: pushInsert keeps the least moving way that keeps every meal in its window, and
      when only a way that moves one out would do, it says so instead (reason 'meal', with meal: { name, key, fromDate,
      from, date, to }, and the pushes it would make) so the app can ask "This moves Dinner to 4:45 pm. Move it?". The
      yes is opts.meals on canPlace, placeAdd, moveAdd, moveTemplate, and resizeBlock, or withMeals(true, fn) around
      any change (15 more minutes too). A stretch that would push a meal out stops where its window does. */
   const MEAL_WINDOW = 60;
-  const mealBlock = (b) => !!b && !b.sleep && !b.soft && (!!b.dinner || b.cat === 'meals' || (!!b.tpl && /^(breakfast|lunch|dinner)\b/i.test(String(b.name || ''))));
+  /* (V11-3, C5: a meal is a Dinner block, a template Breakfast, Lunch, or Dinner, or a block that says it is one
+     (meal: true); Meals as a kind of time isn't enough, so Meal prep and Groceries after move like anything else) */
+  const mealBlock = (b) => !!b && !b.sleep && !b.soft && (!!b.dinner || !!b.meal || (!!b.tpl && /^(breakfast|lunch|dinner)\b/i.test(String(b.name || ''))));
   let mealsOk = false;
   function withMeals(on, fn) { const was = mealsOk; mealsOk = !!on; try { return fn(); } finally { mealsOk = was; } }
   /* a meal's window in `date`'s minutes: { lo, hi, at } around its usual start; null for anything that isn't a meal */
@@ -507,7 +511,8 @@
     const src = b.sourceDate || date;
     let at = null;
     if (b.tpl) { const t = (templateFor(state, src).blocks || []).find((x) => x.id === b.tpl); if (t) at = windowTime(date, src, t.start); }
-    if (at == null) at = b.add && b.sourceStart != null ? windowTime(date, src, b.sourceStart) : b.start;
+    /* (V11-3, C4: a placed meal centers on where it was put, kept on it as mealAt, so a push never moves its window) */
+    if (at == null) at = b.add && b.mealAt != null ? windowTime(date, src, b.mealAt) : b.add && b.sourceStart != null ? windowTime(date, src, b.sourceStart) : b.start;
     return { lo: at - MEAL_WINDOW, hi: at + MEAL_WINDOW, at };
   }
   /* Put a hard block of length dur at start, sliding movable neighbors out of the way.
@@ -652,6 +657,8 @@
     const dd = dateRec(state, r.date);
     dd.adds = dd.adds || [];
     const a = Object.assign({}, add, { id: add.id || newId('a'), start: r.start });
+    /* V11-3 (C4): a meal keeps where it was put, by hand (a move puts it here again), as the middle of its window */
+    if (a.dinner || a.meal) a.mealAt = r.start; else delete a.mealAt;
     /* V11 goals: a step or a goal session someone puts on a day stays there when its plan is worked out
        again (the planners place theirs another way, unpinned) */
     if (pinnable(a) && add.pinned == null) a.pinned = true;

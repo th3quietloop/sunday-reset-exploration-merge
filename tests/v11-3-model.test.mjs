@@ -236,3 +236,22 @@ test('C6: a step both devices made a to-do for comes back once', () => {
   const out = M.mergeBoards(b2, m3, t3).doc.tasks.find((t) => t.id === 'room');
   assert.deepEqual(out.steps.map((s) => s.id), ['m-a', 'm-b', 't-c']);
 });
+
+/* == C4, C5: meals keep their window == */
+test('C4: a placed meal’s window stays where it was put, however often it is pushed', () => {
+  const st = sam(), SAT = '2026-10-24';
+  const r = M.placeAdd(st, SAT, { name: 'Brunch', cat: 'meals', icon: 'pot', dur: 60, meal: true, src: { type: 'custom' } }, 660);
+  assert.equal(r.ok, true);
+  assert.equal(r.add.mealAt, 660);
+  const brunch = () => M.calendarDay(st, SAT).blocks.find((b) => b.add === r.add.id);
+  const before = brunch().start;
+  const p = M.placeAdd(st, SAT, { name: 'Walk', cat: 'yours', icon: 'star', dur: 30, src: { type: 'custom' } }, before - 15);
+  assert.equal(p.ok, true);
+  assert.notEqual(brunch().start, before, 'the walk pushed it');
+  assert.equal(M.mealWindow(st, brunch(), SAT).at, 660, 'its window is where it was put, not where the push left it');
+  // moved by hand, that's its place now
+  M.moveAdd(st, r.add.id, SAT, 780);
+  assert.equal(M.mealWindow(st, brunch(), SAT).at, brunch().start);
+  // Meal prep is Meals but not a meal: it moves like anything else
+  assert.equal(M.mealBlock({ name: 'Meal prep', cat: 'meals', add: 'x', start: 600, dur: 90 }), false);
+});
