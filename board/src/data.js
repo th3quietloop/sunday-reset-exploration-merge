@@ -797,8 +797,14 @@
      V11-3 (Oct 20): VERSION stays 9. Three optional fields on a placed add, each read with a default, so nothing
      migrates: own (true: a goal session the person's yes put in their own time, apart from pinned, which is placed
      by hand), meal (true: a block that is a meal, beside a Dinner block and a template meal), and mealAt (minutes:
-     where a meal was put, the middle of its window). An older build ignores all three. */
-  const VERSION = 9;
+     where a meal was put, the middle of its window). An older build ignores all three.
+     Kim's test (Oct 20, docs/KIM-TEST.md K8): VERSION is 10. A routine in the usual week can belong to someone else
+     every week: by on a template block (a drop off or pick up the partner does, by their name, or 'Someone else'),
+     which shows as the outline a one-day handoff leaves (dates[d].edits[id] with gone and by), and mine on a date's
+     edit (taken back that day: the routine is the person's own, locked as it was made). migrate changes only the
+     number: no older board has either field (tests/kim-flows.test.mjs). A version 9 build takes a version 10 board
+     as newer: read only, never written over. */
+  const VERSION = 10;
   /* Who the board belongs to. Names in the app's own words (tabs, buttons, lines) come from here,
      never from code. Russell's board keeps Kim, Elijah, and Kim's cookbook. */
   const RUSSELL = { name: 'Russell', partner: 'Kim', kids: ['Elijah'], cookbook: 'https://truffle-recipes.vercel.app' };
@@ -858,6 +864,11 @@
          Each is optional and read with a default, so nothing on a version 8 board changes but the number. */
       st.v = 9;
     }
+    if (st.v === 9) {
+      /* routines someone else does every week (a template block's by) and a day taken back (an edit's mine). Both are
+         new, so nothing on a version 9 board changes but the number */
+      st.v = 10;
+    }
     return st;
   }
 
@@ -898,10 +909,16 @@
           help: { dinners, together } }
      Children dropped off or picked up at the same time share one block. */
   const joinNames = (list) => (list.length <= 1 ? list.join('') : list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1]);
+  /* (Kim's test, K8, Oct 20: each drop off and pick up says who does it. dropBy and pickBy are 'me' (a locked block in
+     the week, the way it always was), 'partner' (the block is the partner's: Data.byName gives the name it's marked
+     with, and the board shows it as theirs, the per-day handoff made every week), or 'other' (someone else: a short,
+     quiet note, never locked). An older answer's other: true, with no who, still means nothing goes on the board) */
+  const WHO = ['me', 'partner', 'other'];
   function careList(a) {
     const kids = (a.kids || []).filter(Boolean);
-    if (Array.isArray(a.cares)) return a.cares.filter((c) => c && !c.other && (c.kids || []).length && (c.days || []).length).map((c) => ({ kids: c.kids.filter(Boolean), days: c.days.slice(), drop: c.drop, pick: c.pick }));
-    if (a.care && kids[0] && a.work) return [{ kids: [kids[0]], days: a.work.days.slice(), drop: a.care.drop, pick: a.care.pick }];
+    const who = (c, k) => (WHO.includes(c[k]) ? c[k] : 'me');
+    if (Array.isArray(a.cares)) return a.cares.filter((c) => c && !(c.other && !c.dropBy && !c.pickBy) && (c.kids || []).length && (c.days || []).length).map((c) => ({ kids: c.kids.filter(Boolean), days: c.days.slice(), drop: c.drop, pick: c.pick, dropBy: who(c, 'dropBy'), pickBy: who(c, 'pickBy') }));
+    if (a.care && kids[0] && a.work) return [{ kids: [kids[0]], days: a.work.days.slice(), drop: a.care.drop, pick: a.care.pick, dropBy: 'me', pickBy: 'me' }];
     return [];
   }
   function buildState(a, today) {
@@ -919,16 +936,21 @@
       const blocks = [];
       /* the day's drop offs and pick ups, grouped by time, so two children at 8:30 share one block */
       const on = cares.filter((c) => c.days.includes(wd));
-      const byTime = (key) => {
+      /* (who does it: the person's own make the day's shape; the partner's or someone else's sit on it as notes. A
+         partner's with no partner named is the person's own) */
+      const byOf = (w) => (w === 'partner' && !a.partner ? 'me' : w || 'me');
+      const byTime = (key, mine) => {
         const m = new Map();
-        on.forEach((c) => { if (c[key] == null) return; if (!m.has(c[key])) m.set(c[key], []); m.get(c[key]).push(...c.kids); });
-        return Array.from(m.entries()).map(([at, who]) => ({ at, who: Array.from(new Set(who)) })).sort((x, y) => x.at - y.at);
+        on.forEach((c) => { if (c[key] == null) return; const by = byOf(c[key + 'By']); if ((by === 'me') !== mine) return; const k = c[key] + '|' + by; if (!m.has(k)) m.set(k, { at: c[key], by, who: [] }); m.get(k).who.push(...c.kids); });
+        return Array.from(m.values()).map((x) => ({ at: x.at, by: x.by, who: Array.from(new Set(x.who)) })).sort((x, y) => (x.by < y.by ? -1 : x.by > y.by ? 1 : x.at - y.at));
       };
       /* a drop off or pick up that starts inside the one before it rides in that block, so a child at
          8:15 is never dropped from the day behind a block at 8:00, and two locked blocks never overlap */
-      const near = (list) => list.reduce((out, x) => { const last = out[out.length - 1]; if (last && x.at < last.at + 30) last.who = Array.from(new Set(last.who.concat(x.who))); else out.push({ at: x.at, who: x.who.slice() }); return out; }, []);
-      const drops = near(byTime('drop').filter((x) => x.at >= wake && x.at + 30 <= bed - 60));
-      const picks = near(byTime('pick').filter((x) => x.at >= wake + 60 && x.at + 30 <= bed - 60));
+      const near = (list) => list.reduce((out, x) => { const last = out[out.length - 1]; if (last && last.by === x.by && x.at < last.at + 30) last.who = Array.from(new Set(last.who.concat(x.who))); else out.push({ at: x.at, by: x.by, who: x.who.slice() }); return out; }, []);
+      const dropOk = (x) => x.at >= wake && x.at + 30 <= bed - 60, pickOk = (x) => x.at >= wake + 60 && x.at + 30 <= bed - 60;
+      const drops = near(byTime('drop', true).filter(dropOk));
+      const picks = near(byTime('pick', true).filter(pickOk));
+      const theirs = [['dropoff', 'Drop off', near(byTime('drop', false).filter(dropOk))], ['pickup', 'Pick up', near(byTime('pick', false).filter(pickOk))]];
       let t = wake;
       const firstDrop = drops.length ? drops[0].at : wake + 60;
       const morningEnd = Math.min(wake + 60, firstDrop, working ? hours.start : wake + 60);
@@ -963,6 +985,10 @@
         blocks.push(B(i ? 'pickup' + (i + 1) : 'pickup', 'Pick up ' + joinNames(x.who), 'family', 'car', x.at, x.at + 30, { fixed: true, daycare: true }));
         t = Math.max(t, x.at + 30);
       });
+      /* the ones the partner or someone else does: the same block, marked with who has it (by), so the board shows it
+         as theirs every week and its time stays open. It isn't part of the day's shape, so nothing waits on it */
+      let notes = 0;
+      theirs.forEach(([id, word, list]) => list.forEach((x, i) => { notes++; blocks.push(B(id + '-' + x.by + (i ? i + 1 : ''), word + ' ' + joinNames(x.who), 'family', 'car', x.at, x.at + 30, { fixed: true, daycare: true, by: x.by === 'partner' ? a.partner : 'Someone else' })); }));
       /* dinner after work, even when work runs late and bed is close: the evening and the wind down
          take what room is left, so a late shift still has a dinner on the board */
       const dinner = Math.max(t, 18 * 60);
@@ -984,6 +1010,7 @@
         }
         blocks.sort((x, y) => x.start - y.start);
       }
+      if (notes) blocks.sort((x, y) => x.start - y.start);
       days[wd] = { wake, bed, blocks };
     }
     const st = defaultState(today);

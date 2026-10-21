@@ -9213,7 +9213,18 @@
   }
   function takeBack(b, date) {
     const wd = M.DAY_LONG[M.weekday(date)], who = b.handoff || handoffWho(), tb = templateBlock(date, b.tpl), name = tb ? tb.name : b.name;
-    const r = commit(() => { const rec = M.dateRec(state, date), e = rec.edits && rec.edits[b.tpl]; if (!e) return false; delete e.gone; delete e.by; if (!Object.keys(e).length) delete rec.edits[b.tpl]; return { ok: true }; });
+    /* (Kim's test, K8: a routine that's someone else's every week, from the setup, is taken back for this day with mine) */
+    const weekly = !!(tb && tb.by);
+    const r = commit(() => {
+      const rec = M.dateRec(state, date), e = rec.edits && rec.edits[b.tpl];
+      if (!e && !weekly) return false;
+      rec.edits = rec.edits || {};
+      const x = e || (rec.edits[b.tpl] = {});
+      delete x.gone; delete x.by;
+      if (weekly) x.mine = true;
+      if (!Object.keys(x).length) delete rec.edits[b.tpl];
+      return { ok: true };
+    });
     if (!r) return;
     selectBlock(null);
     if (view.sel) closeSel();
@@ -9952,7 +9963,10 @@
      place panel's day cells (white fill is the pick, a dot under today), the arrows drawn marks. Days before min can't
      be picked. Arrow keys move a day or a week, Page Up and Page Down a month. fk keys the month it shows, which
      starts on the pick (or the first day it can be) */
-  function dayPicker(value, min, onPick, fk) {
+  /* (Kim's test, K12: o.redraw and o.root let it live outside the side panel, in the setup: what to draw again when
+     the month changes, and where its cells are) */
+  function dayPicker(value, min, onPick, fk, o) {
+    const again = () => (o && o.redraw ? o.redraw() : renderSide()), inBox = () => (o && o.root ? o.root() : inBox()) || document;
     const got = view.got.dp || (view.got.dp = {});
     const first = value || (min && min > today ? min : today);
     let month = got[fk] || M.monthStart(first);
@@ -9962,7 +9976,7 @@
     const box = el('div', 'c-dp');
     box.dataset.fk = fk;
     const head = el('div', 'c-dp-head');
-    const go = (n) => { got[fk] = M.addMonths(month, n); Snd.pick(); renderSide(); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + fk + (n < 0 ? '-prev' : '-next') + '"]'); if (b && !b.disabled) b.focus({ preventScroll: true }); }); };
+    const go = (n) => { got[fk] = M.addMonths(month, n); Snd.pick(); again(); requestAnimationFrame(() => { const b = inBox().querySelector('[data-fk="' + fk + (n < 0 ? '-prev' : '-next') + '"]'); if (b && !b.disabled) b.focus({ preventScroll: true }); }); };
     const pt = M.parts(month), name = M.MONTH_LONG[pt.m - 1] + ' ' + pt.y;
     const prev = button('', 'c-dp-arrow', () => go(-1));
     prev.appendChild(icon('left', 8, '#FFFFFF')); prev.setAttribute('aria-label', 'The month before'); prev.dataset.fk = fk + '-prev';
@@ -9976,7 +9990,7 @@
     const grid = el('div', 'c-dp-grid');
     const days = M.monthGrid(month);
     days.slice(0, 7).forEach((x) => { const w = el('span', 'c-dp-dw', M.DAY_SHORT[M.weekday(x)].slice(0, 2)); w.setAttribute('aria-hidden', 'true'); grid.appendChild(w); });
-    const pick = (x) => { Snd.init(); Snd.pick(); onPick(x); requestAnimationFrame(() => { const b = $('side-in').querySelector('[data-fk="' + fk + '-' + x + '"]'); if (b) b.focus({ preventScroll: true }); }); };
+    const pick = (x) => { Snd.init(); Snd.pick(); onPick(x); requestAnimationFrame(() => { const b = inBox().querySelector('[data-fk="' + fk + '-' + x + '"]'); if (b) b.focus({ preventScroll: true }); }); };
     days.forEach((x) => {
       if (M.monthStart(x) !== month) { grid.appendChild(el('span', 'c-dp-gap')); return; }
       const b = el('button', 'wkcell c-dp-cell' + (x === today ? ' today' : ''));
@@ -9996,8 +10010,8 @@
         if (min && to < min) to = min;
         got[fk] = M.monthStart(to);
         const moved = got[fk] !== month;
-        const land = () => { const c = $('side-in').querySelector('[data-fk="' + fk + '-' + to + '"]'); if (c) c.focus({ preventScroll: true }); };
-        if (moved) { renderSide(); requestAnimationFrame(land); } else land();
+        const land = () => { const c = inBox().querySelector('[data-fk="' + fk + '-' + to + '"]'); if (c) c.focus({ preventScroll: true }); };
+        if (moved) { again(); requestAnimationFrame(land); } else land();
       });
       grid.appendChild(b);
     });
@@ -14902,10 +14916,16 @@
     const working = !a.noWork && a.work.days.length;
     /* (V11: a kid's days with times of their own, an early release Wednesday, are a run of their own: buildState
        takes each run with its own days and times) */
+    /* (Kim's test, K8: and who does each, Onboard.careWho, so a run is days with the same times and the same who) */
     const runs = (c) => {
-      if (!FEEL || !c.hours || c.same !== false) { const x = Object.assign({}, c); delete x.hours; delete x.same; return [x]; }
+      const per = FEEL && c.hours && c.same === false;
       const by = new Map();
-      c.days.forEach((wd) => { const h = Object.assign({ drop: c.drop, pick: c.pick }, c.hours[wd]), k = h.drop + '|' + h.pick; if (!by.has(k)) by.set(k, { kids: c.kids, days: [], drop: h.drop, pick: h.pick, other: c.other }); by.get(k).days.push(wd); });
+      c.days.forEach((wd) => {
+        const h = Object.assign({ drop: c.drop, pick: c.pick }, per ? c.hours[wd] : null), db = OB.careWho(c, wd, 'drop'), pb = OB.careWho(c, wd, 'pick');
+        const k = [h.drop, h.pick, db, pb].join('|');
+        if (!by.has(k)) by.set(k, { kids: c.kids, days: [], drop: h.drop, pick: h.pick, dropBy: db, pickBy: pb });
+        by.get(k).days.push(wd);
+      });
       return Array.from(by.values());
     };
     const cares = [].concat(...kids.map((k) => runs(Object.assign({ days: working ? a.work.days.slice() : [1, 2, 3, 4, 5], drop: 510, pick: 1005, other: false }, a.cares[k], { kids: [k] }))));
@@ -14935,7 +14955,9 @@
       a.work.days.slice().sort((x, y) => ((x + 6) % 7) - ((y + 6) % 7)).forEach((wd) => { const h = a.work.same ? a.work : Object.assign({ start: a.work.start, end: a.work.end }, a.work.hours[wd]); const k = M.span(h.start, h.end); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(M.DAY_SHORT[wd]); });
       lines.push('Work ' + Array.from(groups.entries()).map(([k, ds]) => ds.join(', ') + ' ' + k).join('; '));
     }
-    inp.cares.forEach((c) => { if (!c.other && c.days.length) lines.push(c.kids[0] + ': drop off ' + M.clock(c.drop) + ', pick up ' + M.clock(c.pick) + ', ' + c.days.slice().sort().map((x) => M.DAY_SHORT[x]).join(', ') + ', locked'); });
+    /* (K8: who does each, when it isn't them; locked only where they do one) */
+    const byWord = (w) => (w === 'partner' && inp.partner ? ' (' + inp.partner + ')' : w === 'other' ? ' (someone else)' : '');
+    inp.cares.forEach((c) => { if (c.days.length) lines.push(c.kids[0] + ': drop off ' + M.clock(c.drop) + byWord(c.dropBy) + ', pick up ' + M.clock(c.pick) + byWord(c.pickBy) + ', ' + c.days.slice().sort().map((x) => M.DAY_SHORT[x]).join(', ') + (c.dropBy === 'me' || c.pickBy === 'me' || (!inp.partner && (c.dropBy === 'partner' || c.pickBy === 'partner')) ? ', locked' : '')); });
     const dins = [0, 1, 2, 3, 4, 5, 6].map((wd) => (days[wd].blocks.find((b) => b.dinner) || {}).start).filter((x) => x != null);
     if (dins.length) {
       const count = {}; dins.forEach((x) => { count[x] = (count[x] || 0) + 1; });
@@ -15104,6 +15126,8 @@
   }
   /* the steps asked so far: every step up to this one, and any step seen before, so going back keeps what was there */
   function liveAsked(su) {
+    /* (the quick start asks for all of it on one screen) */
+    if (su.at === 'quick') return new Set(['home', 'days', 'help', 'work', 'build']);
     const steps = onbSteps(su.a), i = steps.findIndex((s) => s.id === su.at);
     const got = new Set(steps.slice(0, i + 1).map((s) => s.id).concat(Object.keys(su.seen || {})));
     if (su.at === 'build' || su.at === 'plan') got.add('build');
@@ -15572,16 +15596,26 @@
     words.appendChild(tiles);
     box.appendChild(words);
     /* a setup closed halfway on this device picks up where it was, answers and all */
-    const go = button('', 'go onb-start', () => { const d = !preview && loadDraft(); if (d) resumeFrom(d, 'first'); else onbGo('name'); });
+    /* (a quick start left halfway is picked up by Set up my week as the full setup, from its first step) */
+    const go = button('', 'go onb-start', () => { const d = !preview && loadDraft(); if (d) resumeFrom(d.id === 'quick' ? Object.assign({}, d, { id: 'name', a: Object.assign({}, d.a, { quick: false }) }) : d, 'first'); else onbGo('name'); });
     go.append(el('b', '', 'Set up my week'), el('small', '', 'About 5 minutes'));
     go.dataset.first = '1';
     /* V11 (Oct 15, the first-visit walk): the one front door, the first visit's and Start over's. The button says what
        it starts, the four parts sit under it in one line, and the other way in says what it shows */
-    const look = button(FEEL ? 'Look at a sample week' : 'Look around first', 'small quiet onb-look', lookAround);
+    /* Kim's test (K22, K23): two clear second choices beside each other under the one gold button, Quick start (one
+       screen, then the board) and the sample week, each a quiet button with what it is under its name */
+    const look = FEEL ? button('', 'onb-alt onb-look', lookAround) : button('Look around first', 'small quiet onb-look', lookAround);
     const foot = el('div', 'onb-w-foot');
     foot.append(go);
     if (FEEL && OB) foot.appendChild(el('p', 'onb-parts4', 'Four short parts: ' + OB.CHAPTERS.map((c) => c.name).join(', ') + '.'));
-    foot.appendChild(look);
+    if (FEEL && OB) {
+      look.append(el('b', '', 'Look at a sample week'), el('small', '', 'A made up family'));
+      const quick = button('', 'onb-alt onb-quickgo', onbQuickStart);
+      quick.append(el('b', '', 'Quick start'), el('small', '', 'One screen'));
+      const alts = el('div', 'onb-alts');
+      alts.append(quick, look);
+      foot.appendChild(alts);
+    } else foot.appendChild(look);
     /* V11: on iPhone and iPad Safari, the Home Screen first, so a week is never built where it will have to move */
     const home = FEEL && !preview ? homeFirstLine() : null;
     if (home) foot.appendChild(home);
@@ -15635,7 +15669,7 @@
     box.className = 'panel sheet onb';
     fieldSeq = 0;
     if (su.at === 'welcome') { box.dataset.step = 'welcome'; if (FEEL) { su.desk = false; dropBehind(); document.body.classList.remove('onb-landing', 'onb-deskside'); } onbWelcome(box); return; }
-    const a = su.a, steps = onbSteps(a);
+    const a = su.a, steps = su.at === 'quick' ? [{ id: 'quick', chapter: 'you' }] : onbSteps(a);
     su.at = OB.nearestStep(steps, su.at);
     box.dataset.step = su.at;
     const i = steps.findIndex((s) => s.id === su.at);
@@ -15666,6 +15700,8 @@
     parts.forEach((c) => names.appendChild(el('span', c.on ? 'on' : c.fill >= 1 ? 'done' : '', c.name)));
     bar.setAttribute('aria-valuetext', parts.find((c) => c.on) ? parts.find((c) => c.on).name + ', step ' + (i + 1) + ' of ' + steps.length : 'Step ' + (i + 1) + ' of ' + steps.length);
     prog.append(bar, names);
+    /* (Kim's test, K22: the quick start is one screen, so it names itself where the four parts would be) */
+    if (step.id === 'quick') prog.replaceChildren(el('span', 'onb-quick-k', 'Quick start'));
     top.append(prog, onbCloseButton(su));
     head.appendChild(top);
     /* V11-2: their week on top of every step, filling in as they answer (Building and the plan draw it larger, in the
@@ -15797,6 +15833,147 @@
       body.appendChild(more);
     }
   }
+  /* == Kim's test, K8: drop off and pick up, with who does each (Oct 20) ==
+     Each child's drop off and pick up say who does it, as chips under its time: Me, the partner by name (when there is
+     one), Someone else. The same times and who for every day, or Different on some days, where each day has its own
+     times and its own who. Me locks it on their week, the way it always was; the partner's shows as theirs (the
+     handoff outline, "Sam: Pick up Robin", every week); someone else's stays as a quiet note, never locked. An answer
+     saved before the who was asked reads through Onboard.careWho (other: true was Someone else for both). */
+  function onbKids(c, redraw) {
+    const { a, body } = c;
+    const partnerName = a.home === 'partner' || a.home === 'family' ? String(a.partner || '').trim() : '';
+    body.appendChild(el('p', 'sheet-line', 'When, and who does each one.'));
+    const opts = [{ id: 'me', name: 'Me' }].concat(partnerName ? [{ id: 'partner', name: partnerName }] : [], [{ id: 'other', name: 'Someone else' }]);
+    const seen = new Set();
+    /* a who, as three chips; the partner's, with no partner named, reads as Me */
+    const whoChips = (cur, put, name, key) => {
+      const now = cur === 'partner' && !partnerName ? 'me' : cur;
+      seen.add(now);
+      const g = chips(opts, now, (v) => { put(v); Snd.pick(); redraw(); say(name + ': ' + (opts.find((x) => x.id === v) || opts[0]).name + '.'); }, key);
+      g.classList.add('onb-who');
+      g.setAttribute('aria-label', name);
+      return g;
+    };
+    const tm = (word, get, put, lo, hi, name, key) => onbTime(word, get, (v) => { put(M.clamp(v, lo, hi)); redraw(); }, { lo, hi, step: 15, name, key });
+    /* a time and its who, side by side where there's room */
+    const slot = (time, who) => { const r = el('div', 'onb-slot'); r.append(time, who); return r; };
+    const fresh = () => ({ days: !a.noWork && a.work.days.length ? a.work.days.slice() : [1, 2, 3, 4, 5], drop: 510, pick: 1005, dropBy: 'me', pickBy: 'me' });
+    a.kids.forEach((k, n) => {
+      const cr = a.cares[k] || (a.cares[k] = fresh());
+      /* (an older answer gets its who written out once, from other) */
+      if (cr.dropBy == null) cr.dropBy = OB.careWho(cr, null, 'drop');
+      if (cr.pickBy == null) cr.pickBy = OB.careWho(cr, null, 'pick');
+      delete cr.other;
+      const card = el('div', 'dcard onb-kid');
+      card.appendChild(el('div', 'dcard-h', k));
+      /* kids on the same run take one tap, not every day, time, and who set twice */
+      const first = n > 0 ? a.cares[a.kids[0]] || (a.cares[a.kids[0]] = fresh()) : null;
+      if (first) card.appendChild(button('Same as ' + a.kids[0], 'onb-suggest onb-same', () => { Object.assign(cr, { days: first.days.slice(), drop: first.drop, pick: first.pick, dropBy: OB.careWho(first, null, 'drop'), pickBy: OB.careWho(first, null, 'pick'), same: first.same, hours: JSON.parse(JSON.stringify(first.hours || {})) }); Snd.pick(); redraw(); say(k + ' has the same days, times, and who as ' + a.kids[0] + '.'); }));
+      field(card, 'Days', dayChips(cr.days, (v) => { cr.days = cr.days.includes(v) ? cr.days.filter((x) => x !== v) : cr.days.concat(v); saveDraft(); if (cr.same === false) redraw(); }));
+      if (cr.same === false) {
+        cr.hours = cr.hours || {};
+        [1, 2, 3, 4, 5, 6, 0].filter((wd) => cr.days.includes(wd)).forEach((wd) => {
+          const hr = cr.hours[wd] || (cr.hours[wd] = { drop: cr.drop, pick: cr.pick });
+          const day = M.DAY_LONG[wd], dr = el('div', 'onb-kidday');
+          dr.setAttribute('role', 'group'); dr.setAttribute('aria-label', day);
+          dr.append(el('span', 'onb-trow-k', day),
+            slot(tm('Drop off', () => hr.drop, (v) => { hr.drop = v; }, 300, 720, day + ', drop off', 'drop-' + n + '-' + wd), whoChips(OB.careWho(cr, wd, 'drop'), (v) => { hr.dropBy = v; }, day + ', who drops off', 'who-drop-' + n + '-' + wd)),
+            slot(tm('Pick up', () => hr.pick, (v) => { hr.pick = v; }, 720, 1260, day + ', pick up', 'pick-' + n + '-' + wd), whoChips(OB.careWho(cr, wd, 'pick'), (v) => { hr.pickBy = v; }, day + ', who picks up', 'who-pick-' + n + '-' + wd)));
+          card.appendChild(dr);
+        });
+        card.appendChild(button('The same every day', 'onb-link', () => { cr.same = true; cr.hours = {}; Snd.pick(); redraw(); say(k + ' has the same times and who every day.'); }));
+      } else {
+        card.append(
+          slot(tm('Drop off at', () => cr.drop, (v) => { cr.drop = v; }, 300, 720, k + ', drop off at', 'drop-' + n), whoChips(cr.dropBy, (v) => { cr.dropBy = v; }, k + ', who drops off', 'who-drop-' + n)),
+          slot(tm('Pick up at', () => cr.pick, (v) => { cr.pick = v; }, 720, 1260, k + ', pick up at', 'pick-' + n), whoChips(cr.pickBy, (v) => { cr.pickBy = v; }, k + ', who picks up', 'who-pick-' + n)));
+        card.appendChild(button('Different on some days', 'onb-link', () => { cr.same = false; Snd.pick(); redraw(); say('Each of ' + k + '’s days has its own times and who now.'); }));
+      }
+      body.appendChild(card);
+    });
+    /* what each who does on the board, for the ones picked */
+    const words = { me: 'Yours lock on your week.', partner: partnerName + '’s are marked ' + partnerName + ' on the board.', other: 'Someone else’s stay as a short note.' };
+    body.appendChild(el('div', 'field-hint', ['me', 'partner', 'other'].filter((x) => seen.has(x)).map((x) => words[x]).join(' ')));
+  }
+  /* == Kim's test, K22: the quick start (Oct 20) ==
+     For someone who wants to try it before telling it everything: one screen with their name, who's at home, when
+     their day starts and ends, and their work days and hours, then their board. The rest of the setup waits in
+     Getting started as Finish setting up, picked up from the next question with these answers kept, and what they
+     did on the board meanwhile stays on it (keepPlayed). The full setup is still the gold button. */
+  function onbQuickStart() {
+    const su = view.got.setup;
+    if (!su) return;
+    const d = su.mode !== 'preview' && loadDraft();
+    su.a = d && d.id === 'quick' ? Object.assign(blankAnswers(), d.a) : blankAnswers();
+    su.a.quick = true;
+    onbGo('quick');
+  }
+  function onbQuick(c) {
+    const { a, h, body } = c;
+    const redraw = () => { saveDraft(); renderSheet(); };
+    a.quick = true;
+    h.textContent = 'Your week, in one screen';
+    body.appendChild(el('p', 'sheet-line', 'Four answers, then your board. The rest can wait.'));
+    const nm = textInput(a.name, (v) => { a.name = v; saveDraft(); }, 'Your first name', 30);
+    nm.autocomplete = 'given-name'; nm.dataset.first = '1'; nm.dataset.fk = 'q-name';
+    nm.addEventListener('input', () => { a.name = nm.value.trim(); liveSoon(); });
+    field(body, 'Your name', nm);
+    const homes = chips([{ id: 'solo', name: 'Only me' }, { id: 'partner', name: 'Me and a partner' }, { id: 'family', name: 'A family with kids' }, { id: 'shared', name: 'A shared home' }], a.home, (v) => { a.home = v; redraw(); }, 'q-home');
+    homes.classList.add('onb-qchips');
+    field(body, 'Who’s at home', homes);
+    if (a.home === 'partner' || a.home === 'family') {
+      const ppl = el('div', 'onb-people-row');
+      peopleField(ppl, { label: 'Partner', cat: 'us', ph: 'Their first name, optional', one: true, next: a.home === 'family' ? 'pp-family' : null, get: () => (a.partner.trim() ? [a.partner.trim()] : []), set: (v) => { a.partner = v[0] || ''; } });
+      if (a.home === 'family') peopleField(ppl, { label: 'Kids', cat: 'family', ph: 'Add a kid', addBtn: true, get: () => a.kids.slice(), set: (v) => { a.kids = v; } });
+      body.appendChild(ppl);
+    }
+    /* the day: up and bed, the same every day here (the full setup sets weekends apart) */
+    const day = el('div', 'onb-trow');
+    day.append(
+      onbTime('Up at', () => a.wake.wd, (v) => { a.wake.wd = a.wake.we = M.clamp(v, 180, 720); redraw(); }, { lo: 180, hi: 720, name: 'Your day starts at', key: 'q-up' }),
+      onbTime('Bed at', () => a.bed.wd, (v) => { const b = M.clamp(v < 600 ? v + 1440 : v, 1140, 1620); a.bed.wd = a.bed.we = b; redraw(); }, { lo: 1140, hi: 1620, fmt: (m) => M.clock(m % 1440) + (m > 1440 ? ', next day' : ''), name: 'Your day ends at', key: 'q-bed' }));
+    field(body, 'Your day', day);
+    const f = OB.fillOf(a);
+    const fills = chips(OB.FILLS.map((x) => ({ id: x.id, name: x.name })), f.id, (v) => { a.noWork = v === 'none'; if (v !== 'none') a.fills = v; if (v === 'school' && a.work.fixed == null) a.work.fixed = true; redraw(); }, 'q-fill');
+    fills.classList.add('onb-qchips');
+    field(body, 'Your weekdays', fills);
+    if (!a.noWork) {
+      field(body, 'Days', dayChips(a.work.days, (v) => { a.work.days = a.work.days.includes(v) ? a.work.days.filter((x) => x !== v) : a.work.days.concat(v); redraw(); }));
+      a.work.same = true;
+      const r = el('div', 'onb-trow');
+      r.append(
+        onbTime('Starts', () => a.work.start, (v) => { a.work.start = M.clamp(v, 300, a.work.end - 60); redraw(); }, { lo: 300, hi: a.work.end - 60, name: OB.fillOf(a).name + ' starts', key: 'q-ws' }),
+        onbTime('Ends', () => a.work.end, (v) => { a.work.end = M.clamp(v, a.work.start + 60, 1410); redraw(); }, { lo: a.work.start + 60, hi: 1410, name: OB.fillOf(a).name + ' ends', key: 'q-we' }));
+      body.appendChild(r);
+    }
+    c.label(c.su.mode === 'preview' ? 'Show me the preview' : 'Open my week');
+    c.next = () => onbQuickDone(c.su);
+  }
+  /* the board from the quick start's answers; the rest of the setup is kept as a draft that starts at what gets in the
+     way, closed, so it waits for Finish setting up */
+  function onbQuickDone(su) {
+    const a = su.a;
+    a.name = properName(String(a.name || '').trim()); a.partner = properName(a.partner); a.kids = (a.kids || []).map(properName);
+    a.resetAt = OB.quietReset(a);
+    const keep = su.mode !== 'preview';
+    onbBuild(su);
+    finishSetup();
+    if (keep) { try { localStorage.setItem(SETUP_KEY, JSON.stringify({ id: 'pains', a: Object.assign({}, a, { quick: false, quickDone: true }), ics: null, t: Date.now(), closed: true })); } catch (e) { /* fine */ } }
+  }
+  /* The full setup finished after a quick start builds a new week; what was done on the quick start's board stays on
+     it: placed blocks and changes by date, to-dos, dates and calendars, dinners, goals, and their own blocks */
+  function keepPlayed(real, built) {
+    Object.keys(real.dates || {}).forEach((d) => {
+      const r = real.dates[d], b = built.dates[d];
+      built.dates[d] = b ? Object.assign({}, r, b, { adds: (r.adds || []).concat(b.adds || []) }) : r;
+    });
+    const ids = new Set(built.tasks.map((t) => t.id));
+    built.tasks = (real.tasks || []).filter((t) => !ids.has(t.id)).concat(built.tasks);
+    built.events = (real.events || []).concat(built.events);
+    built.calendars = (real.calendars || []).concat(built.calendars || []);
+    built.dinners = Object.assign({}, real.dinners, built.dinners);
+    ['goals', 'palette', 'ideas', 'presets', 'recipes', 'pantry', 'shopping', 'weeks', 'groups', 'meals', 'mealbook'].forEach((k) => { if (real[k] != null) built[k] = real[k]; });
+    return built;
+  }
   /* V11 (Oct 15, the first-visit walk): two things heard in the setup are one thing when they name the same exam, or
      when one's words are in the other's (Bar exam, and Study for the bar exam) */
   function sameThing(x, y) {
@@ -15838,16 +16015,32 @@
       const first = lines.length ? parse(lines[0]) : null;
       /* what was added to the first one (its steps, a due date joined) stays while its words do */
       if (first && was && was.text === first.text) { if (was.steps) first.steps = was.steps; if (was.joined) { first.due = was.due; first.joined = true; } }
+      /* (K13: a line marked Every day stays marked while its words do) */
+      const daily = new Set([was].concat(a.more || []).filter((x) => x && x.daily).map((x) => x.text));
       a.todo = first;
       a.more = lines.slice(1).map(parse).filter(Boolean);
+      [a.todo].concat(a.more).forEach((x) => { if (x && x.kind === 'task' && daily.has(x.text)) x.daily = true; });
       saveDraft();
       draw();
       c.label('Next');
     };
     const card = (p) => {
       if (p.kind === 'task') {
-        const x = el('div', 'onb-part');
-        x.append(icon('flag', 11, UI.gold), onbWords(p.name, p.due ? 'Due ' + M.relText(p.due, today) + (M.diffDays(today, p.due) < 7 && M.diffDays(today, p.due) > 1 ? ', ' + M.dateText(p.due) : M.diffDays(today, p.due) >= 7 ? ', ' + M.dateText(p.due) : '') : 'No due date yet'));
+        const x = el('div', 'onb-part onb-todo-row');
+        x.append(icon('flag', 11, UI.gold), onbWords(p.name, p.daily ? 'Every day' : p.due ? 'Due ' + M.relText(p.due, today) + (M.diffDays(today, p.due) < 7 && M.diffDays(today, p.due) > 1 ? ', ' + M.dateText(p.due) : M.diffDays(today, p.due) >= 7 ? ', ' + M.dateText(p.due) : '') : 'No due date yet'));
+        /* Kim's test, K13: a routine typed as a to-do (Feed Elijah, Bath time) is one tap from a daily to-do */
+        if (FEEL) {
+          const ev = button('Every day', 'chip-btn onb-daily', () => {
+            p.daily = !p.daily; saveDraft(); Snd.pick(); draw();
+            const back = [...out.querySelectorAll('.onb-daily')].find((y) => y.dataset.fk === ev.dataset.fk);
+            if (back) back.focus({ preventScroll: true });
+            say(p.name + (p.daily ? ' repeats every day.' : ' doesn’t repeat.'));
+          });
+          ev.setAttribute('aria-pressed', String(!!p.daily));
+          ev.setAttribute('aria-label', 'Every day: ' + p.name);
+          ev.dataset.fk = 'daily-' + p.text;
+          x.appendChild(ev);
+        }
         return x;
       }
       const lk = W.look(p), blk = el('div', 'onb-chip');
@@ -15926,7 +16119,7 @@
     if (/^Mornings from/.test(line)) return p === 'sleep-am' || p === 'morning';
     if (/^(Work|Class|Work and class) on /.test(line)) return p === 'work';
     if (/at a time each day$/.test(line)) return p === 'breakfast' || p === 'lunch';
-    if (/^Locking drop off/.test(line)) return /^(dropoff|pickup)/.test(p);
+    if (/^(Locking|Noting who has) drop off/.test(line)) return /^(dropoff|pickup)/.test(p);
     if (/^Dinner at /.test(line)) return p === 'dinner';
     if (/^(Evenings with|Keeping your evenings)/.test(line)) return p === 'evening' || p === 'winddown' || p === 'sleep-pm';
     if (/^Bringing in /.test(line)) return p === 'event';
@@ -16001,9 +16194,10 @@
     };
     plain('Already on your board', su.extras.filter((x) => !(x.kind === 'soon' && big && big.made && sameThing(x.name, big.name))).map((x) => {
       const t = x.kind === 'block' ? x.name + ', ' + M.relText(x.date, today) + ' ' + M.span(x.start, x.start + x.dur)
-        : x.kind === 'soon' ? x.name + ', ' + M.dateText(x.date)
+        : x.kind === 'soon' ? x.name + ', ' + M.dateText(x.date) + (x.yearly ? ', every year' : '')
         : x.kind === 'dinner' ? (x.name || 'Dinner') + ' ' + (x.date === today ? 'tonight' : 'tomorrow') + (x.cook ? ', ' + (x.cook === 'kim' ? onbCook(a, x.cook) : onbCook(a, x.cook).toLowerCase()) : '')
         : x.kind === 'todo' && x.taken != null ? x.name + ', in your to-dos for ' + M.relText(x.due, today) + ' (' + M.clock(x.taken) + ' was taken)'
+        : x.kind === 'todo' && x.daily ? x.name + ', every day'
         : x.kind === 'todo' ? x.name + (x.steps ? ', ' + x.steps + ' steps' : '') + (x.due ? ', due ' + M.relText(x.due, today) : ', in your to-dos')
         : x.name + ', ' + plural(x.count, 'event', 'events');
       return [{ block: 'check', soon: OB.markFor(x.name), dinner: 'pot', todo: 'flag', calendar: 'calendar' }[x.kind], t];
@@ -16126,6 +16320,8 @@
     follow();
   }
   const ONB = {
+    /* Kim's test, K22: the quick start, one screen (onbQuick) */
+    quick(c) { onbQuick(c); },
     name(c) {
       const { a, h, body } = c;
       h.textContent = 'First, what should we call you?';
@@ -16476,7 +16672,8 @@
       const { a, h, body } = c;
       const redraw = () => { saveDraft(); renderSheet(); };
       h.textContent = 'Drop off and pick up';
-      body.appendChild(el('p', 'sheet-line', FEEL ? 'These stay put. Nothing you add moves them.' : 'They lock on the board, so nothing pushes them.'));
+      if (FEEL) { onbKids(c, redraw); return; }
+      body.appendChild(el('p', 'sheet-line', 'They lock on the board, so nothing pushes them.'));
       const fresh = () => ({ days: !a.noWork && a.work.days.length ? a.work.days.slice() : [1, 2, 3, 4, 5], drop: 510, pick: 1005, other: false });
       a.kids.forEach((k, n) => {
         const cr = a.cares[k] || (a.cares[k] = fresh());
@@ -17185,7 +17382,7 @@
       const keep = () => {
         a.soon = own() && s.date ? { name: s.name.trim(), date: s.date } : null;
         saveDraft();
-        sayNow.textContent = own() ? s.name.trim() + ' goes on your board' + (FEEL && goalOf() ? ' as a goal with a date, ' : ' as a marker, ') + M.dateText(s.date, 'day') + '.' : EX + ' is an example, and only what you keep or type goes on your board.';
+        sayNow.textContent = own() ? s.name.trim() + ' goes on your board' + (FEEL && goalOf() ? ' as a goal with a date, ' : ' as a marker, ') + M.dateText(s.date, 'day') + (FEEL && /\b(birthday|bday|b-day)\b/i.test(s.name) ? ', every year' : '') + '.' : EX + ' is an example. Only what you keep or type goes on your board.';
         const k = nameCol.querySelector('.onb-suggest[data-ex]') || (FEEL ? null : nameCol.querySelector('.onb-suggest'));
         if (k) k.textContent = own() ? EX : 'Keep ' + EX;
         drawOffer();
@@ -17195,15 +17392,19 @@
       field(nameCol, wantsGoal ? 'Your goal, or something coming up' : 'Something coming up', nm);
       /* a date picked shows its month, then where the month sits in the year */
       const land = () => { stopPlay(); keep(); show('month', true, true); playing.push(onbLater(() => show('year', true, true), 1300)); say(sayNow.textContent); };
-      const dt = dateInput(s.date, (v) => { s.date = v; land(); });
-      dt.min = today;
+      /* (Kim's test, K12: the app's own day picker, a month at a time, never the browser's mm/dd/yyyy box; the quick
+         dates under it turn it to their month) */
+      const dpHold = FEEL ? el('div', 'onb-dp') : null;
+      const drawDp = () => { dpHold.replaceChildren(dayPicker(s.date, today, (v) => { s.date = v; drawDp(); land(); }, 'onb-ahead', { redraw: drawDp, root: () => $('sheet') })); };
+      const dt = FEEL ? dpHold : dateInput(s.date, (v) => { s.date = v; land(); });
+      if (FEEL) drawDp(); else dt.min = today;
       /* keep the example in one tap, or a name for someone who can't think of one (V11: what they said in their own
          words, when it's a goal, comes first) */
       const heard = FEEL ? OB.bigThing(M, D, Object.assign({}, a, { soon: null, goal: null }), today) : null;
       nameCol.appendChild(suggests((heard ? [[heard.name, heard.name]] : []).concat([[EX, 'Keep ' + EX], ['A birthday', 'A birthday'], [wantsGoal ? 'An exam' : 'A deadline', wantsGoal ? 'An exam' : 'A deadline']]).slice(0, 3), (t) => { nm.value = s.name = t; land(); }, 'Ideas for something coming up'));
       { const ex = [...nameCol.querySelectorAll('.onb-suggest')].find((x) => x.textContent === 'Keep ' + EX || x.textContent === EX); if (ex) ex.dataset.ex = '1'; }
       field(whenCol, 'When', dt).classList.add('onb-when');
-      whenCol.appendChild(suggests([[1, 'Next month'], [3, 'In 3 months'], [6, 'In 6 months']], (n) => { s.date = M.addMonths(today, n); dt.value = s.date; land(); }, 'Dates'));
+      whenCol.appendChild(suggests([[1, 'Next month'], [3, 'In 3 months'], [6, 'In 6 months']], (n) => { s.date = M.addMonths(today, n); if (FEEL) { view.got.dp = view.got.dp || {}; view.got.dp['onb-ahead'] = M.monthStart(s.date); drawDp(); } else dt.value = s.date; land(); }, 'Dates'));
       keep();
       /* the first time the step opens it plays; coming back to it opens where their thing is */
       if (!su.aheadPlayed) play();
@@ -17409,7 +17610,7 @@
         sec.appendChild(el('div', 'lbl', 'Already on your board'));
         su.extras.forEach((x) => {
           const t = x.kind === 'block' ? x.name + ', ' + M.relText(x.date, today) + ' ' + M.span(x.start, x.start + x.dur)
-            : x.kind === 'soon' ? x.name + ', ' + M.dateText(x.date)
+            : x.kind === 'soon' ? x.name + ', ' + M.dateText(x.date) + (x.yearly ? ', every year' : '')
             : x.kind === 'dinner' ? (x.name || 'Dinner') + ' ' + (x.date === today ? 'tonight' : 'tomorrow') + (x.cook ? ', ' + (x.cook === 'kim' ? onbCook(a, x.cook) : onbCook(a, x.cook).toLowerCase()) : '')
             : x.kind === 'todo' && x.taken != null ? x.name + ', in your to-dos for ' + M.relText(x.due, today) + ' (' + M.clock(x.taken) + ' was taken)'
             : x.kind === 'todo' ? x.name + (x.due ? ', due ' + M.relText(x.due, today) : ', in your to-dos')
@@ -17508,6 +17709,8 @@
       if (su.mode === 'preview' || view.preview) { state = behind.state; undoStack = behind.undo; redoStack = behind.redo; cache.clear(); }
     }
     built.settings = Object.assign({}, real.settings, built.settings, { modules: built.settings.modules });
+    /* (K22: the rest of the setup, after a quick start, keeps what was done on that board) */
+    if (FEEL && a.quickDone && !(real.profile && real.profile.sample)) keepPlayed(real, built);
     /* V11 (the rituals walk): when the reset happens goes on the board, so it travels with a backup */
     if (FEEL && a.resetAt && RESET_DAYS.includes(a.resetAt.day)) built.settings.resetAt = { day: a.resetAt.day, min: a.resetAt.min };
     su.finished = true;
@@ -17831,7 +18034,7 @@
     if (OB) {
       const fv = dsec(p, 'The first visit', 'The welcome and the setup, as a preview with the sample family behind it. Finishing shows the week it built.');
       const toDev = () => openDrawer('dev');
-      actions(fv, [button('Open the welcome', 'small', () => { closeDrawer(); openWelcome('preview', 'welcome', null, toDev); }), button('Start the setup', 'small', () => { closeDrawer(); openWelcome('preview', null, null, toDev); })]);
+      actions(fv, [button('Open the welcome', 'small', () => { closeDrawer(); openWelcome('preview', 'welcome', null, toDev); }), button('Start the setup', 'small', () => { closeDrawer(); openWelcome('preview', null, null, toDev); }), button('Quick start', 'small', () => { closeDrawer(); openWelcome('preview', 'quick', Object.assign(blankAnswers(), { quick: true }), toDev); })]);
       const steps = OB.stepsFor(devAnswers());
       OB.CHAPTERS.forEach((ch) => {
         p.appendChild(el('h5', 'bar-kind', ch.name));
@@ -17897,7 +18100,8 @@
     if (FEEL && a && OB) {
       const did = { place: !!a.placed, stretch: !!(a.placed && a.placed.stretched), todo: !!(a.todo && a.todo.name), dinner: !!(a.dinner && (a.dinner.name || a.dinner.cook)) };
       const big = OB.bigThing(M, D, a, today);
-      moves.list = OB.movesFor(moves.pains, moves.help, ph, { did, goal: !!big, calendar: setupOnPhone() });
+      moves.list = OB.movesFor(moves.pains, moves.help, ph, { did, goal: !!big, calendar: setupOnPhone(), quick: !!a.quick });
+      if (a.quick) moves.quick = true;
       moves.list.forEach((id) => { if (did[id]) moves.done[id] = true; });
       if (big) moves.goal = big.name;
     }
@@ -17996,12 +18200,14 @@
   /* A move's line where it's read: a list started on the desk and read on a phone says the desk
      moves happen on a computer, since the phone's desk has no Block library to drag from. */
   const deskOnly = (id) => !!view.phone && !!OB.MOVES[id].phone;
-  const moveLine = (id) => (id === 'build' && moves.quiet ? OB.MOVES[id].quiet : deskOnly(id) ? OB.MOVES[id].phone : OB.MOVES[id].line);
+  const moveLine = (id) => (id === 'build' && moves.quiet ? OB.MOVES[id].quiet : id === 'build' && moves.quick && OB.MOVES[id].quick ? OB.MOVES[id].quick : deskOnly(id) ? OB.MOVES[id].phone : OB.MOVES[id].line);
   /* Show me: go where the move is done, and point at what to use */
   function showMove(id) {
     closeSel();
     const planner = () => { if (view.mode !== 'planner') setMode('planner'); };
     if (id === 'desk') { openPhoneDesk(); return; }
+    /* (K22: the rest of the setup, from the next question, with the quick start's answers) */
+    if (id === 'finish') { const d = loadDraft(); if (d && d.a && d.a.quickDone) resumeFrom(d, 'setup'); else openWelcome('setup'); return; }
     if (id === 'todo') {
       if (view.phone) { const i = document.querySelector('input.td-add'); if (i) { i.focus(); i.scrollIntoView({ block: 'center' }); } return; }
       planner(); openQuick();

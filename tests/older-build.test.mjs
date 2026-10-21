@@ -35,11 +35,11 @@ function v11Board() {
   return st;
 }
 
-test('V10 reads version 7 and V11 saves 9, so V10 takes a V11 board as newer and leaves it alone', () => {
+test('V10 reads version 7 and V11 saves 10, so V10 takes a V11 board as newer and leaves it alone', () => {
   assert.equal(D10.VERSION, 7);
-  assert.equal(D.VERSION, 9);
+  assert.equal(D.VERSION, 10);
   const out = D10.migrate(copy(v11Board()));
-  assert.equal(out.v, 9, 'no step of V10’s migrate touches it');
+  assert.equal(out.v, D.VERSION, 'no step of V10’s migrate touches it');
   assert.notEqual(out.v, D10.VERSION, 'so V10’s boot opens it read only, and its backup reader refuses it');
 });
 

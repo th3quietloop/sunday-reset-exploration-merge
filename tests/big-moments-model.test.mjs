@@ -51,11 +51,11 @@ function v8Board() {
   return copy(st);
 }
 
-test('Data.VERSION is 9; a version 8 board comes forward with only its number changed, and reads the same', () => {
-  assert.equal(D.VERSION, 9);
-  for (const st of [D.defaultState(TODAY), D.sampleState(TODAY), sam(), ana()]) assert.equal(st.v, 9);
+test('Data.VERSION is 10; a version 8 board comes forward with only its number changed, and reads the same', () => {
+  assert.equal(D.VERSION, 10);
+  for (const st of [D.defaultState(TODAY), D.sampleState(TODAY), sam(), ana()]) assert.equal(st.v, D.VERSION);
   const old = v8Board(), st = D.migrate(copy(old));
-  assert.equal(st.v, 9);
+  assert.equal(st.v, D.VERSION);
   assert.deepEqual(Object.assign(copy(st), { v: 8 }), old, 'every field and every date as it was');
   for (const d of M.range('2026-10-11', 60)) assert.deepEqual(copy(M.calendarDay(st, d)), copy(M.calendarDay(old, d)), d);
   assert.deepEqual(copy(M.lookAhead(st, TODAY, 35, TODAY, 400)), copy(M.lookAhead(old, TODAY, 35, TODAY, 400)), 'Look ahead too');

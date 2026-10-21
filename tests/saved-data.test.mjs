@@ -28,12 +28,12 @@ function v11Board() {
 }
 const NEW = (st) => ({ people: st.profile.people, move: st.settings.move, holidays: st.settings.holidays, with: st.dinners['2026-10-16'].with, cook: st.dinners['2026-10-17'].cook, idea: st.ideas.find((i) => i.id === 'i-ada'), meals: st.meals, mealbook: st.mealbook });
 
-test('the version is 9, and migrating a V11 board saved as 7 leaves every V11 field as it was', () => {
-  assert.equal(D.VERSION, 9);
+test('the version is 10, and migrating a V11 board saved as 7 leaves every V11 field as it was', () => {
+  assert.equal(D.VERSION, 10);
   const st = v11Board(), before = copy(NEW(st));
   st.v = 7; delete st.goals;
   const out = D.migrate(copy(st));
-  assert.equal(out.v, 9);
+  assert.equal(out.v, D.VERSION);
   assert.deepEqual(out.goals, [], 'goals start empty');
   assert.deepEqual(copy(NEW(out)), before);
 });
@@ -43,7 +43,7 @@ test('an old board (version 4 on) comes forward without any of them, and V11 rea
   old.v = 4;
   delete old.settings; delete old.shopping; delete old.calendars; delete old.groups; delete old.profile.people; delete old.goals;
   const st = D.migrate(old);
-  assert.equal(st.v, 9);
+  assert.equal(st.v, D.VERSION);
   assert.deepEqual(st.goals, []);
   for (const k of ['meals', 'mealbook']) assert.equal(st[k], undefined, k + ' is never added by a migration');
   assert.equal(st.profile.people, undefined);

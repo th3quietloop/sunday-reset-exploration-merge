@@ -297,7 +297,10 @@
     for (const b0 of base) {
       const e = edits[b0.id];
       if (e && e.gone) continue;
+      /* (a routine someone else does every week isn't on this rail, unless this day it was taken back) */
+      if (b0.by && !(e && e.mine)) continue;
       const b = Object.assign({}, b0, e || {});
+      delete b.by; delete b.mine;
       b.key = b.base = 'tpl:' + b0.id;
       b.tpl = b0.id;
       tplBlocks.push(b);
@@ -380,19 +383,25 @@
     if (off && !trip) base = base.filter((b) => b.cat !== 'work' && !b.daycare);
     for (const b0 of base) {
       const e = edits[b0.id];
+      /* (Kim's test, K8: a routine someone else does every week carries by in the usual week; a day it's taken back
+         says mine on that date's edit, and a one-day handoff over it says by again) */
+      const weekly = !!b0.by && !(e && (e.mine || e.gone));
+      const by = e && e.gone && e.by ? e.by : weekly ? b0.by : null;
       /* V11 (the Planner walk, 7.2): a routine someone else has this day (e.by: Sam has it) leaves an outline in
          its place, "Sam: Pick up Robin", printed on the wood like free time, so both of you see who has it. Its
          time is yours to use: soft, never locked, open time when it's counted (handoff) */
-      if (e && e.gone && e.by && handoffs && !b0.sleep) {
-        const ho = Object.assign({}, b0, e.start != null ? { start: e.start } : {}, e.dur ? { dur: e.dur } : {}, { key: 'tpl:' + b0.id, base: 'tpl:' + b0.id, tpl: b0.id, handoff: String(e.by), name: b0.name, label: String(e.by) + ': ' + (e.name || b0.name), soft: true, free: true, fixed: false, cat: 'open' });
-        delete ho.gone; delete ho.by; delete ho.daycare;
+      if (by && handoffs && !b0.sleep) {
+        const ho = Object.assign({}, b0, e && e.start != null ? { start: e.start } : {}, e && e.dur ? { dur: e.dur } : {}, { key: 'tpl:' + b0.id, base: 'tpl:' + b0.id, tpl: b0.id, handoff: String(by), name: b0.name, label: String(by) + ': ' + ((e && e.name) || b0.name), soft: true, free: true, fixed: false, cat: 'open' });
+        delete ho.gone; delete ho.by; delete ho.daycare; delete ho.mine;
         const hc = clip([ho], wake, bed);
-        /* (it lies under the day's own routines, a layer below soft ones, so Work keeps its usual end beside it) */
-        if (hc.length) put(hc[0], 0.5);
+        /* (it lies under the day's own routines, a layer below soft ones, so Work keeps its usual end beside it; one
+           that's someone else's every week lies over open work, so it stays in view where it happens) */
+        if (hc.length) put(hc[0], b0.by ? 1.5 : 0.5);
         continue;
       }
-      if (e && e.gone) continue;
+      if ((e && e.gone) || weekly) continue;
       const b = Object.assign({}, b0, e || {}, { key: 'tpl:' + b0.id, base: 'tpl:' + b0.id, tpl: b0.id });
+      delete b.by; delete b.mine;
       /* A changed wake or bed still trims its routines, as before. Placed things and calendar
          commitments retain their requested time even when it is outside those routines. */
       const movedOutside = e && e.start != null && (b.start < wake || b.start + b.dur > bed);

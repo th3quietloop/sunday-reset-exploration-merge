@@ -137,7 +137,7 @@ export async function walk(t) {
 
   /* == Look around first: the made up family becomes this browser's board for the rest == */
   await t.fresh();
-  if (await t.click(/^(Look around first|Look at a sample week)$/)) await t.sleep(2500);
+  if (await t.click(/^(Look around first|Look at a sample week)/)) await t.sleep(2500);
   /* (a phone's first look is its desk, one day; List goes back to the phone's own Today) */
   const phoneDesk = await t.ev(`document.body.classList.contains('phone-desk')`);
   if (t.want('look')) await t.M(phoneDesk ? 'Look around first: the phone desk' : narrow ? 'Look around first: the phone list' : 'Look around first: the desk');

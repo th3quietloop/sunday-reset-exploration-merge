@@ -95,7 +95,7 @@
      after the picks were cleared; kids, after the household changed) resumes on the nearest one before it. */
   const ORDER = ['name', 'home', 'pains', 'why', 'help', 'days', 'work', 'kids', 'calendar', 'try', 'ahead', 'dinner', 'todo', 'reset', 'build', 'plan'];
   /* each step's short name, for Dev's list of steps to open */
-  const STEP_NAMES = { name: 'Name', pains: 'What gets in the way', why: 'What changes', home: 'Who’s at home', help: 'What it helps with', days: 'Days', work: 'Work', kids: 'Drop off and pick up', calendar: 'A calendar', try: 'Try it', ahead: 'See further ahead', dinner: 'Dinner', todo: 'A to-do', reset: 'The reset time', build: 'Building', plan: 'The plan' };
+  const STEP_NAMES = { quick: 'Quick start', name: 'Name', pains: 'What gets in the way', why: 'What changes', home: 'Who’s at home', help: 'What it helps with', days: 'Days', work: 'Work', kids: 'Drop off and pick up', calendar: 'A calendar', try: 'Try it', ahead: 'See further ahead', dinner: 'Dinner', todo: 'A to-do', reset: 'The reset time', build: 'Building', plan: 'The plan' };
   function nearestStep(steps, id) {
     if (steps.some((s) => s.id === id)) return id;
     const k = ORDER.indexOf(id);
@@ -210,8 +210,9 @@
       if (r && r.ok) on.push({ kind: 'block', name: a.placed.add.name, date: r.date || a.placed.date, start: r.start, dur: a.placed.dur || a.placed.add.dur });
     }
     if (a.soon && a.soon.name && a.soon.date) {
-      st.events.push({ id: M.newId('e'), kind: 'marker', name: a.soon.name, icon: markFor(a.soon.name), date: a.soon.date });
-      on.push({ kind: 'soon', name: a.soon.name, date: a.soon.date });
+      /* (Kim's test, K12: a birthday comes back every year) */
+      st.events.push(Object.assign({ id: M.newId('e'), kind: 'marker', name: a.soon.name, icon: markFor(a.soon.name), date: a.soon.date }, yearly(a.soon.name) ? { yearly: true } : {}));
+      on.push(Object.assign({ kind: 'soon', name: a.soon.name, date: a.soon.date }, yearly(a.soon.name) ? { yearly: true } : {}));
     }
     if (a.dinner && a.dinner.date && (a.dinner.name || a.dinner.cook)) {
       st.dinners[a.dinner.date] = { name: a.dinner.name || '', recipe: a.dinner.recipe || null, cook: a.dinner.cook || '', items: (a.dinner.items || []).slice() };
@@ -225,7 +226,7 @@
         if (r && r.ok) on.push({ kind: 'block', name: t.name, date: r.date || t.date, start: r.start, dur: t.dur || 30 });
         /* the time was taken (a locked block, or a full day): it's never lost, it waits in To do for that day */
         else on.push(todoOf(M, st, Object.assign({}, t, { due: t.date }), { taken: t.start }));
-      } else on.push(todoOf(M, st, t));
+      } else on.push(todoOf(M, st, t, null, st.created));
     });
     /* what else gets in the way, in their words, waits in To do for the first reset (the plan says so, so it isn't listed
        twice); V11: unless it's the goal the setup is making, which the plan leads with instead */
@@ -235,13 +236,18 @@
 
   /* (V11: a to-do can come with its steps, from Break it down on the to-do step, and a due date joined to the date
      See further ahead heard; the extra says which task it became, so a goal made from it can take it off the list) */
-  function todoOf(M, st, t, extra) {
+  /* (Kim's test, K13: a line marked Every day is a daily to-do, due from the day the week was built (today), so it
+     comes back each day after it's done) */
+  function todoOf(M, st, t, extra, today) {
     const group = (st.groups.find((g) => g.id === 'inbox') || st.groups[0] || {}).id || null;
     const id = M.newId('t');
     const steps = (t.steps || []).filter((s) => s && s.name).map((s, i) => ({ id: id + '-s' + (i + 1), name: s.name, dur: s.dur || 15, done: false }));
-    st.tasks.push({ id, name: t.name, group, icon: t.icon && t.icon !== 'star' ? t.icon : 'check', cat: t.cat || 'yours', dur: t.dur || null, due: t.due || null, repeat: null, done: false, steps });
-    return Object.assign({ kind: 'todo', id, name: t.name, due: t.due || null }, steps.length ? { steps: steps.length } : {}, extra || {});
+    const daily = !!t.daily, due = t.due || (daily ? today || null : null);
+    st.tasks.push({ id, name: t.name, group, icon: t.icon && t.icon !== 'star' ? t.icon : 'check', cat: t.cat || 'yours', dur: t.dur || null, due, repeat: daily ? 'daily' : null, done: false, steps });
+    return Object.assign({ kind: 'todo', id, name: t.name, due }, daily ? { daily: true } : {}, steps.length ? { steps: steps.length } : {}, extra || {});
   }
+  /* a date that comes back every year: a birthday */
+  const yearly = (name) => /\b(birthday|bday|b-day)\b/i.test(String(name || ''));
 
   /* The numbers the plan leads with, read from a usual week of the board that was built, the same way
      the desk counts them: hours that are yours, open hours, and nights with a dinner block. */
@@ -293,6 +299,25 @@
     return { start, end };
   }
 
+  /* == Kim's test, K8: who does each drop off and pick up (Oct 20) ==
+     A child's answers (a.cares[name]) say who for drop off and pick up: dropBy and pickBy, for every day, and on a day
+     with times of its own (hours[weekday]) its own dropBy and pickBy. Each is 'me', 'partner', or 'other'. An answer
+     saved before the who was asked has other: true (someone else does both) or nothing (the person does both). */
+  const WHO = ['me', 'partner', 'other'];
+  function careWho(cr, wd, key) {
+    const c = cr || {}, k = key === 'pick' ? 'pickBy' : 'dropBy';
+    const base = WHO.includes(c[k]) ? c[k] : c.other ? 'other' : 'me';
+    const h = c.same === false && c.hours && wd != null ? c.hours[wd] : null;
+    return h && WHO.includes(h[k]) ? h[k] : base;
+  }
+  /* every who a child's answers use, on the days the child goes */
+  function careWhos(cr) {
+    const c = cr || {}, days = Array.isArray(c.days) && c.days.length ? c.days : [null];
+    const out = new Set();
+    days.forEach((wd) => { out.add(careWho(c, wd, 'drop')); out.add(careWho(c, wd, 'pick')); });
+    return Array.from(out);
+  }
+
   /* The lines the build step shows while it builds, each one from the answers, in the order a day goes. */
   function buildLines(M, a, st, extras, ics) {
     const out = ['Mornings from ' + M.clock(a.wake.wd) + ' on weekdays'];
@@ -301,7 +326,13 @@
     const ate = a.meals ? ['Breakfast', 'Lunch'].filter((m) => a.meals[m.toLowerCase()]) : [];
     if (ate.length) out.push(ate.join(' and ') + ' at a time each day');
     const kids = a.home === 'family' ? (a.kids || []) : [];
-    if (kids.length) out.push('Locking drop off and pick up for ' + (kids.length === 1 ? kids[0] : kids.slice(0, -1).join(', ') + ' and ' + kids[kids.length - 1]));
+    /* (K8: locked only where the person does it; the rest are noted with who has them) */
+    const kidNames = (l) => (l.length === 1 ? l[0] : l.slice(0, -1).join(', ') + ' and ' + l[l.length - 1]);
+    if (kids.length) {
+      const mine = kids.filter((k) => careWhos(a.cares[k]).includes('me')), theirs = kids.filter((k) => careWhos(a.cares[k]).some((w) => w !== 'me'));
+      if (mine.length) out.push('Locking drop off and pick up for ' + kidNames(mine));
+      if (theirs.length) out.push('Noting who has drop off and pick up for ' + kidNames(theirs));
+    }
     const din = Object.values(st.rhythm.days).map((d) => (d.blocks.find((b) => b.dinner) || {}).start).filter((x) => x != null);
     if (a.help.dinners && din.length) {
       const count = {};
@@ -314,10 +345,10 @@
     const dayOf = (d) => M.DAY_LONG[M.weekday(d)];
     (extras || []).forEach((x) => {
       /* (V11: a date goes on the board, said plainly: Putting Bar exam on Tuesday, Feb 23, never Marking it) */
-      if (x.kind === 'soon') out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + ', ' + M.dateText(x.date));
+      if (x.kind === 'soon') out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + ', ' + M.dateText(x.date) + (x.yearly ? ', every year' : ''));
       else if (x.kind === 'block' && x.date) out.push('Putting ' + x.name + ' on ' + dayOf(x.date) + (x.start != null ? ' at ' + M.clock(x.start) : ''));
       else if (x.kind === 'dinner' && x.date) out.push(x.name ? x.name + ' for dinner on ' + dayOf(x.date) : 'Dinner on ' + dayOf(x.date) + ', decided');
-      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to your to-dos' + (x.steps ? ', in ' + x.steps + ' steps' : ''));
+      else if (x.kind === 'todo') out.push('Adding ' + x.name + ' to your to-dos' + (x.daily ? ', every day' : x.steps ? ', in ' + x.steps + ' steps' : ''));
     });
     /* the goal the setup heard: its plan is the first thing the week opens on */
     if (a.goal && a.goal.name) out.push('Setting up ' + a.goal.name + ' as a goal');
@@ -381,7 +412,9 @@
   /* After the board opens: a short list of first moves on the real desk, with the first already done
      (people finish a list they've already started). The ones offered follow what they said. */
   const MOVES = {
-    build: { name: 'Set up your week', line: 'Done. That was the longest part.', quiet: 'Your week is on the board.' },
+    build: { name: 'Set up your week', line: 'Done. That was the longest part.', quiet: 'Your week is on the board.', quick: 'Done in one screen.' },
+    /* Kim's test, K22: after the quick start, the rest of the setup, picked up where it left off */
+    finish: { name: 'Finish setting up', line: 'About 4 minutes: what gets in the way, meals, and a try on your own day.' },
     place: { name: 'Put a block on a day', line: 'Drag one from Block library onto a day.', phone: 'On a computer, drag one from Block library onto a day.' },
     stretch: { name: 'Stretch a block', line: 'Drag the right edge of a block you placed.', phone: 'On a computer, drag the right edge of a block you placed.' },
     month: { name: 'See the month', line: 'The same blocks, from further away.' },
@@ -415,6 +448,8 @@
       });
       /* (filler, when what's left is short: the month, or a to-do) */
       ['month', 'todo'].forEach((id) => { if (!phone && !open.includes(id) && !done.includes(id) && !did[id]) open.push(id); });
+      /* (K22: a quick start's list leads with the rest of the setup) */
+      if (ctx.quick) return ['build', 'finish'].concat(done, open.slice(0, size - 3 - done.length), ['reset']);
       return ['build'].concat(done, open.slice(0, size - 2 - done.length), ['reset']);
     }
     if (phone) return ['build', 'todo'].concat(dinners ? ['dinner'] : [], ['desk', 'reset']);
@@ -422,7 +457,7 @@
     return ['build', 'place', 'stretch'].concat(flex, ['reset']);
   }
 
-  const api = { CHAPTERS, PAINS, RESEARCH, PARTS, FOCUS, RESET_TIMES, MOVES, ORDER, STEP_NAMES, FILLS, DAY_SHAPES, painById, painsFor, quietReset, stepsFor, nearestStep, progress, reflect, markFor, nextReset, resetIcs, applyExtras, planStats, nextSteps, leanFor, hoursFor, buildLines, movesFor, goalLoad, bigThing, fillOf };
+  const api = { CHAPTERS, PAINS, RESEARCH, PARTS, FOCUS, RESET_TIMES, MOVES, ORDER, STEP_NAMES, FILLS, DAY_SHAPES, painById, painsFor, quietReset, careWho, careWhos, stepsFor, nearestStep, progress, reflect, markFor, nextReset, resetIcs, applyExtras, planStats, nextSteps, leanFor, hoursFor, buildLines, movesFor, goalLoad, bigThing, fillOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Onboard = api;
 })(typeof window !== 'undefined' ? window : globalThis);
