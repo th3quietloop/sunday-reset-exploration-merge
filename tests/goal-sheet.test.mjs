@@ -177,6 +177,7 @@ function sheetWorld(o = {}) {
     const pauseGoal = (g, on) => __calls.push(['pause', on]), placeShare = () => __calls.push(['place']);
     const keepUnit = (s) => String(s).replace(/(\\d) (h|min)\\b/g, '$1\\u00a0$2');
     const toWords = (date, start) => (date === '2026-10-16' ? 'tomorrow' : date) + ' at ' + __M.clock(start);
+    const guessHours = (g) => !!(g && g.hoursGuess);
     ${app('  /* the goal sheet\'s next move:', '  /* More, in the goal sheet\'s header')}
     ({ goalSheetFoot });`;
   return Object.assign(runInNewContext(script, { __o: o, __calls: calls, __M: M }), { calls });
@@ -195,6 +196,8 @@ test('the goal sheet’s footer: what’s next in a line, gold only for somethin
   short.gold[1]();
   assert.deepEqual(plain(w.calls.pop()), ['fixes']);
   assert.equal(sheetWorld({ sessions: aheadThisWeek, fixes: [{ id: 'day' }], got: { glFix: true } }).goalSheetFoot(g, { behindMin: 600, nextSession: next }, true).gold, undefined, 'the ways are open on the plate: no gold twice');
+  // (V11-3, D5) hours that came from the library are a guess: never short of them, never Make it fit
+  assert.equal(sheetWorld({ sessions: aheadThisWeek, fixes: [{ id: 'day' }] }).goalSheetFoot(Object.assign({}, g, { hoursGuess: true }), { behindMin: 600, nextSession: next }, true).gold, undefined, 'a guess is never short');
   assert.equal(sheetWorld({ sessions: aheadThisWeek, fixes: [{ id: 'fewer' }] }).goalSheetFoot(g, { behindMin: 600, nextSession: next }, true).gold, undefined, 'trimming the hours is the plan’s to offer, not a button here');
   assert.equal(sheetWorld({ sessions: [] }).goalSheetFoot(g, { behindMin: 0, nextSession: null }, true).gold[0], 'Place this week’s share', 'nothing left this week');
   assert.equal(sheetWorld({ now: { date: TODAY, add: {} } }).goalSheetFoot(g, { behindMin: 0 }, true).line, 'now', 'a session under way leads');
@@ -209,10 +212,13 @@ test('the Goals card says what the days hold, never Behind by', () => {
     ${app('  /* where a goal stands, in two words:', '  /* a part\'s hours as a person types them')}
     ${app('  /* hours the way the plan says them:', '  /* how far off a goal\'s date is:')}
     const liveGoal = (g) => !!g && !g.archived && !!g.date && g.date > today;
+    const guessHours = (g) => !!(g && g.hoursGuess);
     ${app('  /* V11 (docs/PHONE-REDESIGN.md, 7.2): where a goal stands on its card, calmly', '  /* this week\'s share in a line')}
     ({ holdWords });`;
   const w = runInNewContext(script, { M });
   assert.equal(sp(w.holdWords(g, { behindMin: 113 * 60, totalMin: 400 * 60 })), 'Days hold about 287 h');
+  // (V11-3, D5) the library's 400 h are nobody's number: a goal with them says nothing against them
+  assert.equal(w.holdWords(Object.assign({}, g, { hoursGuess: true }), { behindMin: 113 * 60, totalMin: 400 * 60 }), 'On track');
   assert.equal(w.holdWords(g, { behindMin: 0, totalMin: 400 * 60 }), 'On track');
   assert.equal(w.holdWords(Object.assign({}, g, { paused: true }), { behindMin: 600, totalMin: 400 * 60 }), 'Paused');
 });
@@ -222,4 +228,11 @@ test('with the header’s More open, a toast stays above the footer, never over 
   const o = { top: 300, bottom: 844, foot: 720, vh: 844, touch: 700, z: 1 };
   assert.deepEqual(plain(w.sheetToastSpot(o)), { at: 'top', px: 364 }, 'a touch just above the footer: under the header');
   assert.deepEqual(plain(w.sheetToastSpot(Object.assign({}, o, { menu: true }))), { at: 'bottom', px: 132 }, 'More is open there: above the footer');
+});
+
+test('a day’s hours in a narrow cell are said one way: 45 min, 2 h, 1 h 45 (V11-3, D34)', () => {
+  const w = runInNewContext(`${app('  /* a day\'s hours in a narrow cell of the week strip', '  /* the same, shorter still')} ({ stripHrs });`, {});
+  const nb = (s) => s.replace(/ /g, ' ');
+  assert.deepEqual([15, 45, 60, 90, 105, 120, 135].map((m) => nb(w.stripHrs(m))), ['15 min', '45 min', '1 h', '1 h 30', '1 h 45', '2 h', '2 h 15']);
+  assert.ok(!/\./.test(w.stripHrs(105)), 'never 1.75 h');
 });

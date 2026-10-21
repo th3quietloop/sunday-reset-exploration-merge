@@ -166,6 +166,11 @@ test('the bar exam’s countdown: its date, how it stands, its stages and marks,
   assert.equal(c.stand, 'On track');
   assert.deepEqual(c.road.stages, M.examStages(st, g).stages);
   assert.deepEqual(c.road.marks, M.examStages(st, g).practice.map((d) => ({ date: d, name: 'Practice exam' })).concat([{ date: '2027-02-24', name: 'Exam day' }]));
+  // (V11-3, D5) hours that came from the library are a guess, and a guess is never behind
+  const gg = Object.assign({}, g, { hoursGuess: true, id: g.id });
+  const stG = Object.assign({}, st, { goals: st.goals.map((x) => (x.id === g.id ? gg : x)) });
+  const cG = M.countdown(stG, { goal: g.id }, TODAY, 600);
+  assert.equal(cG.stand, 'On track', 'never Behind or Days hold about');
   assert.deepEqual([c.road.from, c.road.to, c.road.now], [TODAY, '2027-02-24', TODAY]);
   assert.equal(c.weeks, null);
   // this week's share: what's planned and done, the next session loud, the rest of the week folded
@@ -402,6 +407,9 @@ test('the trip’s countdown: the road to scale, one loud step, and the steps af
   const items = [c.next].concat(c.rest);
   for (const x of items) assert.deepEqual(Object.keys(x).sort(), ['cat', 'date', 'dur', 'icon', 'id', 'msg', 'name', 'placed', 'start', 'status', 'task', 'why']);
   assert.equal(items.filter((x) => x.status === 'next').length, 1, 'only the next step is loud');
+  // (V11-3, D20) the heads-up shares its last good day with the travel: the message leads, the way the mock does
+  assert.equal(c.next.name, 'Give Aunt Lisa a heads-up');
+  assert.ok(c.next.msg);
   assert.deepEqual(c.road.pins.map((p) => p.id).sort(), items.map((x) => x.id).sort(), 'a pin on each step’s last good day');
   for (const p of c.road.pins) assert.equal(p.date, items.find((x) => x.id === p.id).date);
   assert.deepEqual(items.filter((x) => x.status === 'after').map((x) => x.name), ['Unpack after California', 'Groceries after California']);
@@ -686,18 +694,28 @@ test('"get stronger": its progress, its countdown with weeks as dots, and no str
   const p = M.goalProgress(st, g.id, TODAY, 600);
   assert.deepEqual([p.totalMin, p.leftMin, p.behindMin, p.onTrack, p.daysLeft], [0, 0, 0, true, null]);
   assert.deepEqual(p.perWeek, { n: 3, done: 0, planned: 3 });
+  const c0 = M.countdown(st, { goal: g.id }, TODAY, 600);
+  assert.deepEqual([c0.shape, c0.words, c0.stand, c0.date, c0.week], ['rhythm', '3 times a week · no end date', null, null, null]);
+  // (D4) made today: this week alone, never empty weeks from before it existed
+  assert.deepEqual(c0.weeks, [{ from: '2026-10-18', done: 0, of: 3 }], 'this week, and nothing before the goal began');
+  assert.deepEqual([c0.road.from, c0.road.to, c0.road.now], ['2026-10-18', '2026-10-24', TODAY]);
+  // one begun three weeks back shows four; one begun months back, the last eight
+  const older = (start) => { g.start = start; return M.countdown(st, { goal: g.id }, TODAY, 600); };
+  const c3 = older('2026-09-29');
+  assert.deepEqual(c3.weeks.map((w) => w.from), ['2026-09-27', '2026-10-04', '2026-10-11', '2026-10-18']);
+  const c8 = older('2026-03-01');
+  assert.equal(c8.weeks.length, 8);
+  assert.deepEqual(c8.weeks[0].from, '2026-08-30');
+  assert.deepEqual(c8.weeks[7], { from: '2026-10-18', done: 0, of: 3 }, 'this week last');
+  assert.deepEqual([c8.road.from, c8.road.to], ['2026-08-30', '2026-10-24']);
+  g.start = TODAY;
   const c = M.countdown(st, { goal: g.id }, TODAY, 600);
-  assert.deepEqual([c.shape, c.words, c.stand, c.date, c.week], ['rhythm', '3 times a week · no end date', null, null, null]);
-  assert.equal(c.weeks.length, 8);
-  assert.deepEqual(c.weeks[7], { from: '2026-10-18', done: 0, of: 3 }, 'this week last');
-  assert.deepEqual(c.weeks[0].from, '2026-08-30');
-  assert.deepEqual([c.road.from, c.road.to, c.road.now], ['2026-08-30', '2026-10-24', TODAY]);
   assert.deepEqual([c.next.name, c.next.status, c.next.placed], ['Strength', 'next', { date: '2026-10-21', start: 420 }]);
   assert.deepEqual(c.rest.map((x) => x.placed.date), ['2026-10-23', '2026-10-24']);
   // done on Wednesday: one of three this week
   M.findAdd(st, c.next.id).add.done = true;
   assert.deepEqual(M.goalProgress(st, g.id, '2026-10-22', 600).perWeek, { n: 3, done: 1, planned: 3 });
-  assert.deepEqual(M.countdown(st, { goal: g.id }, '2026-10-22', 600).weeks[7], { from: '2026-10-18', done: 1, of: 3 });
+  assert.deepEqual(M.countdown(st, { goal: g.id }, '2026-10-22', 600).weeks, [{ from: '2026-10-18', done: 1, of: 3 }]);
   // a week whose days are taken shows what isn't on the week yet
   const busy = sam(), bg = stronger(busy);
   busy.events.push({ id: 'away', kind: 'trip', name: 'Away', icon: 'plane', date: '2026-10-22', end: '2026-10-24', leave: 450, back: 1020 });

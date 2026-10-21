@@ -4504,7 +4504,9 @@
     const tasks = new Map(state.tasks.map((t) => [t.id, t])), pl = placements(state);
     /* every step but one put off, or one well past asking that never became a to-do (it's likely handled) */
     const list = readyFor(state, e, on, today, tasks).filter((x) => x.when !== 'skip' && !(x.when === 'past' && !x.task));
-    list.sort((a, b) => (a.ideal < b.ideal ? -1 : a.ideal > b.ideal ? 1 : a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+    /* (D20: on the same last good day, a message comes first: five minutes to send, and the person on the other end
+       needs the notice more than the booking does) */
+    list.sort((a, b) => (a.ideal < b.ideal ? -1 : a.ideal > b.ideal ? 1 : !!b.msg - !!a.msg || (a.start < b.start ? -1 : a.start > b.start ? 1 : 0)));
     const placedOf = (t) => {
       if (!t) return null;
       const where = (pl.get(t.id) || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.add.start - b.add.start));
@@ -4549,15 +4551,19 @@
       for (let k = inWeek.length; k < n; k++) rest.push({ id: g.id + ':' + ws + ':' + k, name: (part && part.name) || g.name, icon, cat, date: we, start: ws < today ? today : ws, dur: len, status: 'later', why: null, msg: null, task: null, placed: null });
       words = (n === 7 ? 'Every day' : n + (n === 1 ? ' time' : ' times') + ' a week') + ' · no end date';
       stand = g.paused ? 'Paused' : null;
+      /* (D4: from the week it began, never before: a goal made today shows this week alone, not seven empty weeks
+         that read as missed. Up to the last eight) */
+      const began = weekStart(g.start && g.start < today ? g.start : today), back = Math.max(0, Math.min(7, Math.round(diffDays(began, ws) / 7)));
       weeks = [];
-      for (let k = 7; k >= 0; k--) { const from = addDays(ws, -7 * k), to = addDays(from, 6); weeks.push({ from, done: list.filter((x) => x.date >= from && x.date <= to && confirmed(g, x)).length, of: n }); }
-      road = { from: addDays(ws, -49), to: we, now: today, spans: [], window: null, stages: [], marks: [], pins: [] };
+      for (let k = back; k >= 0; k--) { const from = addDays(ws, -7 * k), to = addDays(from, 6); weeks.push({ from, done: list.filter((x) => x.date >= from && x.date <= to && confirmed(g, x)).length, of: n }); }
+      road = { from: addDays(ws, -7 * back), to: we, now: today, spans: [], window: null, stages: [], marks: [], pins: [] };
     } else {
       const st = examStages(state, g);
       words = dateText(g.date) + ' · ' + awayWords(g.date, today);
-      /* (its first week never says Behind: what its days hold, calmly; whole hours past 20 h) */
+      /* (its first week never says Behind: what its days hold, calmly; whole hours past 20 h. V11-3: hours that came
+         from the library, hoursGuess, are never said against: a guess can't be behind) */
       const holds = p.totalMin - p.behindMin, about = holds >= 1200 ? Math.round(holds / 60) * 60 : holds;
-      stand = g.paused ? 'Paused' : g.date < today ? 'Its date has gone by' : g.date === today ? 'Today’s the day' : p.behindMin < STEP ? 'On track' : p.firstWeek ? 'Days hold about ' + hoursText(about) : 'Behind by ' + hoursText(p.behindMin);
+      stand = g.paused ? 'Paused' : g.date < today ? 'Its date has gone by' : g.date === today ? 'Today’s the day' : p.behindMin < STEP || g.hoursGuess ? 'On track' : p.firstWeek ? 'Days hold about ' + hoursText(about) : 'Behind by ' + hoursText(p.behindMin);
       const marks = st.practice.map((d) => ({ date: d, name: 'Practice exam' })).concat([{ date: g.date, name: g.kind === 'exam' ? 'Exam day' : g.name }]);
       road = { from: g.start && g.start < today ? g.start : today, to: g.date > today ? g.date : today, now: today, spans: [], window: null, stages: st.stages, marks, pins: [] };
       /* this week's share: what's planned and what someone said happened, and the sessions done or still ahead */

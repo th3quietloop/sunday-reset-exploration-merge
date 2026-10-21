@@ -1093,7 +1093,7 @@
               const words = x.min ? x.line + ' · ' + runWords(x.days, dates, 'Every day') : x.line;
               row.append(h('b', '', x.name), h('span', '', words));
               row.setAttribute('aria-label', x.name + ': ' + words + '. Opens the goal');
-              row.addEventListener('click', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); SR.openSel({ type: 'goal', id: x.id }); });
+              row.addEventListener('click', () => { Kit.closeSheet(); backToPlan(ws); if (SR.inToday()) SR.setMode('planner'); if (SR.openCountdown) SR.openCountdown({ goal: x.id }); else SR.openSel({ type: 'goal', id: x.id }); });
               box.appendChild(row);
             });
             col.appendChild(box);
