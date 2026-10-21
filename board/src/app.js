@@ -4568,7 +4568,7 @@
   /* Start the plan: the goal goes on the board, its first weeks of sessions land, and the toast says what it planned */
   /* V11-2 (your own time stays yours): a new goal whose first week can't hold its share in open time, where the
      person's own time could, asks once before it starts, in the words a to-do's plan uses (ownWords): This needs 30 min
-     of your own time this week, Thu evening. Use it puts that week's sessions there (pinned, so the yes stays); Start
+     of your own time this week, Thu evening. Use it puts that week's sessions there (own, so the yes stays); Start
      next week begins it on the next week's first day. Worked out on copies of the board, once */
   function goalOwnAsk(d) {
     if (!FEEL || d.edit || d.noDate || !d.date || !(d.date > today)) return null;
@@ -5992,8 +5992,10 @@
     if (!e || !pk || !pk.date) return;
     const was = M.windowWords(e.window, today).split(' · ')[0].toLowerCase(), trip = e.kind === 'trip';
     let made = [];
+    const from = e.window ? e.window.from : null;
     const r = withWay(() => { const out = M.pickDate(state, e.id, pk.date, trip ? pk.end || pk.date : null, today); if (!out) return false; made = cdPrepNow(out); return { ok: true }; }, e.name + ' is ' + was + ' again.');
     if (!r) { Snd.bad(); return; }
+    huMove(cdEvent(e.id), from, pk.date);
     view.got.cd.pick = null;
     Snd.good();
     const ev = cdEvent(e.id);
@@ -18120,11 +18122,15 @@
   /* what's in the way, by name: Tonight, Party is there until 10:30 pm. What's locked first, then bed, then the rest */
   function wayWords(date, start, w) {
     const when = date === today ? (start >= 18 * 60 ? 'Tonight' : 'Today') : date === M.addDays(today, 1) ? 'Tomorrow' : M.DAY_LONG[M.weekday(date)];
-    const fixed = w.blocks.filter((b) => b.fixed), named = (fixed.length ? fixed : w.bed == null ? w.blocks : []).slice(0, 2);
-    if (named.length) return when + ', ' + joinNames(named.map((b) => b.name)) + (named.length === 1 ? ' is' : ' are') + ' there until ' + M.clock(Math.max(...named.map((b) => b.end))) + '.';
-    if (w.bed != null) return when + ', bed is at ' + M.clock(w.bed) + '.';
+    /* (V11-3, D8: every block it reaches into, each with when it ends, what's locked first; then bed) */
+    const seen = new Set(), named = w.blocks.filter((b) => b.fixed).concat(w.blocks.filter((b) => !b.fixed)).filter((b) => !seen.has(b.name) && seen.add(b.name));
+    const bed = w.bed != null ? (named.length ? ' Bed is at ' : when + ', bed is at ') + M.clock(w.bed) + '.' : '';
+    if (named.length) return when + ', ' + joinNames(named.map((b, i) => b.name + (i ? '' : ' is there') + ' until ' + M.clock(b.end))) + '.' + bed;
+    if (bed) return bed;
     return w.wake != null ? when + ' starts at ' + M.clock(w.wake) + '.' : '';
   }
+  /* (V11-3, D8: what a way on takes time from, by name: Evening with Sam) */
+  const takesFrom = (o) => { const x = M.inTheWay(state, o.plan.date, o.plan.start, o.plan.add.dur); return x.blocks.filter((b) => b.soft).map((b) => b.name).filter((n, i, all) => all.indexOf(n) === i); };
   /* the question a meal moved out of its usual time asks (Model.canPlace's reason meal): This moves Dinner to 4:45 pm.
      Move it? */
   const mealWords = (m) => 'This moves ' + m.name + ' to ' + M.clock(m.to) + (m.date && m.fromDate && m.date !== m.fromDate ? ' on ' + M.dateText(m.date, 'day') : '') + '. Move it?';
@@ -18159,8 +18165,12 @@
       if (plan.ok) options.push({ id: 'shorter', line: '', label: 'Make it ' + M.dur(x.dur) + ' ' + onW(date, x.start) + (x.start !== want ? ' at ' + M.clock(x.start) : ''), plan });
     }
     if (nearOk) options.push({ id: 'near', line: '', label: 'At ' + M.clock(near.start) + ' ' + onW(date, near.start), plan: near });
-    const said = [askBack(p.name, want, add.dur), wayWords(date, want, R.way)].concat(options.map((o) => o.line)).filter(Boolean).join(' ');
-    return { add, date, start: want, ok: false, options, todo: !options.length, text: options.length ? said : said + ' No day this week has ' + M.dur(add.dur) + ' open at ' + M.clock(want) + '.' };
+    /* (V11-3, D8: a way on that takes time from something says so; the same for each, once) */
+    const took = options.map((o) => takesFrom(o)), one = took.length && took.every((x) => x.length && x.join('|') === took[0].join('|'));
+    const tookLine = one ? (options.length > 1 ? 'Either way, it takes time from ' : 'It takes time from ') + joinNames(took[0]) + '.' : options.map((o, i) => (took[i].length ? o.label + ' takes time from ' + joinNames(took[i]) + '.' : '')).filter(Boolean).join(' ');
+    const said = [askBack(p.name, want, add.dur), wayWords(date, want, R.way)].concat(options.map((o) => o.line), [tookLine]).filter(Boolean).join(' ');
+    /* (two real ways on: with one, a to-do is the other) */
+    return { add, date, start: want, ok: false, options, todo: options.length < 2, text: options.length ? said : said + ' No day this week has ' + M.dur(add.dur) + ' open at ' + M.clock(want) + '.' };
   }
   /* a quick add with no time that works this week goes on the to-do list, due that day, with its length */
   function quickAsTodo(p, plan) {
@@ -18171,7 +18181,7 @@
     const out = $('quick-out');
     out.replaceChildren();
     /* (V11-2: big reads a move, a trip, and a message too: docs/BIG-MOMENTS.md, B) */
-    const p = quick.p = M.parseQuick($('quick-in').value, today, state.palette, nowMin, FEEL ? Object.assign({ big: true }, QUICK_OPTS) : QUICK_OPTS);
+    const p = quick.p = M.parseQuick($('quick-in').value, today, state.palette, nowMin, FEEL ? Object.assign({ big: true, state }, QUICK_OPTS) : QUICK_OPTS);
     quick.plan = null;
     if (!p || !p.name) { out.appendChild(el('p', 'quick-line', FEEL ? 'A name, a day, a time. No time makes it a to-do.' : 'A name, a day, and a time. Without a time it becomes a to do. Paste a list and each line becomes one.')); return; }
     const row = el('div', 'quick-row');
@@ -18205,7 +18215,7 @@
            greyed-out button */
         acts.classList.add('ways');
         plan.options.forEach((o, i) => { const b = button(o.label, i ? 'small' : 'go', () => { quick.plan = o.plan; quickCommit(false, true); }); b.dataset.fk = 'quick-' + o.id; acts.appendChild(b); });
-        if (plan.todo) { const b = button('Add it as a to-do', 'go', () => quickAsTodo(p, plan)); b.dataset.fk = 'quick-todo'; acts.appendChild(b); }
+        if (plan.todo) { const b = button('Add it as a to-do', plan.options.length ? 'small' : 'go', () => quickAsTodo(p, plan)); b.dataset.fk = 'quick-todo'; acts.appendChild(b); }
       } else {
         const go = button(plan.ok ? (FEEL && plan.meals ? 'Move it' : 'Add to ' + (plan.date === today ? 'today' : M.DAY_LONG[M.weekday(plan.date)]) + ' at ' + M.clock(plan.start)) : 'Pick another time', 'go', () => quickCommit(false, true));
         go.disabled = !plan.ok;
@@ -18325,7 +18335,8 @@
     if (FEEL && (p.kind === 'date' || p.kind === 'message')) return quickBigCommit(p, adjust);
     if (p.kind === 'task') {
       const gid = inboxId(), g = state.groups.find((x) => x.id === gid), tid = M.newId('t');
-      commit(() => { state.tasks.push({ id: tid, name: p.name, group: gid, icon: p.icon === 'star' ? 'check' : p.icon, cat: p.cat, dur: p.dur || null, due: p.due || null, repeat: null, done: false, steps: [] }); });
+      /* (V11-3, C1: a message with a day in it is a to-do with a text to send) */
+      commit(() => { state.tasks.push(Object.assign({ id: tid, name: p.name, group: gid, icon: p.icon === 'star' ? 'check' : p.icon, cat: p.cat, dur: p.dur || null, due: p.due || null, repeat: null, done: false, steps: [] }, p.msg ? { msg: { to: p.msg.to } } : {})); });
       Snd.good();
       /* V11: a to-do the library knows to break into three or more steps offers Break it down; any other
          one offers Undo */
@@ -19307,6 +19318,20 @@
     Object.keys(x).forEach((k) => { const d = k.slice(k.lastIndexOf('@') + 1); if (/^\d{4}-\d\d-\d\d$/.test(d) && d < M.addDays(today, -30)) delete x[k]; });
     if (view.preview) { view.preview.headsups = x; return; }
     try { localStorage.setItem(HU_KEY, JSON.stringify(x)); } catch (e) { /* fine */ }
+  }
+  /* V11-3 (C23): a heads-up's key ends with its date, and a fuzzy date's with its window's start; once its day is picked
+     (Model.pickDate), the holds for its people move to the new key, so Don't ask about Lisa still holds */
+  function huMove(e, was, date) {
+    if (!e || !was || !date || was === date) return;
+    const h = huHolds(), x = {}, who = new Set((Array.isArray(e.ready) ? e.ready : []).filter((r) => r && r.k === 'headsup' && r.who).map((r) => String(r.who).trim()));
+    let moved = false;
+    Object.keys(h).forEach((k) => {
+      const at = k.lastIndexOf('@');
+      if (k.startsWith('headsup:') && at > 8 && k.slice(at + 1) === was && who.has(k.slice(8, at))) { x[k.slice(0, at + 1) + date] = h[k]; moved = true; } else x[k] = h[k];
+    });
+    if (!moved) return;
+    if (view.preview) { view.preview.headsups = x; return; }
+    try { localStorage.setItem(HU_KEY, JSON.stringify(x)); } catch (err) { /* fine */ }
   }
   /* what's put off, as momentFor takes it: today's (seen.headsup) and the holds on this device that still run */
   function huSkip(seen) {
@@ -21266,7 +21291,7 @@
     const show = () => {
       try { sessionStorage.setItem('sundayreset.add', add.value); } catch (e) { /* fine */ }
       pv.replaceChildren();
-      const p = add.value.trim() ? M.parseQuick(add.value, today, state.palette, nowMin, FEEL ? Object.assign({ big: true }, QUICK_OPTS) : QUICK_OPTS) : null;
+      const p = add.value.trim() ? M.parseQuick(add.value, today, state.palette, nowMin, FEEL ? Object.assign({ big: true, state }, QUICK_OPTS) : QUICK_OPTS) : null;
       quick.p = p; quick.plan = p && p.kind === 'block' ? quickPlan(p) : null;
       if (!p || !p.name) { pv.hidden = true; return; }
       pv.hidden = false;
@@ -21295,7 +21320,7 @@
       if (ways) {
         /* V11-2 (Grok's audit): the full day's ways on, the first one gold, or a to-do; never a greyed-out button */
         quick.plan.options.forEach((o, i) => { const b = button(o.label, i ? 'small quiet' : 'small primary', () => { quick.plan = o.plan; if (quickCommit(false, true)) done(); }); b.dataset.fk = 'td-quick-' + o.id; acts.appendChild(b); });
-        if (quick.plan.todo) { const b = button('Add it as a to-do', 'small primary', () => { if (quickAsTodo(p, quick.plan)) done(); }); b.dataset.fk = 'td-quick-todo'; acts.appendChild(b); }
+        if (quick.plan.todo) { const b = button('Add it as a to-do', quick.plan.options.length ? 'small quiet' : 'small primary', () => { if (quickAsTodo(p, quick.plan)) done(); }); b.dataset.fk = 'td-quick-todo'; acts.appendChild(b); }
       } else {
         /* (V11: a time that can't take it asks for another, as the desk's quick add does; the line above says why) */
         const go = button(p.kind === 'task' ? (FEEL ? 'Add to-do' : 'Add to do') : quick.plan.ok ? (asks ? 'Move it' : 'Add it') : FEEL ? 'Pick another time' : 'No room', 'small primary', () => { if (quickCommit(false)) done(); });

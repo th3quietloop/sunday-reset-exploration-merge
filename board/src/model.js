@@ -1169,7 +1169,8 @@
      comes after the date), place (where that person is, or null), and what (what a cover step covers, or null). A
      fuzzy date (on: null) counts from its window's first day: its pick is due early enough for the longest lead of
      what waits on it, and every other step waits (when: 'waiting'), with start and ideal counted from that first day. */
-  function readyFor(state, e, on, today, tasks, others) {
+  /* (V11-3: only, a kind, works out that kind alone) */
+  function readyFor(state, e, on, today, tasks, others, only) {
     const fuzzy = isFuzzy(e);
     if (!fuzzy && !on) return [];
     const list = readyList(e, state);
@@ -1181,6 +1182,7 @@
     const pickBy = addDays(base, -(longest || 14));
     const out = [];
     for (const r of list) {
+      if (only && r.k !== only) continue;
       const R = READY[r.k], after = !!R.after;
       if (!fuzzy && on < today && !after) continue;
       const lead = r.lead != null ? r.lead : R.lead, by = r.by != null ? r.by : R.by;
@@ -1841,12 +1843,48 @@
       }
       return list;
     };
+    /* V11-3 (C6): a to-do and a date both devices changed merge by field too, the way goals do. A to-do's steps and its
+       list merge by id, each item by field (one device ticks a step, the other renames another, both stay), and its
+       text to send (msg) per field. A date's getting-ready keys (prep) merge per key, so a to-do one device made for a
+       step stays kept on the date and Look ahead never offers it again; its list (ready) merges by kind and person,
+       and anything else per field. Mine wins a true clash. */
+    const keyed = (b, m, t, name, keyOf, each) => {
+      const bl = Array.isArray(b) ? b : [], ml = Array.isArray(m) ? m : [], tl = Array.isArray(t) ? t : [];
+      const bm = new Map(bl.map((x) => [keyOf(x), x])), mm = new Map(ml.map((x) => [keyOf(x), x])), tm = new Map(tl.map((x) => [keyOf(x), x]));
+      const order = ml.map(keyOf).concat(tl.map(keyOf).filter((k) => !mm.has(k))).filter((k, i, all) => all.indexOf(k) === i);
+      const list = [];
+      for (const k of order) {
+        const bv = bm.get(k), mv = mm.get(k), tv = tm.get(k);
+        const v = each && isObj(mv) && isObj(tv) ? each(bv, mv, tv, name + ' ' + k) : pick(bv, mv, tv, name + ' ' + k);
+        if (v !== undefined) list.push(v);
+      }
+      return list;
+    };
+    const fieldwise = (b, m, t, name, spec) => {
+      if (same(m, b)) return t;
+      if (same(t, b) || same(m, t)) return m;
+      const o = {}, sub = new Set([...Object.keys(b || {}), ...Object.keys(m || {}), ...Object.keys(t || {})]);
+      for (const f of sub) {
+        const bv = (b || {})[f], mv = (m || {})[f], tv = (t || {})[f], how = spec[f];
+        const v = typeof how === 'function' ? (same(mv, bv) ? tv : same(tv, bv) || same(mv, tv) ? mv : how(bv, mv, tv, name + ' ' + f)) : deep(bv, mv, tv, name + ' ' + f, how || 0, false);
+        if (v !== undefined) o[f] = v;
+      }
+      return o;
+    };
+    const byField = (b, m, t, name) => deep(b, m, t, name, 1, false);
+    const idOf = (x) => (x && typeof x === 'object' && x.id != null ? 'id:' + x.id : 'v:' + JSON.stringify(sortKeys(x)));
+    const readyOf = (r) => (typeof r === 'string' ? r : r && typeof r === 'object' ? String(r.k) + (r.who ? ':' + String(r.who).trim().toLowerCase() : '') : 'v:' + JSON.stringify(sortKeys(r)));
+    const TASK_SPEC = { steps: (b, m, t, n) => (ided(m, t) ? keyed(b, m, t, n, idOf, byField) : pick(b, m, t, n)), list: (b, m, t, n) => (ided(m, t) ? keyed(b, m, t, n, idOf, byField) : pick(b, m, t, n)), msg: 1, spread: 1 };
+    const EVENT_SPEC = { prep: 1, ready: (b, m, t, n) => (Array.isArray(m) && Array.isArray(t) ? keyed(b, m, t, n, readyOf, byField) : pick(b, m, t, n)) };
+    const itemList = (b, m, t, name, spec) => keyed(b, m, t, name, idOf, (bv, mv, tv, n) => fieldwise(bv, mv, tv, n, spec));
     const out = {};
     const keys = new Set([...Object.keys(base), ...Object.keys(mine), ...Object.keys(theirs)]);
     for (const k of keys) {
       const b = base[k], m = mine[k], t = theirs[k];
       if (k === 'goals' && (Array.isArray(m) || Array.isArray(t)) && [b, m, t].every((v) => v == null || Array.isArray(v))) {
         out[k] = goalList(b, m, t);
+      } else if ((k === 'tasks' || k === 'events') && Array.isArray(m) && Array.isArray(t) && ided(m, t) && (b == null || Array.isArray(b))) {
+        out[k] = itemList(b, m, t, k, k === 'tasks' ? TASK_SPEC : EVENT_SPEC);
       } else if (MAP_KEYS.includes(k) && (m || t)) {
         const o = {}, sub = new Set([...Object.keys(b || {}), ...Object.keys(m || {}), ...Object.keys(t || {})]);
         for (const s of sub) { const v = pick((b || {})[s], (m || {})[s], (t || {})[s], k + ' ' + s); if (v !== undefined) o[s] = v; }
@@ -1865,7 +1903,39 @@
        comes whole, never Everything with the other's list */
     if (clashes.includes('mealbook diet') && out.mealbook && mine.mealbook) out.mealbook = Object.assign({}, out.mealbook, { out: (mine.mealbook.out || []).slice() });
     twoPartners(base, mine, theirs, out, clashes);
+    noTwins(base, mine, theirs, out);
     return { doc: out, clashes };
+  }
+  /* V11-3 (C6): what two devices each made for the same thing comes back once. A getting-ready step both made a to-do
+     for keeps mine (prep), and theirs goes when nothing else holds it (no other date keeps it, it isn't done, and no
+     day has it placed). A to-do whose steps both devices added by the same name keeps mine, the same way. */
+  function noTwins(base, mine, theirs, out) {
+    if (!Array.isArray(out.tasks)) return;
+    const was = new Set((base.tasks || []).map((x) => x && x.id)), placed = new Set(), stepPlaced = new Set();
+    Object.keys(out.dates || {}).forEach((d) => ((out.dates[d] || {}).adds || []).forEach((a) => { if (a && a.src && a.src.task) { placed.add(a.src.task); if (a.src.step) stepPlaced.add(a.src.task + '|' + a.src.step); } }));
+    const kept = new Set();
+    (out.events || []).forEach((e) => Object.keys((e && e.prep) || {}).forEach((k) => kept.add(e.prep[k])));
+    const drop = new Set();
+    const evOf = (list, id) => (list || []).find((x) => x && x.id === id);
+    (out.events || []).forEach((e) => {
+      const te = evOf(theirs.events, e.id), be = evOf(base.events, e.id);
+      Object.keys((te && te.prep) || {}).forEach((k) => {
+        const theirsId = te.prep[k], won = (e.prep || {})[k];
+        if (!theirsId || theirsId === 'skip' || theirsId === won || !won || won === 'skip' || ((be && be.prep) || {})[k] === theirsId) return;
+        const tt = out.tasks.find((x) => x.id === theirsId);
+        if (tt && !was.has(theirsId) && !kept.has(theirsId) && !tt.done && !placed.has(theirsId) && out.tasks.some((x) => x.id === won)) drop.add(theirsId);
+      });
+    });
+    if (drop.size) out.tasks = out.tasks.filter((x) => !drop.has(x.id));
+    const mineTasks = new Map((mine.tasks || []).map((x) => [x && x.id, x])), baseTasks = new Map((base.tasks || []).map((x) => [x && x.id, x]));
+    out.tasks = out.tasks.map((x) => {
+      if (!x || !Array.isArray(x.steps) || !mineTasks.has(x.id)) return x;
+      const bs = new Set((((baseTasks.get(x.id) || {}).steps) || []).map((s) => s && s.id)), ms = new Set(((mineTasks.get(x.id).steps) || []).map((s) => s && s.id));
+      const mineNew = new Set(x.steps.filter((s) => s && ms.has(s.id) && !bs.has(s.id)).map((s) => String(s.name || '').trim().toLowerCase()));
+      if (!mineNew.size) return x;
+      const steps = x.steps.filter((s) => !(s && !ms.has(s.id) && !bs.has(s.id) && !s.done && mineNew.has(String(s.name || '').trim().toLowerCase()) && !stepPlaced.has(x.id + '|' + s.id)));
+      return steps.length === x.steps.length ? x : Object.assign({}, x, { steps });
+    });
   }
   /* V11: two devices that each added a first partner keep both. Mine stays the partner, and theirs joins
      profile.people as a partner too (an id made from the name, so any device merging the same two agrees),
@@ -1916,12 +1986,17 @@
   function quickWindow(words, today) {
     const w = String(words || '').toLowerCase().replace(/[.!?,]+$/, '').replace(/^(?:sometime|some time)\s+/, '').trim();
     if (/^(?:this\s+month|later\s+this\s+month)$/.test(w)) return windowFor('this-month', today);
+    /* V11-3 (C2): next week, the days of the week after this one (as the board starts its weeks), and the rest of this
+       one */
+    if (/^next\s+week$/.test(w)) { const a = addDays(weekStart(today), 7); return { from: a, to: addDays(a, 6) }; }
+    if (/^(?:this|later\s+this)\s+week$/.test(w)) return { from: today, to: addDays(weekStart(today), 6) };
     if (/^next\s+month$/.test(w)) return windowFor('next-month', today);
     if (/^(?:in\s+)?(?:a\s+few|the\s+next\s+few|a\s+couple(?:\s+of)?)\s+months$/.test(w)) return windowFor('few-months', today);
     let m = w.match(/^(?:in\s+(?:the\s+)?|this\s+|next\s+)?(spring|summer|fall|autumn|winter)$/);
     if (m) {
       const k = m[1] === 'autumn' ? 'fall' : m[1];
-      let win = windowFor(k, today);
+      /* (this spring is the one under way, however little of it is left) */
+      let win = windowFor(k, today, /^this\s/.test(w));
       /* next spring is the one after the spring under way */
       if (win && /^next\s/.test(w) && win.from <= today) win = windowFor(k, addDays(win.to, 1));
       return win;
@@ -1970,8 +2045,12 @@
       const b = WD[m[2]];
       return { date, end: addDays(date, (b - a + 7) % 7) };
     }
+    /* V11-3 (C2): the words for a day that parseQuick knows: today, tonight, tomorrow */
+    if (/^(?:today|tonight)$/.test(w)) return { date: today, end: today };
+    if (/^(?:tomorrow|tmrw|tmw)$/.test(w)) { const d = addDays(today, 1); return { date: d, end: d }; }
     if (/^this\s+weekend$/.test(w)) { const sat = addDays(today, (6 - weekday(today) + 7) % 7), d0 = weekday(today) === 0 ? today : sat; return { date: d0, end: weekday(today) === 0 ? today : addDays(sat, 1) }; }
-    if (/^next\s+weekend$/.test(w)) { const sat = addDays(sundayOf(today), 13); return { date: sat, end: addDays(sat, 1) }; }
+    /* (V11-3, C27: on a Sunday, this weekend is today, so next weekend is the coming Saturday, six days out) */
+    if (/^next\s+weekend$/.test(w)) { const sat = addDays(sundayOf(today), weekday(today) === 0 ? 6 : 13); return { date: sat, end: addDays(sat, 1) }; }
     return null;
   }
   /* the words before a when and the when itself: the first place the rest reads as one ({ head, when, how }), or the
@@ -1981,15 +2060,33 @@
     for (let k = 1; k < t.length; k++) { const when = t.slice(k).join(' '), r = read(when); if (r) return { head: t.slice(0, k).join(' '), when: r }; }
     return { head: t.join(' '), when: null };
   }
+  /* who a message is to, as a person means it: Aunt Lisa from aunt lisa, but the team, my sister, and our neighbors
+     keep their small letters */
+  const quickWho = (v) => { const w = String(v || '').trim(); return /^(?:the|my|our|a|an|his|her|their|your|everyone|everybody|all)\b/i.test(w) ? w : quickCaps(w); };
+  /* "text Aunt Lisa about LA", "message the team about the deadline", "give Grandma a heads-up about the lake":
+     { verb, who, about, name } (name in the person's words, the verb first), or null */
+  function quickMsg(text) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim().replace(/[.!?]+$/, '');
+    let m = s.match(/^(text|message|msg)\s+(.+?)\s+about\s+(.+)$/i);
+    if (m) { const who = quickWho(m[2]), about = m[3].trim(); return who && about ? { verb: m[1], who, about, name: capFirst(m[1]) + ' ' + who + ' about ' + about } : null; }
+    m = s.match(/^(give|send)\s+(.+?)\s+(a\s+heads?[\s-]?up)\s+(about|for|on)\s+(.+)$/i);
+    if (m) { const who = quickWho(m[2]), about = m[5].trim(); return who && about ? { verb: m[1], who, about, name: capFirst(m[1]) + ' ' + who + ' ' + m[3] + ' ' + m[4] + ' ' + about } : null; }
+    return null;
+  }
   function quickBig(text, today, opts) {
     const dayFirst = !!(opts && opts.dayFirst);
     const s = String(text || '').replace(/\s+/g, ' ').trim().replace(/[.!?]+$/, '');
     if (!s) return null;
-    let m = s.match(/^(?:text|message|msg)\s+(.+?)\s+about\s+(.+)$/i) || s.match(/^(?:give|send)\s+(.+?)\s+a\s+heads?[\s-]?up\s+(?:about|for|on)\s+(.+)$/i);
-    if (m) {
-      const who = quickCaps(m[1]), about = String(m[2]).trim();
-      if (who && about) return { kind: 'message', name: 'Text ' + who + ' about ' + about, who, about, date: null, due: null, start: null, dur: 5, cat: 'family', icon: 'chat', pal: null };
+    /* V11-3 (C1): a message is one only when what it's about names a trip, or has no day or time in it ("text Mom
+       about dinner tomorrow 6pm" is an ordinary line with a text to send: parseQuick attaches msg). The person's own
+       verb stays (Message the team about the deadline), and a name with the or my before it keeps its small letters */
+    const mm = quickMsg(s);
+    if (mm) {
+      const p0 = parseQuick(mm.about, today, [], null, { dayFirst });
+      const timed = !!p0 && (!!p0.date || p0.start != null || !!p0.part);
+      if (!timed || (opts && opts.state && tripFor(opts.state, mm.about, today))) return { kind: 'message', name: mm.name, who: mm.who, about: mm.about, date: null, due: null, start: null, dur: 5, cat: 'family', icon: 'chat', pal: null };
     }
+    let m;
     /* a when: a fuzzy window, or days */
     const when = (w) => { const win = quickWindow(w, today); if (win) return { window: win }; const r = quickRange(w, today, dayFirst); return r ? { range: r } : null; };
     m = s.match(/^(?:(?:we(?:'|’)re|we\s+are|i(?:'|’)m|i\s+am)\s+)?(?:move|moving)\s+(.+)$/i);
@@ -2030,8 +2127,9 @@
     let best = null;
     for (const e of liveEvents(state)) {
       if (!(e.kind === 'trip' || e.away)) continue;
-      const on = isFuzzy(e) ? e.window.from : e.end || e.date;
-      if (!on || (!isFuzzy(e) && on < today)) continue;
+      /* (V11-3, C25: a fuzzy trip whose window is over is past asking too) */
+      const on = isFuzzy(e) ? e.window.to : e.end || e.date;
+      if (!on || on < today) continue;
       const name = readyName(e), nm = norm(name), own = placeOf(e), pl = own ? norm(own) : [];
       const places = (Array.isArray(e.ready) ? e.ready : []).filter((r) => r && r.k === 'headsup' && r.place).map((r) => String(r.place));
       const kept = places.find((p) => same(norm(p), want));
@@ -2108,6 +2206,11 @@
     if (kind === 'task') out.due = date;
     if (loose) out.part = part;
     if (every != null) out.every = every;
+    /* V11-3 (C1): a message with a day or a time in it keeps them, and carries who it's to (msg), with no suggestion */
+    if (opts && opts.big) {
+      const mm = quickMsg(text);
+      if (mm) { out.msg = { to: mm.who }; if (!pal) { out.cat = 'family'; out.icon = 'chat'; } if (out.dur == null && kind === 'task') out.dur = 5; }
+    }
     return out;
   }
   /* V11, the Planner walk (16): the next free day or free evening after a date, within six months (limit days). A free
@@ -2212,6 +2315,16 @@
       if (m > 0) { min += m; if (!name) name = b.label || b.name; }
     }
     return { min, name };
+  }
+  /* V11-3 (C7, C16): whether a placed add sits in own time: said yes to (own: true, its own flag, never pinned), or over a
+     block of the person's own time, worked out with the add itself set aside (it cuts a hole in what it sits on) */
+  function inOwnTime(state, date, add) {
+    if (!add) return false;
+    if (add.own) return true;
+    const dd = state.dates[date];
+    if (!dd || !Array.isArray(dd.adds)) return false;
+    const sim = Object.assign({}, state, { dates: Object.assign({}, state.dates, { [date]: Object.assign({}, dd, { adds: dd.adds.filter((a) => a.id !== add.id) }) }) });
+    return ownTimeOf(sim, date, add.start, add.dur).min > 0;
   }
   /* A date's blocks, the way calendarDay has them, for quiet time. When nothing from the days around it
      reaches into the date and nothing of its own runs past midnight, its own records laid alone are
@@ -2875,7 +2988,7 @@
     const late = by < today;
     if (late) by = addDays(today, 13);
     /* the steps that can move: the missed ones and the ones ahead that weren't pinned, in order */
-    const seq = info.filter((x) => x.missed || (x.ahead && !x.ahead.add.pinned));
+    const seq = info.filter((x) => x.missed || (x.ahead && !x.ahead.add.pinned && !inOwnTime(st, x.ahead.date, x.ahead.add)));
     /* a missed step leaves all its times; a step ahead leaves the time it has, and may get it back */
     const leaving = new Set();
     seq.forEach((x) => { if (x.missed) x.mine.forEach((p) => leaving.add(p.add.id)); else leaving.add(x.ahead.add.id); });
@@ -2911,6 +3024,8 @@
       if (at == null) { res.unplaced.push(x.s.id); continue; }
       const copy = Object.assign({}, base);
       delete copy.pinned;
+    delete copy.own;
+      delete copy.own;
       const a = putAdd(st, d, copy, at);
       used[d] = (used[d] || 0) + len;
       pointer = d; lastDay = d; lastEnd = at + len;
@@ -2981,7 +3096,11 @@
   const goalOf = (state, goal) => (goal && typeof goal === 'object' ? goal : (state.goals || []).find((g) => g.id === goal) || null);
   /* V11-2: a goal's first week, the seven days from its start (or before it starts): nothing says Behind then, since
      the plan has only begun (goalProgress gives it as firstWeek) */
-  const goalFirstWeek = (g, today) => !g.start || diffDays(g.start, today) < 7;
+  /* (V11-3, C28: a goal saved with no start counts from its first session; with none, its first week is over) */
+  const goalFirstWeek = (g, today, state) => {
+    const from = g.start || (state ? (goalSessions(state, g.id)[0] || {}).date : null);
+    return !!from && diffDays(from, today) < 7;
+  };
   /* every session of a goal, in time order: [{ date, add }] */
   function goalSessions(state, goalId) {
     const out = [];
@@ -3062,14 +3181,14 @@
         totalMin: 0, doneMin: sum(tl.doneBy), unconfirmedMin: sum(tl.unconfBy), leftMin: 0, daysLeft: null, capacityMin: 0, behindMin: 0, onTrack: true,
         week, nextSession: next, partsLeft: 0, perDay: 0,
         parts: (g.parts || []).map((p) => ({ id: p.id, name: p.name, min: p.min, done: !!p.done, doneMin: tl.doneBy[p.id] || 0, unconfirmedMin: tl.unconfBy[p.id] || 0, leftMin: 0 })),
-        perWeek: { n: weekTimes(g), done: wk.filter((x) => tl.confirmed(x)).length, planned: wk.length }, firstWeek: goalFirstWeek(g, today)
+        perWeek: { n: weekTimes(g), done: wk.filter((x) => tl.confirmed(x)).length, planned: wk.length }, firstWeek: goalFirstWeek(g, today, state)
       };
     }
     const behindMin = Math.max(0, leftMin - capacityMin);
     return {
       totalMin, doneMin, unconfirmedMin, leftMin, daysLeft: g.date ? Math.max(0, diffDays(today, g.date)) : null, capacityMin, behindMin, onTrack: behindMin === 0,
       week, nextSession: next, partsLeft: parts.filter((p) => !p.done && p.leftMin > 0).length, parts,
-      perDay: days.length ? Math.round(leftMin / days.length) : 0, firstWeek: goalFirstWeek(g, today)
+      perDay: days.length ? Math.round(leftMin / days.length) : 0, firstWeek: goalFirstWeek(g, today, state)
     };
   }
   /* Spread `total` minutes over days in proportion to each day's weight (its cap), never over a day's
@@ -3097,7 +3216,7 @@
      Returns { placed, removed, shortMin, message }. */
   /* opts: { horizon: 14, day } (day as goalProgress has it, used only past the horizon, which planning
      doesn't change). V11-2: own (true, or the last date it may) lets the plan use the person's own time after the open
-     time, once they said yes: a session that takes some is pinned, so planning again keeps it, and the result gives
+     time, once they said yes: a session that takes some is marked own (V11-3: never pinned), so planning again keeps it, and the result gives
      own: { min, days: [{ date, min, part, name }] }, the way spreadPlan does */
   function planGoal(state, goalId, today, nowMin, opts) {
     return withRecMemo(state, () => planGoalNow(state, goalId, today, nowMin, opts || {}));
@@ -3111,6 +3230,9 @@
     const sessions0 = goalSessions(state, g.id), held = heldDays(sessions0, today);
     for (const x of sessions0) {
       if (x.add.pinned || x.add.skipped || held.has(x.date) || x.date < today || x.date > hEnd || windowTime(today, x.date, x.add.start) < now) continue;
+      /* V11-3 (C7, C16): a session in the person's own time stays where it is while the goal runs: one their yes put there
+         (own), and one a plan placed there before own time was kept for them, which planning again couldn't put back */
+      if (!g.archived && !g.paused && (!g.date || x.date < g.date) && inOwnTime(state, x.date, x.add)) continue;
       removeAdd(state, x.add.id);
       memoForget(state, x.date);
       res.removed++;
@@ -3185,7 +3307,7 @@
           const r = canPlace(state, d, len, s);
           if (!r.ok || (r.pushes || []).length) continue;
           const mineOwn = tookOwn(d, s, len);
-          putAdd(state, d, Object.assign({ name: 'Practice exam', cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: pp.p.id }, practice: true }, mineOwn ? { pinned: true } : {}), s);
+          putAdd(state, d, Object.assign({ name: 'Practice exam', cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: pp.p.id }, practice: true }, mineOwn ? { own: true } : {}), s);
           res.placed++;
           pp.left -= len; pp.had += len; left -= len;
           prev = pp;
@@ -3200,7 +3322,7 @@
           const r = canPlace(state, d, len, s);
           if (!r.ok || (r.pushes || []).length) { s += STEP; continue; }
           const mineOwn = tookOwn(d, s, len);
-          putAdd(state, d, Object.assign({ name: cur.p.name || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: cur.p.id } }, mineOwn ? { pinned: true } : {}), s);
+          putAdd(state, d, Object.assign({ name: cur.p.name || g.name, cat: g.cat || 'yours', icon: g.icon || GOAL_ICON[g.kind] || 'flag', dur: len, src: { type: 'goal', id: g.id, part: cur.p.id } }, mineOwn ? { own: true } : {}), s);
           res.placed++;
           cur.left -= len; cur.had += len; left -= len; s += len;
           prev = cur;
@@ -3412,6 +3534,8 @@
       spot.gives.forEach((a) => { note(a.src.id, { date: d, start: a.start, dur: a.dur, part: a.src.part, name: a.name, took: true }); removeAdd(state, a.id); memoForget(state, d); });
       const copy = Object.assign({}, x.add);
       delete copy.pinned;
+    delete copy.own;
+      delete copy.own;
       putAdd(state, d, copy, spot.start);
       res.moved.push({ kind: 'step', name: s.name, task: t.id, from: x.date, to: d, start: spot.start });
     });
@@ -3453,6 +3577,7 @@
     at.gives.forEach((a) => { removeAdd(st, a.id); memoForget(st, d); gave[a.src.id] = (gave[a.src.id] || 0) + a.dur; });
     const copy = Object.assign({}, f.add);
     delete copy.pinned;
+    delete copy.own;
     putAdd(st, d, copy, at.start);
     const goals = replanGave(st, gave, today, nowMin == null ? null : nowMin, d);
     return { ok: true, date: d, start: at.start, goals, message: gaveWords(goals) };
@@ -3785,7 +3910,8 @@
      'summer' June to August, 'fall' September to November, 'winter' December to February; the next one to come, or
      the one under way), or 'few-months' (the next three, from next month). Gives { from, to }, whole months, or null. */
   const SEASONS = { spring: [3, 5], summer: [6, 8], fall: [9, 11], winter: [12, 2] };
-  function windowFor(choice, today) {
+  /* (V11-3, C26: a season with three weeks or less left of it means the next one, unless current says this one) */
+  function windowFor(choice, today, current) {
     const p = parts(today), lastOf = (s) => { const q = parts(s); return iso(q.y, q.m, daysInMonth(q.y, q.m)); };
     const m0 = iso(p.y, p.m, 1);
     if (choice === 'this-month') return { from: m0, to: lastOf(m0) };
@@ -3795,7 +3921,7 @@
     if (!s) return null;
     for (const y of [p.y - 1, p.y, p.y + 1]) {
       const from = iso(y, s[0], 1), to = lastOf(iso(s[1] < s[0] ? y + 1 : y, s[1], 1));
-      if (to >= today) return { from, to };
+      if (to >= today && (current || from > today || diffDays(today, to) >= 21)) return { from, to };
     }
     return null;
   }
@@ -3858,7 +3984,8 @@
        read the way version 8 did */
     e.ready = readyList(e, state).filter((r) => r.k !== 'pickdate').map((r) => Object.assign({}, r));
     e.date = date;
-    if (e.kind === 'trip') e.end = end && end >= date ? end : date;
+    /* (V11-3, C24: an end that isn't a date is the date again) */
+    if (e.kind === 'trip') e.end = /^\d{4}-\d\d-\d\d$/.test(String(end || '')) && end >= date ? end : date;
     delete e.window;
     /* (with its days known, a trip that leaves something behind lines up who's covering it) */
     if ((e.kind === 'trip' || e.away) && !e.ready.some((r) => r.k === 'cover') && coverOf(state, e)) e.ready.push({ k: 'cover' });
@@ -3948,13 +4075,15 @@
     const kidsSeen = new Set(), care = new Map(), pet = { animal: null, walks: 0, meals: 0, other: 0 };
     /* who an item looks after: someone it names (Dad’s, for Dad, check on Dad), as the item spells them, when it's
        care (an appointment, groceries, meds, or a visit to look after them); or a kid, at an appointment */
+    /* (V11-3, C10: each person's patterns are made once a call, never once an item) */
+    const caredRe = cared.map((p) => ({ p, own: new RegExp('\\b' + reEsc(p) + '\'s\\b'), aim: new RegExp('\\b(?:for|on|with|drive|driving|take|taking|help|helping)\\s+' + reEsc(p) + '\\b'), word: new RegExp('\\b' + reEsc(p) + '\\b', 'i') }));
+    const kidsRe = kids.map((k) => ({ k, re: new RegExp('\\b' + reEsc(k.toLowerCase()) + '\\b') }));
     const careFor = (low, raw) => {
       if (!(CARE_APPT.test(low) || CARE_FOOD.test(low) || CARE_MEDS.test(low) || CARE_VERB.test(low))) return null;
-      for (const p of cared) {
-        const own = new RegExp('\\b' + reEsc(p) + '\'s\\b').test(low), aim = new RegExp('\\b(?:for|on|with|drive|driving|take|taking|help|helping)\\s+' + reEsc(p) + '\\b').test(low);
-        if (own || aim) { const m = raw.match(new RegExp('\\b' + reEsc(p) + '\\b', 'i')); return capFirst(m ? m[0] : p); }
+      for (const c of caredRe) {
+        if (c.own.test(low) || c.aim.test(low)) { const m = raw.match(c.word); return capFirst(m ? m[0] : c.p); }
       }
-      if (CARE_APPT.test(low)) for (const k of kids) if (new RegExp('\\b' + reEsc(k.toLowerCase()) + '\\b').test(low)) return k;
+      if (CARE_APPT.test(low)) for (const x of kidsRe) if (x.re.test(low)) return x.k;
       return null;
     };
     const look = (name, daycare) => {
@@ -4025,7 +4154,9 @@
     } else if (!cov) {
       const key = Object.keys(e.prep || {}).find((k) => k.split('@')[0] === 'cover');
       const t = key ? (state.tasks || []).find((x) => x.id === e.prep[key]) : null;
-      if (t && !t.done && !(t.msg && typeof t.msg.text === 'string' && t.msg.text.trim()) && !(placements(state).get(t.id) || []).length) {
+      /* (V11-3, C33: a step or a list item already checked is touched too) */
+      const ticked = !!t && ((t.steps || []).some((x) => x && x.done) || (Array.isArray(t.list) && t.list.some((x) => x && x.done)));
+      if (t && !t.done && !ticked && !(t.msg && typeof t.msg.text === 'string' && t.msg.text.trim()) && !(placements(state).get(t.id) || []).length) {
         state.tasks.splice(state.tasks.indexOf(t), 1);
         const prep = Object.assign({}, e.prep);
         delete prep[key];
@@ -4039,8 +4170,7 @@
      chargers, ID and wallet, and each kid at home's bag by name. [{ id, name, done }] with new ids. */
   function packList(state, e) {
     const days = e && e.kind === 'trip' && e.date && e.end ? diffDays(e.date, e.end) + 1 : 0;
-    const pr = (state && state.profile) || {};
-    const kids = (pr.kids || []).concat((pr.people || []).filter((x) => x && x.group === 'kids' && x.home).map((x) => x.name)).map((k) => String(k || '').trim()).filter(Boolean);
+    const kids = homeKids(state);
     const names = [days ? 'Clothes for ' + days + (days === 1 ? ' day' : ' days') : 'Clothes', 'Toiletries', 'Meds', 'Chargers', 'ID and wallet'].concat(kids.map((k) => k + '’s bag'));
     return names.filter((x, i, all) => all.indexOf(x) === i).map((name) => ({ id: newId('li'), name, done: false }));
   }
@@ -4189,7 +4319,9 @@
     return f;
   }
   /* which message a to-do with no getting-ready key is, from its words */
-  const msgKindOf = (t) => (/^reply to\b/i.test(t.name || '') ? 'rsvp' : /^send the invites\b/i.test(t.name || '') ? 'invites' : /^thank-you notes\b/i.test(t.name || '') ? 'thanks' : /^line up who/i.test(t.name || '') ? 'cover' : 'headsup');
+  /* (V11-3, C1: a to-do with a text and no date it belongs to is a plain one, with no suggestion; a heads-up's words
+     need the trip) */
+  const msgKindOf = (t, e) => (/^reply to\b/i.test(t.name || '') ? 'rsvp' : /^send the invites\b/i.test(t.name || '') ? 'invites' : /^thank-you notes\b/i.test(t.name || '') ? 'thanks' : /^line up who/i.test(t.name || '') ? 'cover' : e ? 'headsup' : 'plain');
   /* Everything a message step shows, worked out from the board: { kind, to, text, suggested, versions }. kind is
      headsup, rsvp, invites, thanks, or cover; to the name; text the person's own words when they saved some (msg.text),
      else the suggestion; suggested always the plain suggestion; versions [{ id: 'shorter' | 'warmer' | 'day', name:
@@ -4204,7 +4336,8 @@
     const key = e && e.prep ? Object.keys(e.prep).find((k) => e.prep[k] === t.id) || null : null;
     const k0 = key ? key.split(/[:@]/)[0] : null, keyed = !!(k0 && READY[k0] && READY[k0].msg);
     if (!t.msg && !keyed) return null;
-    const kind = keyed ? k0 : msgKindOf(t);
+    const kind = keyed ? k0 : msgKindOf(t, e);
+    if (kind === 'plain') { const own0 = t.msg && typeof t.msg.text === 'string' && t.msg.text.trim() ? t.msg.text : ''; return { kind, to: String((t.msg && t.msg.to) || '').trim(), text: own0, suggested: '', versions: [] }; }
     const at = key ? key.lastIndexOf('@') : -1, colon = key ? key.indexOf(':') : -1;
     const who = String((t.msg && t.msg.to) || (colon >= 0 && colon < at ? key.slice(colon + 1, at) : '')).trim();
     const on = at >= 0 && /^\d{4}-\d\d-\d\d$/.test(key.slice(at + 1)) && !(e && isFuzzy(e)) ? key.slice(at + 1) : e ? nextOn(e, today || todayIso()) : null;
@@ -4231,10 +4364,13 @@
     const off = Array.isArray(skip) ? new Set(skip) : new Set(Object.keys(skip || {}).filter((k) => skip[k]));
     const tasks = new Map(state.tasks.map((t) => [t.id, t]));
     let best = null;
+    /* (V11-3, C10: a heads-up is added by name, so only a date whose own list names someone can ask one; the rest,
+       imported calendar events and all, are never read, and only its heads-ups are worked out) */
     for (const e of liveEvents(state)) {
+      if (!Array.isArray(e.ready) || !e.ready.some((x) => x && x.k === 'headsup')) continue;
       const on = nextOn(e, today);
       if (!on) continue;
-      for (const r of readyFor(state, e, on, today, tasks)) {
+      for (const r of readyFor(state, e, on, today, tasks, null, 'headsup')) {
         if (r.k !== 'headsup' || off.has(r.key) || r.start > today || !['now', 'soon', 'added'].includes(r.when) || (r.task && r.task.done)) continue;
         if (!best || r.ideal < best.r.ideal) best = { e, r };
       }
@@ -4285,8 +4421,10 @@
      them: { blocks: [{ name, start, end, fixed, meal }], bed (minute) or null, wake (minute) or null } */
   function inTheWay(state, date, start, dur) {
     const end = start + dur, own = ownDay(state, date);
-    const blocks = calendarDay(state, date).blocks.filter((b) => !b.sleep && !b.soft && !b.free && b.start < end && start < b.start + b.dur).sort(byStart)
-      .map((b) => ({ name: b.label || b.name, start: b.start, end: b.start + b.dur, fixed: !!b.fixed, meal: mealBlock(b) }));
+    /* (V11-3, D8: every block it reaches into, time with people and soft routines too (soft: true), so Evening with Sam
+       is named; never open time or time kept free, which make room) */
+    const blocks = calendarDay(state, date).blocks.filter((b) => !b.sleep && !b.free && b.cat !== 'open' && b.start < end && start < b.start + b.dur).sort(byStart)
+      .map((b) => Object.assign({ name: b.label || b.name, start: b.start, end: b.start + b.dur, fixed: !!b.fixed, meal: mealBlock(b) }, b.soft ? { soft: true } : {}));
     return { blocks, bed: end > own.bed ? own.bed : null, wake: start < own.wake ? own.wake : null };
   }
   /* where a stretch fits on a date and nothing moves, from the person's wake to bed, from now on today: a quick check
@@ -4579,7 +4717,7 @@
        4:45 pm. Move it?"; a stretch stops short. The yes is opts.meals (the last argument of each), or withMeals(true,
        fn) around any change.
      Quick add on a full day (tests/quick-add-full.test.mjs): roomFor(state, date, start, minutes, today, nowMin, thing)
-       gives { way, day, shorter }: inTheWay's { blocks: [{ name, start, end, fixed, meal }], bed, wake }, the same hour on
+       gives { way, day, shorter }: inTheWay's { blocks: [{ name, start, end, fixed, meal, soft }], bed, wake }, the same hour on
        the nearest day where nothing moves ({ date, start } or null), and the longest it can be that day, half the ask at
        least on the grid, at the hour asked first ({ start, dur } or null). thing is what's being added (an add, or a
        to-do). At the hour asked (the ask, the shorter way there, the same hour on another day) any soft block makes
