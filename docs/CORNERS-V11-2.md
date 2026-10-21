@@ -118,6 +118,20 @@ Russell asked for these to go into V11-2 before the link.
 7. **A third gate, "break it on purpose":** offline, failed saves, AI failures, empty boards, and a broken save (`npm run unhappy`).
 8. **Look back shows counts, never streaks.** The first reset's recap has one honest insight.
 
+## The review round (Oct 20, night)
+
+Russell asked for a grumpy code reviewer and a grumpy designer (91 findings: 8 critical, 44 medium, 39 low; both lists are in `docs/V11-3-REVIEWS.md`, C1 to C35 and D1 to D56), then for all of it to be built. It was first called V11-3; Russell chose to ship it as an update to V11-2 instead, so the link and its AI key stay as they are. The V11-2 that went live first is deployment `dpl_4SoPUqPkU8sNVyfwRK8ydSYcwFub`, the one to roll back to.
+
+Five helpers built it in their own copies of the repo (branches `v11-3-model`, `-infra`, `-moments`, `-chrome`, `-screens`), merged into `v11-3`.
+
+- **Quick add and the plan:** "text mom about dinner tomorrow 6pm" keeps its day, time and verb; a full day names every block in the way, people time too; trips read today, tomorrow and next week; meals keep their own window; sync merges a to-do field by field; goal sessions already placed stay put.
+- **Big moments:** a step opens read only until you act on it; one goal always opens its countdown; a new goal starts On track, with no made up hours and week dots from the week it began; the steps sheet matches the mock (tiles, the mock's footer, an x to close, grips on the phone); Shorter keeps typed words; big dates show on Month and Year cards; the app's own day picker.
+- **Undo, gold, the band:** the Undo message never covers a sheet's buttons and shows once a screen; one gold a screen, and the last five minutes go white and red; the phone asks the morning question; the band is no taller than V11's; every hit area is 44 px.
+- **Screens:** names on the Duo folded's blocks; quick add frames the board beside it; the lamp's shadow stays off print; phones open on Today after the sample or setup; quiet setup and welcome tiles; Goals and sentence case in desk Settings.
+- **Under the hood:** the AI server caps the whole site, trusts Vercel's own address header, and uses the person's date; the offline copy is named from its files and never trades a whole copy for a part one; the page scripts are minified (4.4 MB to 2.9 MB; `MV_MIN=0` builds them plain); the 404 on every load is gone; the break-it gate now fails on contrast.
+
+Left as it was, on purpose: practice exams still run into Review on the bar exam's road (the approved spec and mock put them there), and the meal board still takes the desk's place (Russell's own design from V4); its gold is now Fill the week. The shared counter for the AI limit is written but turns on only if a Redis store is linked, which needs Russell's OK.
+
 ## After release: the website's privacy policy
 
 Sharing became private by default, so `354_SundayReset_Site/privacy/index.html` needs two sentences changed when V11-2 is live.
