@@ -253,27 +253,56 @@
     if (on && lastTouch && Date.now() - lastTouch.at < 8000) y = lastTouch.y;
     else if (on) { const a = document.activeElement; if (a && a !== document.body && a.getBoundingClientRect) { const r = a.getBoundingClientRect(); if (r.height) y = (r.top + r.bottom) / 2; } }
     /* V11 (the phone's sheet): with a sheet open, a toast sits just above its footer, clear of the button that made
-       it and never over the page at the top; when the touch was right there, it sits under the sheet's header
-       instead (sheetToastSpot) */
+       it and never over the page at the top. V11-3 (the design review's first finding): it never covers the sheet's
+       own buttons either. The sheet makes room for it inside itself (toastRoom), a space at the top of its footer (or
+       pinned to its foot when it has none) as tall as the toast, and scrolls what it holds up by as much, so what was
+       in view stays in view above it; the toast stands in that room, and the room closes when it goes */
     const side = $('side'), sheet = on && !side.hidden && !!side.getClientRects().length;
     let spot = null;
     if (sheet) {
-      const sr = side.getBoundingClientRect(), foot = side.querySelector('.c-sfoot, .place-foot, .c-gl-foot'), fr = foot && foot.getBoundingClientRect();
-      spot = sheetToastSpot({ top: sr.top, bottom: sr.bottom, foot: fr && fr.height ? fr.top : null, vh: window.innerHeight, touch: y, z: zoomOf($('toasts')), menu: !!side.querySelector('.c-smenu') });
-      $('toasts').style.setProperty(spot.at === 'top' ? '--toast-sheet-t' : '--toast-sheet-b', spot.px + 'px');
+      const sr = side.getBoundingClientRect();
+      spot = sheetToastSpot({ room: toastRoom(side), bottom: sr.bottom, vh: window.innerHeight, z: zoomOf($('toasts')) });
+      $('toasts').style.setProperty('--toast-sheet-b', spot.px + 'px');
     }
+    /* (V11-3, the design review: an error stays until it's handled, so on the phone's Today it never stands over the head
+       card: it waits at the bottom, over the add line, and the page keeps room under its last line for it, so nothing
+       stays covered: --toast-room) */
+    const box = $('toasts'), live = box && box.children ? Array.from(box.children).filter((x) => !x._gone) : [];
+    const err = on && !spot && live.some((x) => x._err);
+    const roomPx = err ? Math.ceil(live.reduce((a, x) => a + x.getBoundingClientRect().height + 8, 0)) : 0;
     document.body.classList.toggle('c-toasts-sheet', !!spot);
-    document.body.classList.toggle('c-toasts-sheet-top', !!spot && spot.at === 'top');
-    document.body.classList.toggle('c-toasts-high', on && !spot && y != null && y > window.innerHeight / 2);
+    document.body.classList.toggle('c-toasts-high', on && !spot && !err && y != null && y > window.innerHeight / 2);
+    document.body.classList.toggle('c-toast-room', !!roomPx);
+    if (document.body.style) document.body.style.setProperty('--toast-room', roomPx + 'px');
   }
-  /* where a toast stands over an open sheet, in CSS pixels: { at: 'bottom', px } is its distance from the
-     window's foot (8 above the sheet's footer, or its bottom edge when it has none); { at: 'top', px } its
-     distance from the top (8 under the 56 px header), when the last touch was where it would have landed. With the
-     header's More open (o.menu), the top is the menu's, so it stays above the footer */
+  /* the room in an open sheet for the toasts showing: their height, at the top of its footer (its first child), or
+     pinned to the sheet's foot (.alone) when it has no footer. Returns where the room ends on screen, for the toast to
+     stand on, or null with nothing showing (and the room gone) */
+  function toastRoom(side) {
+    if (!side || !side.querySelector) return null;
+    const box = $('toasts'), live = box && box.children ? Array.from(box.children).filter((x) => !x._gone) : [];
+    const h = Math.ceil(live.reduce((a, x) => a + x.getBoundingClientRect().height, 0) + Math.max(0, live.length - 1) * 8);
+    let room = side.querySelector('.c-stoast');
+    const was = room ? room.getBoundingClientRect().height : 0;
+    if (!h) { if (room) { room.remove(); side.scrollTop = Math.max(0, side.scrollTop - was); } return null; }
+    if (!room) {
+      room = el('div', 'c-stoast');
+      room.setAttribute('aria-hidden', 'true');
+      const foot = side.querySelector('.c-sfoot, .place-foot, .c-gl-foot');
+      if (foot) foot.insertBefore(room, foot.firstChild);
+      else { room.classList.add('alone'); (side.querySelector('.side-in') || side).appendChild(room); }
+    }
+    room.style.height = h + 'px';
+    if (h !== was) side.scrollTop += h - was;
+    const r = room.getBoundingClientRect();
+    return r.top + h;
+  }
+  /* where a toast stands over an open sheet, in CSS pixels from the window's foot: on the room the sheet made for it
+     (o.room, its bottom edge on screen), or 8 above the sheet's bottom edge when there's none yet (the toast is on its
+     way in, and the room follows once it's there) */
   function sheetToastSpot(o) {
-    const edge = o.foot != null ? o.foot : o.bottom, z = o.z || 1;
-    if (!o.menu && o.touch != null && o.touch > edge - 84 && o.touch < edge) return { at: 'top', px: Math.round((o.top + 56 + 8) / z) };
-    return { at: 'bottom', px: Math.round((o.vh - edge + 8) / z) };
+    const z = o.z || 1;
+    return { at: 'bottom', px: Math.round((o.room != null ? o.vh - o.room : o.vh - o.bottom + 8) / z) };
   }
   /* o (V11, lift and place): receipt, a drop saying where it went: one at a time, a new one takes the last
      drop's place */
@@ -320,8 +349,9 @@
       if (!x || x._gone) return;
       x._gone = true; clearTimeout(x._timer);
       x.style.pointerEvents = 'none';
+      if (x._act && x._act.label === 'Undo') undoSpots();
       const a = x.animate(still ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.98)' }], { duration: still ? 100 : quick ? 110 : 170, easing: IN_EASE, fill: 'forwards' });
-      const done = () => { if (x.isConnected) slide(() => x.remove()); };
+      const done = () => { if (x.isConnected) { slide(() => x.remove()); if (view.phone || phoneDay()) phoneToasts(); } };
       a.onfinish = done;
       setTimeout(done, 450);
     };
@@ -345,6 +375,9 @@
     if (view.phone || phoneDay()) Array.from(box.children).forEach((x) => { if (!x._gone && x._leave && !x._err) x._leave(true); });
     phoneToasts();
     slide(() => box.appendChild(t));
+    /* (V11-3: the sheet's room for it fits its height, now it's there; and an Undo said here hides the one that stays) */
+    if (view.phone || phoneDay()) phoneToasts();
+    if (act && act.label === 'Undo') undoSpots();
     t.animate(still ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(12px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: still ? 120 : 220, easing: OUT_EASE });
     /* (V11, the Planner walk, 15.3: on a touch screen a toast with a button waits 10 seconds, and a finger resting on it
        holds it, as a pointer does) */
@@ -359,6 +392,20 @@
     /* (three at most: the oldest that isn't an error goes first) */
     const live = Array.from(box.children).filter((x) => !x._gone);
     while (live.length > 3) { const i = live.findIndex((x) => !x._err); leave(live.splice(i >= 0 ? i : 0, 1)[0], true); }
+  }
+  /* V11-3 (one Undo a screen): while a toast offers Undo, the Undo that stays (the desk's bottom bar, the phone's foot,
+     the phone desk's bar) steps aside, and comes back as the toast goes */
+  function toastUndoUp() {
+    const box = $('toasts');
+    /* (and the question strip's own line, A focus Tuesday. Undo, while it shows: sayMoment) */
+    if (typeof view !== 'undefined' && view.said && view.said.act && view.said.until > Date.now()) return true;
+    return !!box && Array.from(box.children).some((x) => !x._gone && x._act && x._act.label === 'Undo');
+  }
+  function undoSpots() {
+    if (!FEEL) return;
+    if (window.SR_undoChanged) window.SR_undoChanged();
+    if (typeof footUndo === 'function') footUndo();
+    if (typeof phoneDay === 'function' && phoneDay() && typeof renderPhoneBar === 'function') renderPhoneBar();
   }
   /* V11-2: the trouble an error toast named has cleared (the save went through, the calendar came back): it goes */
   function errorDone(key) {
@@ -4845,7 +4892,7 @@
     const b = button('', 'c-smore-btn', () => { got.glMenu = on ? null : g.id; renderSide(); requestAnimationFrame(() => { const f = $('side').querySelector(got.glMenu ? '.c-menu-i' : '.c-smore-btn'); if (f) f.focus({ preventScroll: true }); }); });
     b.appendChild(el('span', 'c-smore-dot'));
     b.querySelector('.c-smore-dot').appendChild(icon('more', 9, '#FFFFFF'));
-    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.dataset.fk = 'gl-menu';
+    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.setAttribute('aria-haspopup', 'menu'); b.dataset.fk = 'gl-menu';
     box.replaceChildren(b);
     if (!on) return;
     const menu = el('div', 'c-smenu');
@@ -4866,11 +4913,39 @@
     const past = M.goalSessions(state, g.id).some((s) => !s.add.skipped && startedBy(s.date, s.add.start));
     rm.appendChild(el('small', '', 'Sessions still to come leave the board.' + (past ? ' Past ones stay.' : '')));
     rm.dataset.fk = 'confirm-rm-goal-' + g.id;
-    menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); got.glMenu = null; renderSide(); requestAnimationFrame(() => { const f = $('side').querySelector('.c-smore-btn'); if (f) f.focus({ preventScroll: true }); }); } });
     box.appendChild(menu);
-    /* a tap anywhere else puts it away */
-    const outside = (e) => { if (menu.contains(e.target) || b.contains(e.target)) return; document.removeEventListener('pointerdown', outside, true); if (got.glMenu === g.id) { got.glMenu = null; if (view.sel && view.sel.type === 'goal' && view.sel.id === g.id) renderSide(); } };
-    setTimeout(() => { if (menu.isConnected) document.addEventListener('pointerdown', outside, true); }, 0);
+    menuWire(menu, b, () => { if (got.glMenu !== g.id) return; got.glMenu = null; if (view.sel && view.sel.type === 'goal' && view.sel.id === g.id) renderSide(); });
+  }
+  /* V11-3 (the code review): a More menu keeps the menu's keys. Its button says it opens a menu (aria-haspopup,
+     aria-controls), the arrow keys move between its items (Home and End to the first and last, wrapping round), Tab
+     or Escape puts it away (Escape gives focus back to the button), a rule is a separator, and the tap anywhere else
+     that puts it away is one listener at a time, gone as soon as the menu is (menuOutside) */
+  let menuOutside = null;
+  function menuWire(menu, b, close) {
+    menu.id = menu.id || 'c-smenu-' + (b.dataset.fk || 'more');
+    b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-controls', menu.id);
+    menu.setAttribute('aria-label', 'More');
+    menu.querySelectorAll('hr').forEach((x) => x.setAttribute('role', 'separator'));
+    const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]')).filter((x) => !x.disabled);
+    items().forEach((x, i) => { x.tabIndex = i ? -1 : 0; });
+    const go = (x) => { if (!x) return; items().forEach((y) => { y.tabIndex = y === x ? 0 : -1; }); x.focus({ preventScroll: true }); };
+    const back = () => requestAnimationFrame(() => { const f = $('side').querySelector('.c-smore-btn'); if (f) f.focus({ preventScroll: true }); });
+    menu.addEventListener('keydown', (e) => {
+      const all = items(), i = all.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); go(all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length]); return; }
+      if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); e.stopPropagation(); go(all[e.key === 'Home' ? 0 : all.length - 1]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); back(); return; }
+      if (e.key === 'Tab') close();
+    });
+    if (menuOutside) document.removeEventListener('pointerdown', menuOutside, true);
+    const outside = (e) => {
+      if (menu.isConnected && (menu.contains(e.target) || b.contains(e.target))) return;
+      document.removeEventListener('pointerdown', outside, true);
+      if (menuOutside === outside) menuOutside = null;
+      if (menu.isConnected) close();
+    };
+    menuOutside = outside;
+    setTimeout(() => { if (menu.isConnected && menuOutside === outside) document.addEventListener('pointerdown', outside, true); }, 0);
   }
   /* the parts, a page inside the goal's sheet: each checked off when it's done (the plan takes its hours off), and
      Change the parts for their names and hours */
@@ -5365,7 +5440,7 @@
   /* == V11-2: Focus, one thing at a time (Russell's pick, Oct 20: the Focus page comes back as a panel over the desk) ==
      focus.js keeps the session (what, how long, when it started, the time paused) and its rules: the lengths end
      before the next locked block, bed, or a time with people, and the last one names it; time running out never marks
-     anything done, only Mark it done does, steps and all. This draws it the way V11 draws a panel, the dark side panel
+     anything done, only Done does, steps and all. This draws it the way V11 draws a panel, the dark side panel
      on the desk and the sheet on a phone, as the countdown is. Pick one thing: the block you're in first, then up to
      three to-dos due soon as bricks in their own colors, then Find another to-do, then an activity in your own words,
      which adds nothing to the list or the week. Then how long, with Start the one gold. While it runs, a bar of
@@ -5524,7 +5599,7 @@
     else { q(s.runningSince ? 'Pause' : 'Resume', () => F.toggle(), 'fc-pause'); q('5 more min', () => F.more(5), 'fc-more5'); }
     p.appendChild(acts);
     if (!s.brk && !up) { const b = button('Stop without finishing', 'c-fc-stop', () => F.clear()); b.dataset.fk = 'fc-stop'; p.appendChild(b); }
-    sheetFoot(p, { gold: [s.brk ? (up ? 'Back to it' : 'End the break') : isTask ? 'Mark it done' : 'Done', () => (s.brk ? F.endBreak() : F.finish(isTask)), 'fc-done'] });
+    sheetFoot(p, { gold: [s.brk ? (up ? 'Back to it' : 'End the break') : 'Done', () => (s.brk ? F.endBreak() : F.finish(isTask)), 'fc-done'] });
     fcEls = { bar, segs, left, until };
     focusTick();
   }
@@ -6087,7 +6162,7 @@
     const b = button('', 'c-smore-btn', () => { got.cdMenu = on ? null : id; renderSide(); requestAnimationFrame(() => { const f = $('side').querySelector(got.cdMenu ? '.c-menu-i' : '.c-smore-btn'); if (f) f.focus({ preventScroll: true }); }); });
     b.appendChild(el('span', 'c-smore-dot'));
     b.querySelector('.c-smore-dot').appendChild(icon('more', 9, '#FFFFFF'));
-    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.dataset.fk = 'cd-menu';
+    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.setAttribute('aria-haspopup', 'menu'); b.dataset.fk = 'cd-menu';
     box.replaceChildren(b);
     if (!on) return;
     const menu = el('div', 'c-smenu');
@@ -6122,10 +6197,8 @@
       const rm = item(armed ? 'Tap again to remove it' : 'Remove the goal', 'x', arm(() => removeGoal(g)), 'bad');
       rm.dataset.fk = 'confirm-' + armKey;
     }
-    menu.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); got.cdMenu = null; renderSide(); requestAnimationFrame(() => { const f = $('side').querySelector('.c-smore-btn'); if (f) f.focus({ preventScroll: true }); }); } });
     box.appendChild(menu);
-    const outside = (ev) => { if (menu.contains(ev.target) || b.contains(ev.target)) return; document.removeEventListener('pointerdown', outside, true); if (got.cdMenu === id) { got.cdMenu = null; if (view.sel && view.sel.type === 'countdown') renderSide(); } };
-    setTimeout(() => { if (menu.isConnected) document.addEventListener('pointerdown', outside, true); }, 0);
+    menuWire(menu, b, () => { if (got.cdMenu !== id) return; got.cdMenu = null; if (view.sel && view.sel.type === 'countdown') renderSide(); });
   }
   /* the panel or sheet a countdown opened (its date's own panel, its goal's plan) has Back to it */
   function cdBackFor(sel) {
@@ -9715,7 +9788,8 @@
     /* V11: on a phone the sheet falls back down the way it came (a drag down already took it there) */
     if (!sel) { if (sideMoves && !sheetDropped) { if (phoneSheet()) ghostOut(side, { transform: 'translateY(100%)' }, 200); else ghostOut(side, { opacity: 0, transform: 'translateX(10px)' }, 140); } side.hidden = true; sideShown = ''; return; }
     const key = selKey(sel), same = key === sideShown;
-    const keepScroll = same ? side.scrollTop : 0;
+    /* (V11-3: less the room a toast had, which the redraw makes again: toastRoom) */
+    const room0 = side.querySelector('.c-stoast'), keepScroll = same ? Math.max(0, side.scrollTop - (room0 ? room0.offsetHeight : 0)) : 0;
     let ok = true;
     sheetChrome();
     /* V11: words typed in one panel stay with it; a different panel starts empty, never with them */
@@ -9735,6 +9809,7 @@
       if (h && !typing && !inn.querySelector('[data-autofocus]')) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
     }
     sideFade();
+    sideGoldSoon();
     /* V11 (the phone's sheet): a toast showing stands over the footer as it is now, not as it was (a redraw can make
        the footer taller) */
     if (phoneSheet() && Array.from($('toasts').children).some((x) => !x._gone)) phoneToasts();
@@ -10351,7 +10426,7 @@
       const lab = el('label', 'list-row');
       const tk = el('input', 'tick'); tk.type = 'checkbox'; tk.checked = !!doneNow;
       tk.addEventListener('change', () => { Snd.init(); setDone(t, src.type === 'step' ? src.id : null, tk.checked); });
-      lab.append(tk, el('span', 'grow', tk.checked ? 'Done' : 'Mark it done'));
+      lab.append(tk, el('span', 'grow', 'Done'));
       p.appendChild(lab);
     } else if (src.type !== 'idea') {
       field(p, 'Name', textInput(a.name, (v) => { if (v) commit(() => { a.name = v; }); }));
@@ -10414,7 +10489,7 @@
   /* V11 (the to-do's sheet, docs/PHONE-REDESIGN.md, 6 I): a step's own sheet, opened from its block. Its name and one
      line of facts (which step, its to-do, when, how long); Open the to-do and Move it as rows (Move it opens the day,
      the start, and the length in place); and the footer says where Didn't get to it moves it, before the tap, beside
-     Mark it done. Either answer is fine, so neither is gold; a step under way in its first ten minutes offers Start */
+     Done. Either answer is fine, so neither is gold; a step under way in its first ten minutes offers Start */
   function stepSheet(p, date, b, a) {
     const src = b.src || {}, t = taskById(src.task), steps = t.steps || [];
     const s = steps.find((x) => x.id === src.id) || { id: src.id, name: a.name, dur: a.dur };
@@ -10474,8 +10549,8 @@
       if (st <= nowMin && nowMin < end && nowMin - st < 10 && window.SR_focusBlock) {
         const w = el('span', ''); w.append(el('b', '', 'Now:'), ' ' + s.name + ', ' + M.dur(a.dur) + '.');
         foot = { words: w, quiet: ['Didn’t get to it', () => didntGetTo(b), 'st-didnt'], gold: ['Start', () => { window.SR_focusBlock({ name: s.name, until: end, left: Math.max(1, end - nowMin) }); if (view.phone) closeSel(); }, 'st-start'] };
-      } else foot = { line: words, two: [['Didn’t get to it', () => didntGetTo(b), 'st-didnt'], ['Mark it done', () => setDone(t, s.id, true), 'st-done']] };
-    } else foot = { line: 'Starts ' + tsAt(date, a.start).replace(/^(Today|Tomorrow) /, (x, d) => d.toLowerCase() + ' at ').replace(/^([A-Z][a-z]{2}) /, '$1 at ') + '.', quiet: ['Mark it done', () => setDone(t, s.id, true), 'st-done'] };
+      } else foot = { line: words, two: [['Didn’t get to it', () => didntGetTo(b), 'st-didnt'], ['Done', () => setDone(t, s.id, true), 'st-done']] };
+    } else foot = { line: 'Starts ' + tsAt(date, a.start).replace(/^(Today|Tomorrow) /, (x, d) => d.toLowerCase() + ' at ').replace(/^([A-Z][a-z]{2}) /, '$1 at ') + '.', quiet: ['Done', () => setDone(t, s.id, true), 'st-done'] };
     /* V11-2: Didn't get to it asked about the person's own time; the answer is the next move (ownStepAsk) */
     const ask = view.got.ownAsk && view.got.ownAsk.add === a.id && Date.now() - view.got.ownAsk.at < 5 * 60000 && !s.done ? view.got.ownAsk : null;
     if (ask) foot = { line: ownAskWords(ask), quiet: [ask.open ? 'Find another day' : 'Leave it', () => { view.got.ownAsk = null; if (ask.open) didntGetTo(b, false, { asked: true }); else renderSide(); }, 'st-own-no'], gold: ['Use it', () => { view.got.ownAsk = null; didntGetTo(b, false, { asked: true, own: true }); }, 'st-own-yes'] };
@@ -11058,7 +11133,7 @@
      (msgSend). Edit turns the bubble into the box itself, the caret at its end, with quick versions under it as pills
      when the model has them (Shorter, Warmer, Ask about a day), Back to the suggestion once the words differ from it,
      the gold Text {name} with what's in the box, and Done, which keeps the words on the to-do and goes back to the
-     bubble. Once Text was tapped, the card asks whether it went, and Mark it done is the gold. The countdown's sheet
+     bubble. Once Text was tapped, the card asks whether it went, and Done is the gold. The countdown's sheet
      can show the same card (msgCard). */
   function msgOf(t) {
     if (!t || !t.msg) return null;
@@ -11144,7 +11219,7 @@
       if (t.done) return box;
       if (sent) box.appendChild(el('p', 'c-msg-sent', 'Sent it?'));
       const row = el('div', 'c-msg-row');
-      if (sent) row.append(fkd(button('Mark it done', 'go c-msg-go', () => { view.got.texted = null; setDone(t, null, true); }), 'done'), fkd(button('Text again', 'small c-msg-q', () => msgText(t)), 'again'));
+      if (sent) row.append(fkd(button('Done', 'go c-msg-go', () => { view.got.texted = null; setDone(t, null, true); }), 'done'), fkd(button('Text again', 'small c-msg-q', () => msgText(t)), 'again'));
       else row.append(fkd(button(textWord, 'go c-msg-go', () => msgText(t)), 'text'), fkd(button('Edit', 'small c-msg-q', edit), 'edit'));
       box.appendChild(row);
       return box;
@@ -11236,7 +11311,7 @@
   function tsNext(t, c) {
     const steps = c.steps, open = steps.filter((s) => !s.done);
     if (t.done) return { foot: { line: t.skipped ? 'Skipped this time.' : 'Done.', quiet: [t.skipped ? 'Bring it back' : 'Mark not done', () => { const sk = t.skipped; setDone(t, null, false); toast(t.name + ' is back on your list.', '', undoSay(t.name + (sk ? ' is skipped again.' : ' is done again.'))); }, 'td-done'] } };
-    if (steps.length && !open.length) return { foot: { line: 'All ' + plural(steps.length, 'step', 'steps') + ' done.', gold: ['Mark it done', () => setDone(t, null, true), 'td-done'] } };
+    if (steps.length && !open.length) return { foot: { line: 'All ' + plural(steps.length, 'step', 'steps') + ' done.', gold: ['Done', () => setDone(t, null, true), 'td-done'] } };
     /* a step's time went by: check the ones that happened, and the rest move ahead */
     if (c.missed.length) {
       const n = c.missed.length, cap = (t.spread && t.spread.cap) || M.spreadCap(t.name);
@@ -11253,7 +11328,7 @@
         const left = Math.max(1, end - nowMin), b = { add: c.now.add.id, src: c.now.add.src }, early = nowMin - st < 10;
         const words = el('span', ''); words.append(el('b', '', 'Now:'), ' ' + s.name + ', ' + M.dur(early ? s.dur || c.now.add.dur : left) + (early ? '.' : ' left.'));
         const start = () => { if (window.SR_focusBlock) window.SR_focusBlock({ name: s.name, until: end, left }); if (view.phone) closeSel(); };
-        return { foot: { words, quiet: ['Didn’t get to it', () => didntGetTo(b), 'td-didnt'], gold: early && window.SR_focusBlock ? ['Start', start, 'td-start'] : ['Mark it done', () => setDone(t, s.id, true), 'td-stepdone'] } };
+        return { foot: { words, quiet: ['Didn’t get to it', () => didntGetTo(b), 'td-didnt'], gold: early && window.SR_focusBlock ? ['Start', start, 'td-start'] : ['Done', () => setDone(t, s.id, true), 'td-stepdone'] } };
       }
     }
     /* steps without a time: the plan, proposed, one tap to place it; or what's in the way when it doesn't fit */
@@ -11342,7 +11417,7 @@
     const on = view.got.tsMenu === t.id;
     b.appendChild(el('span', 'c-smore-dot'));
     b.querySelector('.c-smore-dot').appendChild(icon('more', 9, '#FFFFFF'));
-    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.dataset.fk = 'td-more';
+    b.setAttribute('aria-label', 'More'); b.setAttribute('aria-expanded', String(on)); b.setAttribute('aria-haspopup', 'menu'); b.dataset.fk = 'td-more';
     box.replaceChildren(b);
     if (!on) return;
     const menu = el('div', 'c-smenu');
@@ -11351,7 +11426,7 @@
     if (tsGoalFits(t)) item('Make it a goal', 'star', () => tsMakeGoal(t));
     if (!t.done && !c.whole[0]) item('Give it one time', 'calendar', () => openSel({ type: 'place', spec: { kind: 'task', id: t.id } }));
     if (!t.done && t.repeat) item('Skip this time', 'later', () => { let next = null; commit(() => { next = M.completeTask(state, t.id, today, true); }); Snd.slide(); toast(t.name + ' skipped.' + (next ? ' The next one is due ' + tdDay(next.due) + '.' : ''), '', { label: 'Undo', fn: undo }); });
-    item(t.done ? 'Mark not done' : 'Mark it done', 'check', () => setDone(t, null, !t.done));
+    item(t.done ? 'Mark not done' : 'Done', 'check', () => setDone(t, null, !t.done));
     const rep = TD_REPEATS.find((r) => r.id === (t.repeat || null)) || TD_REPEATS[0];
     const det = item('Details', 'sliders', () => tsGo(t, 'details'));
     det.appendChild(el('small', '', rep.name + ' · ' + groupName(t.group)));
@@ -11365,11 +11440,8 @@
       closeSel(); Snd.slide(); toast(t.name + ' is off your list' + (pl.length ? ' and off the week' : '') + '.', '', { label: 'Undo', fn: undo });
     }, 'bad');
     del.dataset.fk = 'confirm-del-task-' + t.id;
-    menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); view.got.tsMenu = null; renderSide(); requestAnimationFrame(() => { const f = $('side').querySelector('.c-smore-btn'); if (f) f.focus({ preventScroll: true }); }); } });
     box.appendChild(menu);
-    /* a tap anywhere else puts it away */
-    const outside = (e) => { if (menu.contains(e.target) || b.contains(e.target)) return; document.removeEventListener('pointerdown', outside, true); if (view.got.tsMenu === t.id) { view.got.tsMenu = null; if (tdShown(t.id)) renderSide(); } };
-    setTimeout(() => { if (menu.isConnected) document.addEventListener('pointerdown', outside, true); }, 0);
+    menuWire(menu, b, () => { if (view.got.tsMenu !== t.id) return; view.got.tsMenu = null; if (tdShown(t.id)) renderSide(); });
   }
   /* the to-do's own page */
   function tsTodo(p, t) {
@@ -13153,7 +13225,7 @@
     }
     /* V11: a to-do or a step is already on the list; what this panel does is give it a time */
     /* (V11-2: a whole to-do from an earlier day is given a new day) */
-    kicker(p, FEEL && spec.kind === 'task' && pastDue(dueOf) && !dueOf.repeat ? 'Give it a new day' : FEEL && isTodoSpec(spec) ? 'Give it a time' : spec.kind === 'task' ? 'Add a to do' : spec.kind === 'step' ? 'Add a step' : spec.kind === 'idea' && FEEL ? (ideaWith(base.src) ? 'Time with ' + ideaWith(base.src) : 'Time together') : spec.kind === 'idea' ? (partner() ? 'Add something for you and ' + partner() : 'Add something to do together') : 'Add a block');
+    kicker(p, FEEL && spec.kind === 'task' && pastDue(dueOf) && !dueOf.repeat ? 'Give it a new day' : FEEL && isTodoSpec(spec) ? 'Give it a time' : spec.kind === 'task' ? (FEEL ? 'Add a to-do' : 'Add a to do') : spec.kind === 'step' ? 'Add a step' : spec.kind === 'idea' && FEEL ? (ideaWith(base.src) ? 'Time with ' + ideaWith(base.src) : 'Time together') : spec.kind === 'idea' ? (partner() ? 'Add something for you and ' + partner() : 'Add something to do together') : 'Add a block');
     const hero = preview(p, { label: add.name, cat: add.cat, icon: add.icon }, { time: '', heading: true, hero: true });
     const heroTime = hero.querySelector('.bprev-time');
     const roomy = (x) => M.firstFit(state, x, sel.dur, x === today ? Math.max(day(x).wake, Math.ceil((nowMin + 10) / 15) * 15) : day(x).wake) != null;
@@ -18233,12 +18305,13 @@
     const inp = $('quick-in');
     inp.value = prefill || '';
     renderQuick();
+    if (FEEL) addGoldMoved();
     setTimeout(() => inp.focus(), 0);
     Snd.pick();
     /* (V11-3: the board steps aside for it, layoutInsets) */
     if (FEEL && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => layoutInsets());
   }
-  function closeQuick() { $('quick').hidden = true; quick.p = quick.plan = null; quick.cat = quick.catFor = null; if (FEEL && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => layoutInsets()); }
+  function closeQuick() { $('quick').hidden = true; quick.p = quick.plan = null; quick.cat = quick.catFor = null; if (FEEL && typeof addGoldMoved === 'function') addGoldMoved(); if (FEEL && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => layoutInsets()); }
   /* What adding a parsed block would do: where it lands and what moves. */
   /* The closest start to the one asked for, a quarter hour at a time either way: first where it
      moves nothing (open time, or open blocks it can take from), then anywhere it fits. */
@@ -18623,7 +18696,7 @@
     return true;
   }
   $('quick-in').addEventListener('paste', (e) => { if (pastedList(e)) closeQuick(); });
-  $('quick-in').addEventListener('input', renderQuick);
+  $('quick-in').addEventListener('input', () => { renderQuick(); if (FEEL) addGoldMoved(); });
   $('quick-in').addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Enter' && e.altKey && quick.p && quick.p.kind === 'block') { e.preventDefault(); quickCommit(true); }
@@ -19073,18 +19146,43 @@
      chip go quiet, in the same place, and come back when it closes (sideGoldWatch) */
   function panelGold() {
     const side = $('side');
-    if (!FEEL || !side || side.hidden) return false;
+    if (!FEEL) return false;
+    if (typeof addGold === 'function' && addGold()) return true;
+    if (!side || side.hidden) return false;
     return Array.from(side.querySelectorAll('.go, .small.primary')).some((b) => !b.disabled && b.offsetParent !== null);
   }
+  /* V11-3 (one gold a screen, the design review): Add in plain words with a gold way on (Make it 2 h tonight, Add to
+     today) holds the screen's gold while it shows, on the desk (#quick) and the phone (its add line's preview), so the
+     band, the Now card, the reset, and the sample's own door go quiet beside it (body.c-add-gold) */
+  function addGold() {
+    if (!FEEL) return false;
+    const q = $('quick'), pv = document.querySelector('#todayview .td-preview');
+    const on = (box) => !!box && !box.hidden && Array.from(box.querySelectorAll('.go, .small.primary')).some((b) => !b.disabled && b.offsetParent !== null);
+    return on(q) || (!!view.phone && on(pv));
+  }
+  /* the add's gold came or went: the band, the chip, and the phone's Today wear the gold where it is now */
+  let addGoldWas = false;
+  function addGoldMoved() {
+    const g = addGold();
+    document.body.classList.toggle('c-add-gold', g);
+    if (g === addGoldWas) return;
+    addGoldWas = g;
+    if (inToday()) renderBand();
+    if (window.SR_goldChanged) window.SR_goldChanged();
+    if (view.phone) renderToday();
+  }
   /* (a panel opening, closing, or drawn again redraws the band and the chip, once a frame: the band only when what it
-     says changed, since its sig holds the gold) */
+     says changed, since its sig holds the gold. V11-3, the code review: the watch is on the panel's hidden alone, and
+     renderSide asks once it has drawn the panel (sideGoldSoon), so a panel's own ticking words and every small edit in
+     it no longer redraw the band) */
   let sideGoldRaf = 0;
+  function sideGoldSoon() {
+    if (!FEEL || sideGoldRaf) return;
+    sideGoldRaf = requestAnimationFrame(() => { sideGoldRaf = 0; if (!ready) return; if (inToday()) renderBand(); if (window.SR_goldChanged) window.SR_goldChanged(); });
+  }
   function sideGoldWatch() {
     if (!FEEL || typeof MutationObserver !== 'function' || !$('side')) return;
-    new MutationObserver(() => {
-      if (sideGoldRaf) return;
-      sideGoldRaf = requestAnimationFrame(() => { sideGoldRaf = 0; if (!ready) return; if (inToday()) renderBand(); if (window.SR_goldChanged) window.SR_goldChanged(); });
-    }).observe($('side'), { attributes: true, attributeFilter: ['hidden'], childList: true, subtree: true });
+    new MutationObserver(sideGoldSoon).observe($('side'), { attributes: true, attributeFilter: ['hidden'] });
   }
   /* the band is drawn again only when what it says changes: the control in focus, and words typed in its box, come
      through (V11-2: a tick on the list draws it again under the finger) */
@@ -19161,6 +19259,8 @@
         : lead ? count(lead) : eve || !info.next ? keptLine() + tomorrowLine() : count(info.next, true);
       if (saidSig == null) saidSig = said;
     }
+    /* (V11-3: a time or a length never breaks across two lines, and never leaves "at" or "in" behind it: "at 6:45 pm") */
+    if (FEEL) said = String(said || '').replace(/(\d) (am|pm|min|h)\b/g, '$1\u00a0$2').replace(/ (at|in) (\d)/g, ' $1\u00a0$2');
     const name = info.kind === 'sleep' ? 'Sleep' : info.kind === 'open' ? (back ? (FEEL && view.back.gained != null ? leftText(view.back.gained) + ' back' : 'You have ' + leftText(info.left) + ' back') : 'Open') : blockName(b);
     const leftTxt = info.kind === 'block' ? leftText(info.left) + ' left' : info.kind === 'sleep' || back ? '' : leftText(info.left);
     const night = info.kind === 'sleep' ? nightSpan(info) : null;
@@ -19383,7 +19483,8 @@
       x.type = 'button';
       x.style.setProperty('--bg', c.base); x.style.setProperty('--ink', c.ink);
       ideaMark(x, p.icon || 'star', c, g);
-      x.appendChild(el('span', '', p.name));
+      /* (V11-3, one rule for Start in open time: the gold one says Start, its name, and how long, as the phone's Now card does) */
+      x.appendChild(el('span', '', g ? 'Start: ' + p.name + ', ' + keepUnit(M.dur(p.dur)) : p.name));
       x.addEventListener('click', (e) => { e.stopPropagation(); Snd.init(); fillWith(p, openStart(FEEL ? bandInfo() : nowNow())); });
       hint(x, () => p.name + ', ' + M.span(at, at + p.dur));
       acts.appendChild(x);
@@ -19392,7 +19493,9 @@
       const x = bandBtn(focusWord(), 'star', () => { Snd.pick(); window.SRFocus.open(); });
       x.dataset.fk = 'band-focus';
       hint(x, () => { const s = window.SRFocus.session; return s && !s.done ? 'Tap to go back to ' + s.name + '.' : 'Tap to pick one thing and how long. Nothing on your week moves.'; });
-      pushAct(x);
+      /* (V11-3, the design review: with no other button under the bar it rides at the end of the top row, instead of
+         making a row of buttons for itself, so the band is no taller than V11's; beside other buttons it joins them) */
+      if (!acts.children.length) { x.classList.add('band-top-fc'); top.appendChild(x); } else pushAct(x);
     }
     line.hidden = FEEL && !said && !acts.children.length;
     foot.append(line, acts);
@@ -19439,7 +19542,9 @@
      changes, the button goes (the strip's sig reads it) instead of taking back the newer change */
   function sayMoment(text, undoable, what) {
     view.said = { text, undoable, act: undoable && FEEL ? undoAct(what || undoWords(text), text) : null, until: Date.now() + (undoable ? 6200 : 4200) };
-    setTimeout(() => { if (view.said && view.said.until <= Date.now() + 50) { view.said = null; if (renderMoment()) layoutInsets(); } }, undoable ? 6300 : 4300);
+    /* (V11-3: while the strip says Undo, the bottom bar's steps aside: toastUndoUp) */
+    if (FEEL && view.said.act) undoSpots();
+    setTimeout(() => { if (view.said && view.said.until <= Date.now() + 50) { const had = !!view.said.act; view.said = null; if (renderMoment()) layoutInsets(); if (FEEL && had) undoSpots(); } }, undoable ? 6300 : 4300);
   }
   /* every question can be put away: an x at the end of the strip, named for what it does */
   function dismiss(label, fn) {
@@ -19584,7 +19689,7 @@
 
   /* A heads-up: Text {who} hands the words to Messages, never from the app (the message step's own msgText for a
      heads-up that's a to-do, its words the person's own once they kept some; msgSend with the suggestion for one that
-     isn't yet), and then asks whether it went (Mark it done, Text again); Later this week; and the x, Don't ask about
+     isn't yet), and then asks whether it went (Done, Text again); Later this week; and the x, Don't ask about
      {who} */
   const huTask = (m) => (m && m.task ? taskById(m.task) || null : null);
   function huText(m) { const t = huTask(m), mo = t && t.msg ? msgOf(t) : null; return (mo && mo.text) || m.text || ''; }
@@ -19805,7 +19910,7 @@
     const sent = huSent(m);
     const card = el('section', 'td-card c-ph-ask c-big-ask c-hu-ask');
     card.appendChild(el('h2', '', sent ? 'Sent it to ' + m.who + '?' : m.words));
-    const go = sent ? button('Mark it done', gold ? 'go c-ph-g' : 'small c-ph-decide', () => { Snd.init(); huDone(m); renderToday(); })
+    const go = sent ? button('Done', gold ? 'go c-ph-g' : 'small c-ph-decide', () => { Snd.init(); huDone(m); renderToday(); })
       : button('Text ' + m.who, gold ? 'go c-ph-g' : 'small c-ph-decide', () => { huSend(m); renderToday(); });
     card.appendChild(key(go, sent ? 'hu-done' : 'hu-text'));
     const later = el('div', 'td-acts c-ph-later'), l = huLater();
@@ -19894,11 +19999,11 @@
       box.hidden = false;
     } else if (m.kind === 'headsup') {
       /* V11-2: Your aunt would love some notice about LA. Text her this week? Text Aunt Lisa (gold), Later this week (it
-         asks again three days on, and says which day), and the x. Once Text was tapped: Sent it? Mark it done */
+         asks again three days on, and says which day), and the x. Once Text was tapped: Sent it? Done */
       const l = huLater();
       if (big.sent) {
         text.appendChild(el('b', '', 'Sent it to ' + m.who + '?'));
-        acts.appendChild(button('Mark it done', big.gold ? 'moment-go' : 'moment-kind', () => huDone(m)));
+        acts.appendChild(button('Done', big.gold ? 'moment-go' : 'moment-kind', () => huDone(m)));
         acts.appendChild(button('Text again', 'moment-later', () => huSend(m)));
       } else {
         text.appendChild(el('b', '', m.words));
@@ -19922,19 +20027,13 @@
     } else {
       const wdName = M.DAY_LONG[M.weekday(today)];
       text.appendChild(el('b', '', 'What kind of ' + wdName + '?'));
-      /* Focus works inside Work: a day without work to plan offers Workout in its place */
-      const plannable = day(today).blocks.some((b) => b.cat === 'work' && b.soft);
-      ['usual', plannable ? 'focus' : 'workout', 'rest'].map((id) => D.PRESETS.find((p) => p.id === id)).filter(Boolean).forEach((p) => {
+      kindChoices().forEach((p) => {
         const x = button('', 'moment-kind', () => {
-          markSeen({ kind: true });
-          const quiet = noteKind(p.usual ? 'usual' : 'other');
-          if (p.usual && quiet) { view.said = { text: 'Your usual ' + wdName + '. That’s three in a row, so it won’t ask on weekdays.', label: 'Keep asking', fn: () => { setKindAsk({ keep: true, off: false }); Snd.pick(); render(); }, until: Date.now() + 8200 }; setTimeout(() => { if (view.said && view.said.until <= Date.now() + 50) { view.said = null; if (renderMoment()) layoutInsets(); } }, 8300); Snd.pick(); render(); return; }
-          if (p.usual) { sayMoment('Your usual ' + wdName + '.'); Snd.pick(); render(); return; }
-          const r = commit(() => M.applyPreset(state, today, p, state.palette, { today, nowMin }));
-          if (!r) return;
-          Snd.good();
-          const missed = (p.items || []).length - (r.placed || 0);
-          sayMoment('A ' + p.name.toLowerCase() + ' ' + wdName + '.' + (missed > 0 ? ' ' + plural(missed, 'block didn’t fit.', 'blocks didn’t fit.') : ''), true, wdName + ' is as it was.');
+          const a = kindPick(p);
+          if (!a) return;
+          if (a.keep) { view.said = { text: a.text, label: 'Keep asking', fn: () => { setKindAsk({ keep: true, off: false }); Snd.pick(); render(); }, until: Date.now() + 8200 }; setTimeout(() => { if (view.said && view.said.until <= Date.now() + 50) { view.said = null; if (renderMoment()) layoutInsets(); } }, 8300); render(); return; }
+          if (!a.undo) { sayMoment(a.text); render(); return; }
+          sayMoment(a.text, true, a.undo);
           render();
         });
         x.append(icon(p.icon || 'star', 8, UI.ink), el('span', '', p.name));
@@ -19955,6 +20054,25 @@
       box.hidden = false;
     }
     return was !== box.hidden;
+  }
+  /* V11-3 (the design review): the morning's kind of day is asked the same on the desk's strip and the phone's Today.
+     The three it offers (Focus works inside Work: a day without work to plan offers Workout in its place), and what a
+     pick does: Your usual changes nothing (three in a row and weekdays go quiet: keep), any other kind goes on the day in
+     one change with its Undo words (undo) */
+  function kindChoices() {
+    const plannable = day(today).blocks.some((b) => b.cat === 'work' && b.soft);
+    return ['usual', plannable ? 'focus' : 'workout', 'rest'].map((id) => D.PRESETS.find((p) => p.id === id)).filter(Boolean);
+  }
+  function kindPick(p) {
+    const wdName = M.DAY_LONG[M.weekday(today)];
+    markSeen({ kind: true });
+    const quiet = noteKind(p.usual ? 'usual' : 'other');
+    if (p.usual) { Snd.pick(); return quiet ? { text: 'Your usual ' + wdName + '. That’s three in a row, so it won’t ask on weekdays.', keep: true } : { text: 'Your usual ' + wdName + '.' }; }
+    const r = commit(() => M.applyPreset(state, today, p, state.palette, { today, nowMin }));
+    if (!r) return null;
+    Snd.good();
+    const missed = (p.items || []).length - (r.placed || 0);
+    return { text: 'A ' + p.name.toLowerCase() + ' ' + wdName + '.' + (missed > 0 ? ' ' + plural(missed, 'block didn’t fit.', 'blocks didn’t fit.') : ''), undo: wdName + ' is as it was.' };
   }
   /* Add owns the bottom right corner in Today; on Sunday afternoon the Sunday Reset stacks above it */
   function renderFab() {
@@ -20592,7 +20710,7 @@
       const yr = p.y !== M.parts(today).y ? ' ' + p.y : '', tight = away && (u.undo || u.redo) && (M.MONTH_LONG[p.m - 1] + yr).length > 8;
       phoneBar.title.replaceChildren(document.createTextNode((tight ? M.MONTH_SHORT : M.MONTH_LONG)[p.m - 1] + yr), el('span', 'sr-only', ', ' + M.dateText(view.focus, 'long')));
       phoneBar.back.hidden = view.focus === today;
-      phoneBar.un.hidden = !u.undo;
+      phoneBar.un.hidden = !u.undo || toastUndoUp();
       phoneBar.re.hidden = !u.redo || (away && u.undo);
       phoneBar.un.setAttribute('aria-label', said(u.undoSaid) ? 'Undo: ' + said(u.undoSaid) : 'Undo the last change');
       phoneBar.re.setAttribute('aria-label', said(u.redoSaid) ? 'Redo: ' + said(u.redoSaid) : 'Redo');
@@ -20646,7 +20764,7 @@
     keepFocus(main, () => {
     main.replaceChildren();
     /* V11 (docs/PHONE-REDESIGN.md, 8): the phone's Today as a glance (phoneToday), then the notes */
-    if (FEEL) { phoneToday(main, keyControl, off, date, d); todayNotes(main, keyControl, off); return; }
+    if (FEEL) { addGoldWas = addGold(); document.body.classList.toggle('c-add-gold', addGoldWas); phoneToday(main, keyControl, off, date, d); todayNotes(main, keyControl, off); footUndo(); return; }
     const head = el('header', 'td-head');
     const top = el('div', 'td-top');
     /* the app's name is the door to Settings here too */
@@ -20933,9 +21051,6 @@
       key(back, 'head-back');
       head.appendChild(back);
     }
-    /* V11-2: the last change's Undo, there until the next change (phoneUndo) */
-    const und = phoneUndo(key, 'head');
-    if (und) head.appendChild(und);
     if (who().sample && !view.preview) head.appendChild(sampleLine('td-sample', 'td-' + encodeURIComponent('sample-setup')));
     /* V11-2 (every dead end gets a next step): the reset, on its day (resetLine) */
     const rl = FEEL && off === 0 && gold ? resetLine(key, gold) : null;
@@ -20991,13 +21106,15 @@
   /* V11-2: the phone's Undo that stays, drawn again once a toast has named what it takes back (noteSaid) */
   function phoneUndoChanged() {
     if (!FEEL || rendering || !ready) return;
-    if (view.phone) renderToday();
+    if (view.phone) footUndo();
     if (phoneDay()) renderPhoneBar();
   }
-  /* V11-2: Undo on the phone that stays. A toast's Undo lasts 10 seconds; this one is a quiet line under the head
-     card's date (and the phone desk's bar) for the last change, naming what it takes back, there until the next change
-     takes its place, with Redo once something was undone. It's the same undo as the desk's bottom bar, its toasts, and
-     the keys (undoInfo, undoLast, redoLast). key(button, focus key) keeps focus through a redraw; where: its keys' stem */
+  /* V11-2: Undo on the phone that stays. A toast's Undo lasts 10 seconds; this one is a quiet line for the last change,
+     naming what it takes back, there until the next change takes its place, with Redo once something was undone. It's
+     the same undo as the desk's bottom bar, its toasts, and the keys (undoInfo, undoLast, redoLast). key(button, focus
+     key) keeps focus through a redraw; where: its keys' stem. V11-3: it lives in the phone's foot, over the add line
+     (footUndo), never in the head card, whose lines carry the day's facts, and it steps aside while a toast offers
+     the same Undo (toastUndoUp), so a screen shows one */
   function phoneUndo(key, where) {
     if (!FEEL) return null;
     const u = undoInfo();
@@ -21061,6 +21178,8 @@
     /* the sample week's own door, Set up my week in the head, is the one gold on its first screen (the first-visit
        walk), so everything here stays quiet */
     if (who().sample && !view.preview) { out.now.forEach((x) => { x[3] = false; }); out.q = false; }
+    /* (V11-3: and while Add in plain words shows a gold way on, that's the screen's one gold: addGold) */
+    if (typeof addGold === 'function' && addGold()) { out.now.forEach((x) => { x[3] = false; }); out.q = false; }
     return out;
   }
   /* the Now card: what you're in, big, worn down to now, with what's next under it (nowStrip, the band's own), and its
@@ -21094,10 +21213,43 @@
       if (yd) out.push({ kind: 'yesterday', m: yd });
       if (shortAsk()) out.push({ kind: 'short' });
       if (goalAsks().length || Object.values(view.got.ciSaid || {}).some((s) => s.where === 'today' && Date.now() - s.at < CI_KEEP)) out.push({ kind: 'goal' });
+      /* (V11-3: the morning's kind of day, as the desk asks it: Model.momentFor says when, on this device's answers) */
+      if (FEEL && typeof kindQuiet === 'function' && phoneKindDue()) out.push({ kind: 'kind' });
       const hu = bigMoment('headsup');
       if (hu) out.push({ kind: 'headsup', m: hu });
     }
     return out;
+  }
+  /* V11-3 (the design review): the phone's Today asks the morning's kind of day, as the desk's strip does, when
+     Model.momentFor would ask it there (a weekday morning before 11, not answered or put away today, weekdays not gone
+     quiet). Three kinds as quiet answers (kindChoices, kindPick: no gold, since the kind of day is never the screen's
+     next move), and Not today */
+  function phoneKindDue() {
+    const m = M.momentFor(state, today, nowMin, Object.assign({}, seenToday(), { dinnerNo: true, quietWeekdays: kindQuiet() }), day(today));
+    return !!(m && m.kind === 'kind');
+  }
+  function kindAskCard(main, key) {
+    const wdName = M.DAY_LONG[M.weekday(today)], card = el('section', 'td-card c-ph-kind');
+    card.appendChild(el('h2', '', 'What kind of ' + wdName + '?'));
+    const acts = el('div', 'td-acts c-ph-kinds');
+    acts.setAttribute('role', 'group'); acts.setAttribute('aria-label', 'What kind of ' + wdName);
+    kindChoices().forEach((p) => {
+      const x = button('', 'small quiet c-ph-kindb', () => {
+        Snd.init();
+        const a = kindPick(p);
+        if (!a) return;
+        if (a.keep) toast(a.text, 'good', { label: 'Keep asking', fn: () => { setKindAsk({ keep: true, off: false }); Snd.pick(); renderToday(); } });
+        else if (a.undo) toast(a.text, 'good', undoAct(a.undo, a.text));
+        else toast(a.text, 'good');
+        renderToday();
+      });
+      x.append(icon(p.icon || 'star', 8, '#FFFFFF'), el('span', '', p.name));
+      x.title = p.line || p.name;
+      acts.appendChild(key(x, 'kind-' + p.id));
+    });
+    acts.appendChild(key(button('Not today', 'small quiet c-ph-kindno', () => { Snd.init(); Snd.slide(); markSeen({ kind: true }); noteKind('x'); toast('Not today.', '', { label: 'Don’t ask on weekdays', fn: () => { setKindAsk({ off: true, keep: false }); Snd.slide(); toast('It won’t ask on weekdays.', '', { label: 'Keep asking', fn: () => { setKindAsk({ off: false, keep: true }); Snd.pick(); renderToday(); } }); renderToday(); } }); renderToday(); }), 'kind-no'));
+    card.appendChild(acts);
+    main.appendChild(card);
   }
   /* one question at a time (5.8): the first, and a quiet line when more wait; the next takes its place once it's
      answered. Dinner asks how, in the dinner sheet: Decide (gold when it holds the gold), Ask again, Not tonight */
@@ -21123,10 +21275,11 @@
     } else if (x.kind === 'short') shortAskCard(main, key);
     else if (x.kind === 'yesterday') yesterdayCard(main, key, gold, x.m);
     else if (x.kind === 'headsup') headsupCard(main, key, gold, x.m);
+    else if (x.kind === 'kind') kindAskCard(main, key);
     else goalAskCard(main, key);
     const card = main.children[before];
     if (card && qs.length > 1) card.appendChild(el('p', 'c-ph-more', qs.length === 2 ? '1 more question' : (qs.length - 1) + ' more questions'));
-    if (card) card.classList.add('c-ph-q1', gold ? 'gold' : 'calm');
+    if (card) card.classList.add('c-ph-q1', gold && x.kind !== 'kind' ? 'gold' : 'calm');
   }
   /* a day's rows: its blocks and the open time between them (half an hour or more), in order; last night's late blocks
      that ran past midnight belong to yesterday */
@@ -21201,7 +21354,7 @@
     if (!rest.length && bed) list.appendChild(bed);
     if (list.children.length) wrap.appendChild(list);
     const opens = el('div', 'c-ph-opens');
-    const open = (words, on, fn, k) => { const b = button('', 'c-ph-open', () => { Snd.pick(); fn(); renderToday(); }); b.append(el('span', '', words), icon(on ? 'up' : 'down', 7, UI.dark || '#2A2118')); b.setAttribute('aria-expanded', String(on)); key(b, k); opens.appendChild(b); };
+    const open = (words, on, fn, k) => { const b = button('', 'c-ph-open', () => { Snd.pick(); fn(); renderToday(); }); b.append(el('span', '', words), icon(on ? 'up' : 'down', 7, FEEL ? '#FFFFFF' : UI.dark || '#2A2118')); b.setAttribute('aria-expanded', String(on)); key(b, k); opens.appendChild(b); };
     if (rest.length) open('Later today: ' + rest.length, !!view.tdRest, () => { view.tdRest = !view.tdRest; }, 'rest-' + date);
     if (earlier.length) open('Earlier today: ' + earlier.length, !!view.tdEarlier, () => { view.tdEarlier = !view.tdEarlier; }, 'earlier-' + date);
     if (opens.children.length) wrap.appendChild(opens);
@@ -21509,6 +21662,18 @@
     card.appendChild(h);
     return card;
   }
+  /* V11-3: the phone's Undo that stays, a row of the foot over the add line (phoneUndo), drawn again whenever what it
+     takes back changes or a toast with its own Undo comes or goes; the page under it keeps room for it (.c-foot-undo) */
+  function footUndo() {
+    const foot = view.phone ? document.querySelector('#todayview .td-foot') : null;
+    if (!FEEL || !foot) return;
+    const was = foot.querySelector('.c-ph-undo'), a = document.activeElement, had = !!(was && a && was.contains(a));
+    const row = toastUndoUp() ? null : phoneUndo(null, 'foot');
+    if (row) { row.classList.add('c-foot-u'); row.querySelectorAll('button').forEach((b, i) => { b.dataset.fk = 'foot-' + i; }); }
+    if (was) { if (row) was.replaceWith(row); else was.remove(); } else if (row) foot.insertBefore(row, foot.querySelector('.td-add'));
+    document.body.classList.toggle('c-foot-undo', !!row);
+    if (had) { const b = row && row.querySelector('[data-fk="' + a.dataset.fk + '"]'); if (b) b.focus({ preventScroll: true }); else { const i = foot.querySelector('.td-add'); if (i) i.focus({ preventScroll: true }); } }
+  }
   /* Add on the phone reads what you typed and shows where it lands first, like the desk does; the
      words stay until it's added. */
   function todayFoot() {
@@ -21561,18 +21726,18 @@
       if (quick.plan && quick.plan.quiet != null) acts.appendChild(button('At ' + M.clock(quick.plan.quiet) + ', nothing moves', 'small quiet', () => { quick.plan = quickPlan(Object.assign({}, p, { date: quick.plan.date, start: quick.plan.quiet }), quick.plan.start); if (quickCommit(false)) { add.value = ''; pv.hidden = true; renderToday(); } }));
       pv.appendChild(acts);
     };
-    add.addEventListener('input', show);
+    add.addEventListener('input', () => { show(); if (FEEL) addGoldMoved(); });
     add.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key !== 'Enter' || !add.value.trim()) return;
       e.preventDefault(); Snd.init();
       /* the first Enter shows where it lands; the second adds it */
-      if (pv.hidden) { show(); return; }
+      if (pv.hidden) { show(); if (FEEL) addGoldMoved(); return; }
       if (quickCommit(false)) { add.value = ''; try { sessionStorage.removeItem('sundayreset.add'); } catch (err) { /* fine */ } pv.hidden = true; renderToday(); }
     });
     const desk = button(noDesk ? 'Open the week' : 'Open the desk', 'small quiet', openPhoneDesk);
     foot.append(pv, add, desk);
-    if (add.value) setTimeout(show, 0);
+    if (add.value) setTimeout(() => { show(); if (FEEL) addGoldMoved(); }, 0);
     return foot;
   }
 
@@ -21884,7 +22049,8 @@
       renderSaveState();
       /* V11-2 (errors that stay): what happened, what to do, and Try again, until it's put away or a save goes
          through (Store.onStatus) */
-      if (FEEL) toast(err && err.what === 'full' ? 'This browser’s storage is full, so your last change didn’t save. Download a backup, then try again.' : 'Your last change didn’t save on this device. Try again, or download a backup.', 'error', { label: 'Try again', fn: () => { Snd.init(); persist(); } }, { key: 'save', also: { label: 'Your data', fn: openData } });
+      /* (V11-3: the button says what the words ask for, Download a backup, and does it) */
+      if (FEEL) toast(err && err.what === 'full' ? 'This browser’s storage is full, so your last change didn’t save. Download a backup, then try again.' : 'Your last change didn’t save on this device. Try again, or download a backup.', 'error', { label: 'Try again', fn: () => { Snd.init(); persist(); } }, { key: 'save', also: { label: 'Download a backup', fn: () => { Snd.init(); downloadBackup(); } } });
       else toast(err && err.what === 'full' ? 'This browser’s storage is full, so that change didn’t save here. Download a backup.' : 'That change didn’t save on this device. Download a backup so nothing is lost.', 'bad', { label: 'Your data', fn: openData });
     };
     Store.onStatus = () => { renderSaveState(); if (FEEL && Store.status === 'saved') errorDone('save'); };
@@ -22053,7 +22219,7 @@
     dueWords, weekWords, moveWords, undoAct, undoWords,
     /* V11, the Planner walk (15.1): the bottom bar's Undo and Redo, and what each would take back; (3.4) every kind of day
        on the desk, opened and put away without the grid button that used to do it */
-    undoInfo, undoLast, redoLast, openKinds: () => openKinds(), closeKinds: () => closeKinds(), findFree: (kind) => freeFind(kind || 'day'),
+    undoInfo, undoLast, redoLast, toastUndoUp, openKinds: () => openKinds(), closeKinds: () => closeKinds(), findFree: (kind) => freeFind(kind || 'day'),
     /* a version can open a Dev board by id and leave it again */
     devBoard(id) { return loadScenarios().then(() => openScenario(id)); }, endPreview,
     /* a version can run a setup of its own (the desk version answers it with blocks on a mat): the same

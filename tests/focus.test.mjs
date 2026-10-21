@@ -1,6 +1,6 @@
 // V11-2 (Russell's list, Oct 20): Focus, pick what, then how long (board/src/focus.js). The lengths it offers end
 // before the next locked block, sleep, or a time with people, and the last one names it ("Until Pick up Robin at
-// 4:45 pm"). Time running out never marks anything done; only Mark it done does, and that checks off the to-do's
+// 4:45 pm"). Time running out never marks anything done; only Done does, and that checks off the to-do's
 // steps too. The parts are cut out of focus.js by the lines that start them and run in a small world: the real
 // Model and Data, the sample family's board, and an SR that keeps notes.
 import { test } from 'node:test';
@@ -62,7 +62,7 @@ test('a time with people and bed stop it too; with nothing ahead every length is
   assert.deepEqual(plain(f.lengths({ kind: 'own', name: 'Write' }, 600, null, null)).map((l) => l.min), [25, 50]);
 });
 
-test('time running out never marks a to-do done; Mark it done does, steps and all, with Undo', () => {
+test('time running out never marks a to-do done; Done does, steps and all, with Undo', () => {
   const st = D.sampleState(SUN);
   const t = st.tasks.find((x) => !x.done && x.steps && x.steps.length >= 2);
   assert.ok(t, 'a to-do with steps on the sample');
@@ -85,7 +85,7 @@ test('time running out never marks a to-do done; Mark it done does, steps and al
   assert.equal(a.focus.marked, false);
   assert.equal(a.focus.said, '25 min on ' + t.name);
   assert.equal(notes.toasts.length, 0);
-  /* Mark it done: the to-do and its steps, one change, a toast with Undo */
+  /* Done: the to-do and its steps, one change, a toast with Undo */
   const b = runInNewContext(script, { __focus: session(), SR, Date });
   b.finish(true);
   assert.equal(t.done, true);
@@ -94,9 +94,9 @@ test('time running out never marks a to-do done; Mark it done does, steps and al
   assert.deepEqual(notes.toasts, [{ text: t.name + ' is done.', act: 'Undo' }]);
 });
 
-test('the session\'s buttons: a to-do\'s gold one is Mark it done; time\'s up asks, and Stop here marks nothing', () => {
+test('the session\'s buttons: a to-do\'s gold one is Done; time\'s up asks, and Stop here marks nothing', () => {
   const part = cut('  function drawSession(card) {', '  const btn = (label, cls, fn) =>');
-  assert.match(part, /btn\('Mark it done', 'fr-go', \(\) => finish\(true\)\)/);
+  assert.match(part, /btn\('Done', 'fr-go', \(\) => finish\(true\)\)/);
   assert.match(part, /btn\('Stop here', 'fr-ghost', \(\) => finish\(false\)\)/);
   assert.match(part, /'Time’s up\. Is it done\?'/);
   /* a block or your own thing has nothing to mark: Done ends it */

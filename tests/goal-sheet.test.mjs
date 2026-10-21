@@ -223,11 +223,11 @@ test('the Goals card says what the days hold, never Behind by', () => {
   assert.equal(w.holdWords(Object.assign({}, g, { paused: true }), { behindMin: 600, totalMin: 400 * 60 }), 'Paused');
 });
 
-test('with the header’s More open, a toast stays above the footer, never over the menu', () => {
+test('a toast over a sheet stands on the room the sheet made for it, never over the sheet (V11-3)', () => {
   const w = runInNewContext(`${app('  function sheetToastSpot(o) {', '  /* o (V11, lift and place): receipt')} ({ sheetToastSpot });`, {});
-  const o = { top: 300, bottom: 844, foot: 720, vh: 844, touch: 700, z: 1 };
-  assert.deepEqual(plain(w.sheetToastSpot(o)), { at: 'top', px: 364 }, 'a touch just above the footer: under the header');
-  assert.deepEqual(plain(w.sheetToastSpot(Object.assign({}, o, { menu: true }))), { at: 'bottom', px: 132 }, 'More is open there: above the footer');
+  assert.deepEqual(plain(w.sheetToastSpot({ room: 660, bottom: 844, vh: 844, z: 1 })), { at: 'bottom', px: 184 }, 'on the room');
+  assert.deepEqual(plain(w.sheetToastSpot({ room: null, bottom: 844, vh: 844, z: 1 })), { at: 'bottom', px: 8 }, 'no room yet: 8 above the bottom edge');
+  assert.deepEqual(plain(w.sheetToastSpot({ room: 660, bottom: 844, vh: 844, z: 2 })), { at: 'bottom', px: 92 }, 'in big type the toasts are zoomed');
 });
 
 test('a day’s hours in a narrow cell are said one way: 45 min, 2 h, 1 h 45 (V11-3, D34)', () => {

@@ -700,7 +700,7 @@ export async function walk(t) {
     await t.sleep(1300);
     await t.M((narrow ? 'Phone list: ' : 'Band: ') + 'a block with its list, two things in', { scroll: narrow });
     /* V11-2 (docs/BIG-MOMENTS.md, two new moments): a heads-up whose time has come (the caregiver's sister, at 2 pm),
-       then the same once Text was tapped (Sent it? Mark it done); and the morning after on the student's board, three
+       then the same once Text was tapped (Sent it? Done); and the morning after on the student's board, three
        things from yesterday with no check, the sheet that goes through them, and one answered there */
     await t.ev(`SR.devBoard('caregiver'), 1`); await t.sleep(2000);
     await t.ev(`(() => { __reset.at(840); if (SR.view.mode !== 'today') SR.setMode('today'); return 1; })()`);

@@ -125,7 +125,7 @@ test('a heads-up asks once its time has come, and Text hands the words over with
   assert.equal(r.state.tasks.filter((t) => /heads-up/.test(t.name)).length, 0, 'texting changes nothing on the board');
 });
 
-test('Mark it done makes the heads-up’s to-do and checks it off in one change; the next person asks after', () => {
+test('Done makes the heads-up’s to-do and checks it off in one change; the next person asks after', () => {
   const r = rig(california(), '2026-11-06', 14 * 60);
   const m = r.bigMoment('headsup');
   r.huSend(m);

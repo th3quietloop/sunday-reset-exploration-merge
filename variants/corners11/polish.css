@@ -93,7 +93,7 @@
 .c-pcard, .c-pcard.kept { background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
 .c-pcard.kept .c-kick { color: var(--good); }
 .c-pcard.kept p { color: var(--tx-2); }
-.c-changed, .c-sum, .c-aheadnote, .c-filter, .c-tpre, .c-mealseg, .k-sheet .c-fix, .c-mi.first, .k .c-kchip, .c-find, .c-mat .c-leave .c-find { background: var(--sf-raised); }
+.c-changed, .c-sum, .c-aheadnote, .c-filter, .c-tpre, .c-mealseg, .k-sheet .c-fix, .k .c-kchip, .c-find, .c-mat .c-leave .c-find { background: var(--sf-raised); }
 .k-sheet .c-fix:hover, .c-mi:hover, .c-mi:focus-visible, .c-mi.first:hover, .k .c-kchip:hover { background: var(--sf-hover); }
 .k-place { background: var(--sf-raised) !important; }
 .k-place:hover { background: var(--sf-hover) !important; }
@@ -132,7 +132,7 @@
 .c-su-steph, .c-su-sl, .k .c-su-opt small { color: var(--tx-3); }
 
 /* the one call to action: gold, with near black words. The board's main button was teal; it is gold too */
-.k .c-go, .c-mat .c-go, .k-sheet .c-go, .c-mpop .c-go, .k .c-rchip.sunday, .k .c-ownweek, .c-me-dot { color: var(--sf-ink); }
+.k .c-go, .c-mat .c-go, .k-sheet .c-go, .c-mpop .c-go, .k .c-rchip.sunday, .c-me-dot { color: var(--sf-ink); }
 .c-tgo, .k-reset.due { color: var(--sf-ink) !important; }
 .go, .small.primary, .tool.go { background: var(--k-gold); color: var(--sf-ink); box-shadow: none; }
 .go:hover:not(:disabled), .small.primary:hover:not(:disabled), .tool.go:hover { background: var(--gold-hi); }
@@ -269,7 +269,6 @@ body.k-today .band-btn, body.k-today .band-idea, body.k-today .moment-kind, body
 
 /* == your account menu: a focused row shows a ring, not only a 9 percent tint == */
 .c-mi:focus-visible { box-shadow: inset 0 0 0 2px var(--k-gold); }
-.k .c-ownweek:focus-visible { box-shadow: inset 0 0 0 2px #FFFFFF; }
 
 /* == Settings on a wide window: the corners it covers step away ==
    The date chip and the bottom bar's Add sat under the panel (it ends at 880 px on a 1440 window) and

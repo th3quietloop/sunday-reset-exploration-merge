@@ -112,7 +112,7 @@ test('a gold button that can\'t be used yet says why on the line above it; two e
   const [line, btns] = kids(f);
   assert.ok(line.classList.contains('why'), 'the line says why, in words');
   assert.equal(kids(btns)[0].disabled, true);
-  const t = s.sheetFoot(body, { line: 'Didn’t get to it moves it to Sat at 9:15 am.', two: [['Didn’t get to it', () => {}], ['Mark it done', () => {}]] });
+  const t = s.sheetFoot(body, { line: 'Didn’t get to it moves it to Sat at 9:15 am.', two: [['Didn’t get to it', () => {}], ['Done', () => {}]] });
   const halves = kids(kids(t)[1]);
   assert.deepEqual(halves.map((b) => b.className), ['small c-sf-q c-sf-half', 'small c-sf-q c-sf-half'], 'neither is gold: either answer is fine');
 });

@@ -212,16 +212,16 @@
     if (f.inside) card.appendChild(h('p', 'fr-line', 'Part of ' + f.inside));
     const acts = h('div', 'fr-acts');
     const up = leftMs(f) <= 0;
-    /* V11-2 (Russell's list, Oct 20): time running out never marks anything done; only Mark it done does, for a to-do,
+    /* V11-2 (Russell's list, Oct 20): time running out never marks anything done; only Done does, for a to-do,
        and it checks off its steps too. Done ends a session on a block or your own thing, which has nothing to mark */
     const isTask = !!f.task && !f.brk;
     if (up) {
       card.appendChild(h('p', 'fr-ask', f.brk ? 'Break’s over.' : isTask ? 'Time’s up. Is it done?' : 'Time’s up. Done, or a little more?'));
       if (f.brk) acts.append(btn('Back to it', 'fr-go', () => endBreak()), btn('10 more min', 'fr-ghost', () => more(10)));
-      else if (isTask) acts.append(btn('Mark it done', 'fr-go', () => finish(true)), btn('10 more min', 'fr-ghost', () => more(10)), btn('Stop here', 'fr-ghost', () => finish(false)));
+      else if (isTask) acts.append(btn('Done', 'fr-go', () => finish(true)), btn('10 more min', 'fr-ghost', () => more(10)), btn('Stop here', 'fr-ghost', () => finish(false)));
       else acts.append(btn('Done', 'fr-go', () => finish(false)), btn('10 more min', 'fr-ghost', () => more(10)));
     } else {
-      acts.append(btn(f.runningSince ? 'Pause' : 'Resume', 'fr-ghost', toggle), btn('5 more min', 'fr-ghost', () => more(5)), btn(f.brk ? 'End the break' : isTask ? 'Mark it done' : 'Done', 'fr-go', () => (f.brk ? endBreak() : finish(isTask))));
+      acts.append(btn(f.runningSince ? 'Pause' : 'Resume', 'fr-ghost', toggle), btn('5 more min', 'fr-ghost', () => more(5)), btn(f.brk ? 'End the break' : 'Done', 'fr-go', () => (f.brk ? endBreak() : finish(isTask))));
     }
     card.appendChild(acts);
     /* (once the time is up its row has Stop here, so this goes) */

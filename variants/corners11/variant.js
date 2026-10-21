@@ -253,7 +253,8 @@
       const u = SR.undoInfo ? SR.undoInfo() : { undo: false, redo: false };
       const said = (x) => String(x || '').replace(/[.!?…]+$/, '');
       const uw = said(u.undoSaid), rw = said(u.redoSaid);
-      undoP.hidden = !u.undo; redoP.hidden = !u.redo;
+      /* (V11-3, one Undo a screen: while a toast offers Undo, this one steps aside, and comes back as the toast goes) */
+      undoP.hidden = !u.undo || !!(SR.toastUndoUp && SR.toastUndoUp()); redoP.hidden = !u.redo;
       undoWhat.textContent = uw; undoWhat.hidden = !uw;
       undoP.setAttribute('aria-label', uw ? 'Undo: ' + uw : 'Undo the last change');
       undoP.title = (uw ? 'Undo: ' + uw : 'Undo the last change') + ' (' + MODK + ' Z)';
@@ -347,7 +348,8 @@
       /* the sample week is someone made up; your own week is one setup away (the chip already says Sample week) */
       if (p && p.sample && SR.openSetup) {
         /* (V11, Oct 15: one name for one action, Set up my week everywhere; it starts the setup, or picks one up) */
-        const own = Kit.btn('c-mi gold c-ownweek', 'Set up my week', () => { closeMenu(); SR.openSetup(); }, 'calendar', ESP);
+        /* (V11-3, the design review: a quiet item here, since the bar's door already wears the gold, one a screen) */
+        const own = Kit.btn('c-mi c-ownweek', 'Set up my week', () => { closeMenu(); SR.openSetup(); }, 'calendar', CREAM);
         own.setAttribute('role', 'menuitem'); menu.appendChild(own);
       }
       const item = (label, ic, fn, cls) => { const b = Kit.btn('c-mi ' + (cls || ''), label, () => { closeMenu(); fn(); }, ic, cls && cls.includes('gold') ? ESP : CREAM); b.setAttribute('role', 'menuitem'); return b; };
@@ -1399,7 +1401,8 @@
         const lede = h('p', 'c-tdlede');
         const scroll = h('div', 'c-scroll c-tdscroll');
         card.append(head, adder, lede, scroll);
-        const more = scrollHint(scroll, card);
+        /* (V11-3, the design review: with a strip of its own under the list, so More below never sits on a row) */
+        const more = scrollHint(scroll, card, true);
         /* rows keep their places while the panel is open: a to-do checked off stays put, struck through */
         const steady = (key, ids) => { const was = orders.get(key) || []; const now = was.filter((id) => ids.includes(id)).concat(ids.filter((id) => !was.includes(id))); orders.set(key, now); return now; };
         function section(o) {

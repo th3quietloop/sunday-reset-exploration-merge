@@ -4418,17 +4418,9 @@
     fit();
   }
   /* == the real clock and you on the board == */
-  /* The pins turn from red enamel to gold in the last five minutes of a block: a heads up, not an alarm. */
-  const pinHeads = (g) => { const out = []; g.userData.pin.traverse((o) => { if (o.isMesh && o.material && o.material.color && o.material.color.getHexString() === NOW_RED.slice(1).toLowerCase()) out.push(o); }); return out; };
-  let pinGold = false;
-  function setPinTone(soon) {
-    if (soon === pinGold) return;
-    pinGold = soon;
-    [props.pawn, dayb.pawn].forEach((g) => {
-      g.userData.heads = g.userData.heads || pinHeads(g);
-      g.userData.heads.forEach((m) => { m.material.color.set(soon ? '#D9A43A' : NOW_RED); if (m.material.emissive) m.material.emissive.set(soon ? '#3A2600' : '#000000'); });
-    });
-  }
+  /* The pins turned from red enamel to gold in the last five minutes of a block. V11-3 (one gold a screen): they stay
+     red to the end, since gold is only ever the call to action; the band says the minutes left in white. */
+  function setPinTone() { /* red to the end: nothing to change */ }
   /* The part of the block you're in that's already behind you is worn: paler where the label ink is
      dark, shaded where it's white, so the label only gains contrast. It sits under the printed face. */
   const wornGeo = new T.PlaneGeometry(1, 1); wornGeo.rotateX(-Math.PI / 2);

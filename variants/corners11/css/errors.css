@@ -39,6 +39,10 @@ body.calm #toasts .toast.error .toast-x:active { transform: none; }
 .c-ph-ub:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
 body.calm .c-ph-ub:active { transform: none; }
 @media (prefers-reduced-motion: reduce) { .c-ph-ub:active { transform: none; } }
+/* (V11-3: on the phone's Today it's a row of the foot, over the add line, never in the head card; the page keeps room
+   for it, so the last thing on the page can still scroll above the foot) */
+body.feel.phone .td-foot .c-ph-undo.c-foot-u { flex: 1 1 100%; margin: -4px 0 -2px -4px; }
+body.feel.phone.c-foot-undo .todayview { padding-bottom: calc(env(safe-area-inset-bottom) + 148px); }
 /* (the phone desk's bar: the same two as marks, beside the month; hidden means gone, whatever .nav says) */
 .phonebar.pb-feel .nav.pb-un { width: 44px; height: 44px; background: transparent; }
 .phonebar.pb-feel .nav.pb-un[hidden] { display: none; }
@@ -47,3 +51,7 @@ body.calm .c-ph-ub:active { transform: none; }
 .phonebar.pb-feel .nav.pb-un:active { transform: translateY(1px); }
 body.calm .phonebar.pb-feel .nav.pb-un:active { transform: none; }
 @media (prefers-reduced-motion: reduce) { .phonebar.pb-feel .nav.pb-un:active { transform: none; } }
+/* (V11-3: an error waiting at the bottom of the phone's Today keeps room under the page's last line, so it covers nothing
+   for good: app.js phoneToasts sets --toast-room to the toasts' height) */
+body.feel.phone.c-toast-room .todayview { padding-bottom: calc(env(safe-area-inset-bottom) + 96px + var(--toast-room, 0px)); }
+body.feel.phone.c-toast-room.c-foot-undo .todayview { padding-bottom: calc(env(safe-area-inset-bottom) + 148px + var(--toast-room, 0px)); }
