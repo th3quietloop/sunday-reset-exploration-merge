@@ -13,7 +13,7 @@ The model is Claude Haiku 5.5 (`claude-haiku-5-5`). It's built and tested, and i
 ## Private by default
 
 - **Off until it's turned on, on each device.** The first time someone asks, a sheet says what it does, exactly what's sent, that nothing else leaves, and who processes it, with a link to the privacy policy, and Turn on or Not now. The choice is kept on the device (`localStorage` key `sundayreset.ai`), never on the board, so it doesn't travel with a backup or to the household. On a made up board (a preview or a Dev scenario) it's held in memory and let go after.
-- **What's sent:** the words of the one to-do or goal asked about, and the step size or the goal's date. Nothing else: no other to-dos, days, names, or anything from the board. The server reads only those fields and ignores anything else in a request.
+- **What's sent:** the words of the one to-do or goal asked about, and the step size or the goal's date (a goal also sends today's date on the device, since V11-3, so its note counts days from where the person is). Nothing else: no other to-dos, days, names, or anything from the board. The server reads only those fields and ignores anything else in a request.
 - **Who reads it:** the function at `/api/smart` passes it to Anthropic, which processes it under its API terms. The function keeps nothing and never writes the words or the key to a log; it notes only what went wrong, like `smart: claude said 529`.
 - **Turning it off:** Settings, Smart breakdowns (This device). The overview shows whether it's on.
 - **Is it there?** Once a page load, the page asks `GET /api/smart` whether the site is set up, so it knows whether to offer it at all. That request carries nothing from the board.
@@ -44,7 +44,8 @@ How it asks Claude: one Messages API request (`POST https://api.anthropic.com/v1
 Guards:
 
 - **Only its own page.** A `POST` needs an `Origin` that matches the host it was sent to, so another site can't spend it from its visitors' browsers. A page on this computer may ask a server on this computer, for trying it while developing. It also needs `content-type: application/json`, which makes a browser on another site ask first, and this function never says yes.
-- **How often.** About 10 a minute and 100 a day for each address, counted in the function's memory. Vercel keeps an instance warm between requests, so this holds for a run of asks, but a new instance starts counting again: it's a speed bump, not a wall. The spend limit in the Anthropic Console is the wall.
+- **How often.** About 10 a minute and 100 a day for each address, and 60 a minute and 1000 a day for every address together (`SMART_MINUTE_CAP` and `SMART_DAY_CAP` set others), counted in the function's memory. The address is the one Vercel saw (`x-vercel-forwarded-for`, then `x-real-ip`, which a client can't set; the last entry of `x-forwarded-for` only when neither is there); an ask with no address counts toward every address together, never a shared bucket. The memory keeps at most 10,000 addresses, letting go of the one seen longest ago first. Vercel keeps an instance warm between requests, so this holds for a run of asks, but a new instance starts counting again: it's a speed bump, not a wall. When a Redis with a REST API is linked to the project (`UPSTASH_REDIS_REST_URL` and `_TOKEN`, or Vercel KV's `KV_REST_API_URL` and `_TOKEN`), the day's counts are also kept there and hold across instances (`sharedCounter` in smart.js); none is set up yet, since adding a service is Russell's call. The spend limit in the Anthropic Console is the wall.
+- **How much.** A body over 2 KB is refused, read no further than that even when it comes in chunks with no length.
 - **How long.** 15 seconds, on the server and in the page.
 
 ### The client: `window.SR_ai`
@@ -63,10 +64,11 @@ SR_ai.breakdown(name, { size })
                      a Promise of { steps: [{ name, dur }], total, source: 'claude' } or null
 SR_ai.goalParts(name, { date })
                      a Promise of { parts: [{ name, min }], note, total, source: 'claude' } or null
-SR_ai.lastError()    what the last ask that settled as null ran into: { code, message }, or null
+SR_ai.lastError(ask) what that ask (the Promise breakdown or goalParts gave) ran into: { code, message },
+                     or null; with no ask, what the last ask to settle ran into
 ```
 
-- Every ask settles within 15 seconds, and anything that went wrong or came back odd settles as `null`. A screen keeps what it had and can say why with `lastError().message`.
+- Every ask settles within 15 seconds, and anything that went wrong or came back odd settles as `null`. A screen keeps what it had and can say why with `lastError(ask).message`, where ask is the Promise it got, so two asks out at once never say each other's cause.
 - Nothing from the server is used until it passes the page's own checks: 1 to 15 steps, each 5 to 240 minutes on the 5 minute grid, names cut to 60 characters with no dashes or filler words left in, and a first step of 10 minutes or less. Parts are 15 minutes to 500 hours each.
 - The same ask (the name, and its size or date) is answered once a page load; `{ fresh: true }` asks again. A window event, `sr-ai`, fires when the server answers ready or the switch changes.
 - If the server says `not_ready` (the key was taken away), `ready()` turns false and the feature stops being offered.
@@ -77,7 +79,7 @@ Using it from a screen:
 const ai = window.SR_ai;
 if (ai && ai.ready()) {
   // a Smarter steps button; the built-in steps are already showing
-  ai.enable(() => ai.breakdown(todo.name, { size }).then((r) => { if (r) showSteps(r.steps); else keepBuiltIn(ai.lastError()); }));
+  ai.enable(() => { const ask = ai.breakdown(todo.name, { size }); ask.then((r) => { if (r) showSteps(r.steps); else keepBuiltIn(ai.lastError(ask)); }); });
 }
 ```
 

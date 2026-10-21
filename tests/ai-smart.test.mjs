@@ -336,8 +336,10 @@ test('the page uses nothing from the server until it passes the checks', () => {
     Array.from({ length: 16 }, () => ({ name: 'A', dur: 5 })), [], 'steps', null, undefined, [{ name: '', dur: 5 }]]) {
     assert.equal(aiSteps(bad), null, JSON.stringify(bad));
   }
-  // fifteen with a long first step would be sixteen: not used
-  assert.equal(aiSteps([{ name: 'A', dur: 30 }].concat(Array.from({ length: 14 }, () => ({ name: 'B', dur: 5 })))), null);
+  // fifteen with a long first step would be sixteen: still used, as fifteen (V11-3, code review 14)
+  const fifteen = plain(aiSteps([{ name: 'A', dur: 30 }].concat(Array.from({ length: 14 }, (_, i) => ({ name: 'B' + i, dur: 5 })))));
+  assert.equal(fifteen.length, 15);
+  assert.deepEqual(fifteen.slice(0, 2), [{ name: 'A, first 10 minutes', dur: 10 }, { name: 'A, the rest', dur: 20 }]);
   // a goal's parts
   const parts = plain(aiParts({ parts: [{ name: 'Torts', min: 2100 }, { name: 'Essays', min: 750 }], note: 'About 400 hours ' + EM + ' a common estimate' }));
   assert.deepEqual(parts, { parts: [{ name: 'Torts', min: 2100 }, { name: 'Essays', min: 750 }], note: 'About 400 hours, a common estimate.', total: 2850, source: 'claude' });
@@ -457,10 +459,12 @@ test('a goal sends its words and its date, and its parts come back checked', asy
   const p = page({ stored: '{"on":true}', answer: (b) => { sent = b; return answer({ parts: [{ name: 'Torts', min: 2100 }, { name: 'Essay practice', min: 750 }], note: 'About 400 hours is a common estimate.' }); } });
   await tick(); await tick();
   const r = plain(await p.ai.goalParts('Pass the bar exam', { date: '2027-02-24' }));
-  assert.deepEqual(sent, { kind: 'parts', name: 'Pass the bar exam', date: '2027-02-24' });
+  /* (V11-3: and the page's own date, so the note counts from where the person is) */
+  assert.match(sent.today, /^\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(Object.assign({}, sent, { today: 'T' }), { kind: 'parts', name: 'Pass the bar exam', date: '2027-02-24', today: 'T' });
   assert.deepEqual(r, { parts: [{ name: 'Torts', min: 2100 }, { name: 'Essay practice', min: 750 }], note: 'About 400 hours is a common estimate.', total: 2850, source: 'claude' });
   await p.ai.goalParts('Run a marathon', { date: 'in the spring' });
-  assert.deepEqual(sent, { kind: 'parts', name: 'Run a marathon' }, 'a date that isn’t a day stays home');
+  assert.deepEqual(Object.assign({}, sent, { today: 'T' }), { kind: 'parts', name: 'Run a marathon', today: 'T' }, 'a date that isn’t a day stays home');
 });
 
 test('anything that goes wrong settles as null, says why, and never waits past 15 seconds', async () => {
@@ -566,7 +570,7 @@ test('the sheet asks first: what it does, exactly what is sent, who reads it, th
   const g = page();
   await tick(); await tick();
   g.ai.enable(() => {}, { kind: 'parts' });
-  assert.match(g.sheets[0].text, /The words of this goal, and its date/);
+  assert.match(g.sheets[0].text, /The words of this goal, its date, and today’s date/);
 });
 
 test('on a made up board the switch is held in memory, never written to this device', async () => {
@@ -578,4 +582,22 @@ test('on a made up board the switch is held in memory, never written to this dev
   assert.equal(p.store.has('sundayreset.ai'), false, 'nothing written');
   SR.view.preview = null;
   assert.equal(p.ai.available(), false, 'back on the real board, it is off as before');
+});
+
+test('two asks out at once each keep their own cause (V11-3, code review 30)', async () => {
+  const p = page({ stored: '{"on":true}', answer: (b) => (b.name === 'Clean the garage'
+    ? answer({ steps: [{ name: 'Wipe', dur: 7 }] })
+    : new Response(JSON.stringify({ error: 'upstream', message: 'Claude didn’t answer this time.' }), { status: 502 })) });
+  await tick(); await tick();
+  const a = p.ai.breakdown('Clean the garage'), b = p.ai.breakdown('Clean the attic');
+  assert.equal(await a, null);
+  assert.equal(await b, null);
+  assert.equal(p.ai.lastError(a).code, 'odd');
+  assert.equal(p.ai.lastError(b).code, 'upstream');
+  /* an ask that settled at once keeps its cause too */
+  const c = p.ai.breakdown('x'.repeat(141));
+  assert.equal(await c, null);
+  assert.equal(p.ai.lastError(c).code, 'bad_request');
+  assert.equal(p.ai.lastError(a).code, 'odd', 'a later ask never changes an earlier one’s cause');
+  assert.equal(p.ai.lastError().code, 'bad_request', 'with no ask: the last to settle');
 });

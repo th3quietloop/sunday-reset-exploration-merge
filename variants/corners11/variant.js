@@ -6743,8 +6743,10 @@
        SR_ai.disable()     off on this device
        SR_ai.breakdown(name, { size })  a Promise of { steps: [{ name, dur }], total, source: 'claude' } or null
        SR_ai.goalParts(name, { date })  a Promise of { parts: [{ name, min }], note, total, source: 'claude' } or null
-       SR_ai.lastError()   what the last ask that settled as null ran into, { code, message }, or null (the codes,
-                           and the limit, most, and at of too_many, are at aiAsk)
+       SR_ai.lastError(ask) what that ask (the Promise breakdown or goalParts gave) ran into, { code, message }, or
+                           null; with no ask, what the last ask to settle ran into (the codes, and the limit, most,
+                           and at of too_many, are at aiAsk). V11-3: each ask keeps its own, so two out at once
+                           never say each other's cause
      The same ask (name, and size or date) is answered once a page load; { fresh: true } asks again. A window
      event, sr-ai, says when the server answered ready or the switch changed. Characters past ASCII in the
      patterns here are \u{...} escapes, so no dash sits in this file. */
@@ -6795,7 +6797,8 @@
       if (!out.length) return null;
       const f = out[0];
       if (f.dur > 10) out.splice(0, 1, { name: aiCut(f.name, 42) + ', first 10 minutes', dur: 10 }, { name: aiCut(f.name, 50) + ', the rest', dur: f.dur - 10 });
-      return out.length <= 15 ? out : null;
+      /* (V11-3: 15 good steps whose first splits in two are still 15, as the server keeps them) */
+      return out.slice(0, 15);
     }
     function aiParts(data) {
       if (!data || typeof data !== 'object' || !Array.isArray(data.parts) || !data.parts.length || data.parts.length > 15) return null;
@@ -6810,6 +6813,9 @@
     }
     /* smart: asking */
     let aiReady = null, aiErr = null, aiMem = null;
+    const aiErrOf = new WeakMap();
+    /* an ask that settles at once, with what it ran into */
+    const aiNo = (err) => { aiErr = err; const p = Promise.resolve(null); aiErrOf.set(p, err); return p; };
     const aiAsked = new Map();
     const aiEmit = () => { try { window.dispatchEvent(new CustomEvent('sr-ai')); } catch (e) { /* fine */ } };
     const aiBoard = () => (window.SR && SR.view && SR.view.preview ? SR.view.preview.id || 'preview' : null);
@@ -6857,7 +6863,7 @@
         c.append(h('div', 'c-kick', 'Smart breakdowns'), h('h2', '', goal ? 'Let Claude suggest the parts?' : 'Let Claude suggest the steps?'));
         c.appendChild(said('p', 'c-ai-lede', goal ? 'When the board doesn’t know a goal, Claude can suggest its parts and about how many hours each takes.' : 'When the board’s own steps don’t fit a to-do, Claude can suggest steps with a time on each.'));
         const facts = h('ul', 'c-ai-facts');
-        [['What’s sent', goal ? 'The words of this goal, and its date.' : 'The words of this to-do, and the step size.'],
+        [['What’s sent', goal ? 'The words of this goal, its date, and today’s date.' : 'The words of this to-do, and the step size.'],
           ['What stays here', 'Everything else on your board. Your other to-dos, your days, and the names on it never leave this device.'],
           ['Who reads it', 'Anthropic, the company that makes Claude, processes it under its API terms. Sunday Reset doesn’t keep it.']]
           .forEach(([k, v]) => { const li = h('li'); li.append(h('b', '', k), said('span', '', v)); facts.appendChild(li); });
@@ -6907,26 +6913,37 @@
        not_ready, odd (an answer that didn't fit the board), unreachable (the server didn't answer at all),
        bad_request, off, or upstream (Claude answered with an error) */
     const aiOffline = () => typeof navigator !== 'undefined' && !!navigator && navigator.onLine === false;
+    /* today on this device, YYYY-MM-DD, in its own time zone (the board's today when there is one) */
+    const aiToday = () => {
+      try { if (window.SR && typeof SR.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(SR.today)) return SR.today; } catch (e) { /* the clock below */ }
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    };
     function aiAsk(body, check, fresh) {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!available()) { aiErr = { code: ready() ? 'off' : 'not_ready', message: '' }; return Promise.resolve(null); }
-      if (!name || name.length > 140 || aiCtrl.test(name)) { aiErr = { code: 'bad_request', message: '' }; return Promise.resolve(null); }
-      if (aiOffline()) { aiErr = { code: 'offline', message: 'You\u2019re offline.' }; return Promise.resolve(null); }
+      if (!available()) return aiNo({ code: ready() ? 'off' : 'not_ready', message: '' });
+      if (!name || name.length > 140 || aiCtrl.test(name)) return aiNo({ code: 'bad_request', message: '' });
+      if (aiOffline()) return aiNo({ code: 'offline', message: 'You\u2019re offline.' });
       const send = JSON.stringify(Object.assign({}, body, { name }));
       if (!fresh && aiAsked.has(send)) return aiAsked.get(send);
-      const p = new Promise((done) => {
+      /* (V11-3: a goal sends the page's own date too, so its note counts days from where the person is; the server
+         uses it only when it's within a day of its own. It isn't part of what makes two asks the same) */
+      const sent = body.kind === 'parts' ? JSON.stringify(Object.assign({}, body, { name, today: aiToday() })) : send;
+      let p = null;
+      p = new Promise((done) => {
         let over = false;
         const ac = typeof AbortController === 'function' ? new AbortController() : null;
         const finish = (v, err) => {
           if (over) return;
           over = true; clearTimeout(t); aiErr = err || null;
+          if (p) aiErrOf.set(p, aiErr);
           if (ac) ac.abort();
           if (!v) aiAsked.delete(send);
           /* switched off while it was out: what came back isn't used */
           done(v && aiOn() ? v : null);
         };
         const t = setTimeout(() => finish(null, { code: 'timeout', message: 'Claude didn\u2019t answer in time.' }), AI_WAIT);
-        Promise.resolve().then(() => fetch(AI_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: send, cache: 'no-store', credentials: 'same-origin', signal: ac ? ac.signal : undefined }))
+        Promise.resolve().then(() => fetch(AI_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: sent, cache: 'no-store', credentials: 'same-origin', signal: ac ? ac.signal : undefined }))
           .then((r) => r.json().then((d) => ({ r, d }), () => ({ r, d: null })))
           .then(({ r, d }) => {
             if (r.ok) { const v = check(d); finish(v, v ? null : { code: 'odd', message: 'Claude\u2019s answer didn\u2019t fit the board.' }); return; }
@@ -6940,6 +6957,8 @@
               const retry = Math.max(1, Math.min(86400, Math.ceil(wait)));
               err.limit = d && (d.limit === 'day' || d.limit === 'minute') ? d.limit : retry > 120 ? 'day' : 'minute';
               err.most = Number(d && d.most) || (err.limit === 'day' ? 100 : 10);
+              /* (V11-3: every address together is full, not this person's own count) */
+              if (d && d.scope === 'site') err.scope = 'site';
               err.at = Date.now() + retry * 1000;
             }
             finish(null, err);
@@ -6961,7 +6980,7 @@
       const o = opts || {}, date = typeof o.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : null;
       return aiAsk(date ? { kind: 'parts', name, date } : { kind: 'parts', name }, (d) => aiParts(d), o.fresh);
     }
-    window.SR_ai = { ready, available, enable, disable, breakdown, goalParts, lastError: () => aiErr };
+    window.SR_ai = { ready, available, enable, disable, breakdown, goalParts, lastError: (ask) => (ask && typeof ask.then === 'function' ? aiErrOf.get(ask) || null : aiErr) };
     aiCheck();
   }
 })();

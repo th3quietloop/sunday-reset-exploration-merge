@@ -4414,7 +4414,7 @@
       let pr;
       try { pr = ai.goalParts(d.name.trim(), { date: d.date || null }); } catch (e) { pr = Promise.resolve(null); }
       /* nothing back (Claude busy, no answer, a name it couldn't read): the parts stay, and the line says why */
-      const why = () => { let e = null; try { e = ai.lastError && ai.lastError(); } catch (x) { e = null; } return e && e.code ? Object.assign({}, e) : null; };
+      const why = () => { let e = null; try { e = ai.lastError && ai.lastError(pr); } catch (x) { e = null; } return e && e.code ? Object.assign({}, e) : null; };
       Promise.resolve(pr).then((r) => {
         const ok = r && Array.isArray(r.parts) && r.parts.filter((x) => x && x.name && x.min > 0).length;
         if (ok) {
@@ -11604,6 +11604,9 @@
     const code = (e && e.code) || '', parts = what === 'parts';
     const keep = parts ? 'These parts stay.' : 'These are the built-in ' + (what || 'steps') + '.';
     if (code === 'offline') return { line: 'You’re offline' + (shown ? ', so ' + (parts ? 'these parts stay' : 'these are the built-in ' + (what || 'steps')) : '') + '. Ask Claude again when you’re back.', again: true };
+    /* (V11-3: when the whole site is full, it says so, never that this person asked that many) */
+    if (code === 'too_many' && e.scope === 'site' && e.limit === 'day') return { line: 'Smart breakdowns have answered all they can today. Try again tomorrow.', again: false };
+    if (code === 'too_many' && e.scope === 'site') { const at = aiAgainAt(e.at); return { line: 'Smart breakdowns are answering all they can this minute. ' + (at ? 'Try again at ' + at + '.' : 'Try again now.'), again: true }; }
     if (code === 'too_many' && e.limit === 'day') return { line: 'That’s ' + (e.most || 100) + ' asks today. Try again tomorrow.', again: false };
     if (code === 'too_many') { const at = aiAgainAt(e.at); return { line: 'That’s ' + (e.most || 10) + ' asks this minute. ' + (at ? 'Try again at ' + at + '.' : 'Try again now.'), again: true }; }
     if (code === 'not_ready') return { line: 'Smart breakdowns aren’t set up here.' + (shown ? ' ' + keep : ''), again: false };
@@ -11647,7 +11650,7 @@
           .filter((s) => !have.has(s.name.toLowerCase()));
         /* (what happened, kept for the line that says it: aiTrouble) */
         let why = null;
-        try { why = !steps.length && typeof ai.lastError === 'function' ? ai.lastError() : null; } catch (e) { why = null; }
+        try { why = !steps.length && typeof ai.lastError === 'function' ? ai.lastError(ask) : null; } catch (e) { why = null; }
         now.aiErr = why ? Object.assign({}, why) : null;
         if (!steps.length) now.ai = 'fail';
         else { now.rows = steps.concat(now.rows.filter((x) => x.mine)); now.src = 'claude'; now.ai = 'done'; }
@@ -20007,7 +20010,7 @@
     const set = async (patch) => {
       const next = Object.assign(remindPrefs(), patch);
       const r = await Cloud.remind(next.on, { locked: next.locked, added: next.added, sunday: next.sunday, dinner: next.dinner, lead: next.lead });
-      if (r.error) { failed(r.error === 'denied' ? 'Notifications are off for this site. Turn them on in the browser’s settings.' : r.error === 'no-worker' || r.error === 'unsupported' ? 'Reminders can’t start in this browser here. Open Sunday Reset from its https address and try again.' : 'Couldn’t change reminders. Check the connection, then try again.', null, 'remind'); return; }
+      if (r.error) { failed(r.error === 'denied' ? 'Notifications are off for this site. Turn them on in the browser’s settings.' : r.error === 'no-worker' || r.error === 'unsupported' ? 'Reminders can’t start in this browser here. Open Sunday Reset from its https address and try again.' : r.error === 'not-set-up' ? 'Reminders aren’t set up on this site yet.' : 'Couldn’t change reminders. Check the connection, then try again.', null, 'remind'); return; }
       saveRemind(next); renderDrawer(); if (view.phone) renderToday();
     };
     const g = el('div', 'switches');
@@ -21208,7 +21211,7 @@
       if (isIOS() && !standalone()) card.appendChild(el('p', '', 'First put Sunday Reset on your Home Screen: tap Share, then Add to Home Screen. Open it from there and turn reminders on.'));
       else {
         card.appendChild(el('p', '', 'Before pick ups and meetings, the dinner question at 3 pm, and your Sunday Reset.'));
-        card.appendChild(keyControl(button('Turn on reminders', 'small primary', async () => { const rp = remindPrefs(); const r = await Cloud.remind(true, rp); if (r.error) failed(r.error === 'denied' ? 'Notifications are off for this site. Turn them on in the browser’s settings.' : 'Couldn’t turn on reminders. Check the connection, then try again.', null, 'remind'); else { saveRemind(Object.assign(rp, { on: true })); toast('Reminders are on', 'good'); renderToday(); } }), 'reminders'));
+        card.appendChild(keyControl(button('Turn on reminders', 'small primary', async () => { const rp = remindPrefs(); const r = await Cloud.remind(true, rp); if (r.error) failed(r.error === 'denied' ? 'Notifications are off for this site. Turn them on in the browser’s settings.' : r.error === 'not-set-up' ? 'Reminders aren’t set up on this site yet.' : 'Couldn’t turn on reminders. Check the connection, then try again.', null, 'remind'); else { saveRemind(Object.assign(rp, { on: true })); toast('Reminders are on', 'good'); renderToday(); } }), 'reminders'));
       }
       main.appendChild(card);
     }

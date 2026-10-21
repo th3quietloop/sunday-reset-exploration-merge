@@ -13,8 +13,11 @@
                        { kind: 'parts', name, date: 'YYYY-MM-DD' }
                          200 { parts: [{ name, min }], note }
 
+                       Either may carry today: 'YYYY-MM-DD', the page's own date, used when it's within a day of
+                       the server's (so a goal's note counts days from where the person is)
+
    Every other answer is { error, message }, the error one of not_ready (503, a POST with no key), too_many
-   (429, with Retry-After, and limit 'minute' or 'day', most, and retry in seconds in the body), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when
+   (429, with Retry-After, and limit 'minute' or 'day', most, and retry in seconds in the body, and scope 'site' when every address together is full), bad_request (400, 403 for another site, 405, 413, 415), or upstream (502, 504 when
    Claude took longer than 15 seconds), so the page can keep its built-in steps.
 
    Vercel runs a file in api/ as a Node.js function; the default export is the Web standard fetch form.
@@ -24,6 +27,11 @@ const MODEL = 'claude-haiku-5-5';
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const WAIT_MS = 15000;
 const PER_MINUTE = 10, PER_DAY = 100;
+/* every address together, in one instance: a ceiling on what a run of new addresses can spend (SMART_DAY_CAP and
+   SMART_MINUTE_CAP set others) */
+const ALL_PER_MINUTE = 60, ALL_PER_DAY = 1000;
+/* the most addresses one instance remembers; past it, the one seen longest ago is let go first */
+const MAX_ADDRESSES = 10000;
 const MAX_BODY = 2048;
 const MINUTE = 60 * 1000, DAY = 24 * 60 * MINUTE;
 const SIZES = ['small', 'medium', 'big'];
@@ -101,9 +109,9 @@ export function cleanSteps(list) {
     if (!name || !Number.isFinite(m)) continue;
     out.push({ name, dur: Math.min(240, Math.max(5, Math.round(m / 5) * 5)) });
   }
-  if (!out.length) return null;
-  const steps = firstSmall(out);
-  return steps.length <= 15 ? steps : null;
+  if (!out.length || out.length > 15) return null;
+  /* (V11-3: 15 good steps whose first splits in two are still 15: the split comes first, the last step goes) */
+  return firstSmall(out).slice(0, 15);
 }
 
 /* a goal's parts: 1 to 15, each from 15 minutes to 500 hours, in minutes on the 5 minute grid, and a
@@ -127,6 +135,16 @@ const isDate = (s) => {
   const [y, m, d] = s.split('-').map(Number), t = new Date(Date.UTC(y, m - 1, d));
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 };
+/* the page's own date when it's a real day within one of the server's (the page is in its own time zone, so it can
+   be a day ahead or behind); anything else gives the server's date. (V11-3: the server's UTC date made a goal's note
+   a day off in the evening in the Americas) */
+const DAY_MS = 24 * 60 * 60 * 1000;
+export function todayFor(asked, serverNow) {
+  const server = new Date(serverNow).toISOString().slice(0, 10);
+  if (!isDate(asked)) return server;
+  const gap = Math.abs(Date.parse(asked + 'T00:00:00Z') - Date.parse(server + 'T00:00:00Z'));
+  return gap <= DAY_MS ? asked : server;
+}
 /* { kind, name, size } or { kind, name, date }, or { error } saying what's wrong */
 export function readAsk(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'Send the to-do or goal to break down.' };
@@ -261,29 +279,112 @@ export function sameSite(request) {
   if (hosts.includes(from.host.toLowerCase())) return true;
   return LOCAL.test(from.hostname) && hosts.some((x) => LOCAL.test(x.replace(/:\d+$/, '')));
 }
-const clientIp = (request) => ((request.headers.get('x-real-ip') || (request.headers.get('x-forwarded-for') || '').split(',')[0] || '').trim() || 'unknown');
+/* who's asking, by the address the platform saw. Vercel sets x-vercel-forwarded-for and x-real-ip itself and a
+   client can't set them; x-forwarded-for can carry whatever a client wrote first, so only its last entry, the one
+   the nearest proxy added, is read, and only when neither of the platform's is there. No address gives null: that
+   ask counts toward every address together, never toward a shared bucket one person could fill for everyone. */
+const ADDRESS = /^[0-9a-f.:]{2,45}$/i;
+export function clientIp(request) {
+  const first = (h) => String(request.headers.get(h) || '').split(',')[0].trim();
+  const last = (h) => String(request.headers.get(h) || '').split(',').map((x) => x.trim()).filter(Boolean).pop() || '';
+  for (const ip of [first('x-vercel-forwarded-for'), first('x-real-ip'), last('x-forwarded-for')]) if (ip && ADDRESS.test(ip)) return ip.toLowerCase();
+  return null;
+}
 
-/* == how often: about 10 a minute and 100 a day for each address, counted in this instance's memory ==
+/* == how often: about 10 a minute and 100 a day for each address, and 60 a minute and 1000 a day for every
+   address together, counted in this instance's memory ==
    Vercel keeps an instance warm between requests, so this holds for a run of asks; a new instance starts
-   counting again. The spend limit in the Anthropic Console is the backstop. */
+   counting again, which is why every address together has a ceiling too. With a shared counter set up (see
+   sharedCounter below) the day's counts hold across instances. The spend limit in the Anthropic Console is the
+   backstop either way. */
 /* (V11-2, honest errors: the page says these in its own words from limit and retry; these say the same) */
 const MINUTE_FULL = 'That’s ' + PER_MINUTE + ' asks this minute. Try again in a minute.';
 const DAY_FULL = 'That’s ' + PER_DAY + ' asks today. Try again tomorrow.';
-export function makeLimiter({ perMinute = PER_MINUTE, perDay = PER_DAY, now = Date.now } = {}) {
-  const seen = new Map();
+const ALL_FULL = (n) => 'This site has answered ' + n + ' asks today, the most it takes in a day. Try again tomorrow.';
+const ALL_BUSY = (n) => 'This site has answered ' + n + ' asks this minute, the most it takes in a minute. Try again in a minute.';
+/* one count: a day that starts at its first ask, and the asks of the last minute */
+const fresh = (t) => ({ day0: t, day: 0, min: [] });
+function check(r, t, perMinute, perDay, message) {
+  if (t - r.day0 >= DAY) Object.assign(r, fresh(t));
+  r.min = r.min.filter((x) => t - x < MINUTE);
+  if (r.day >= perDay) return { ok: false, limit: 'day', most: perDay, retry: Math.max(1, Math.ceil((r.day0 + DAY - t) / 1000)), message: message ? message.day : DAY_FULL };
+  if (r.min.length >= perMinute) return { ok: false, limit: 'minute', most: perMinute, retry: Math.max(1, Math.ceil((r.min[0] + MINUTE - t) / 1000)), message: message ? message.minute : MINUTE_FULL };
+  return null;
+}
+export function makeLimiter({ perMinute = PER_MINUTE, perDay = PER_DAY, allPerMinute = ALL_PER_MINUTE, allPerDay = ALL_PER_DAY, most = MAX_ADDRESSES, now = Date.now } = {}) {
+  const seen = new Map(), all = fresh(now());
+  let swept = 0;
+  /* (V11-3: a day's counts that ran out are let go about once a minute, and past `most` addresses the one seen
+     longest ago goes first, so the map never grows past it and a request never walks all of it) */
+  const sweep = (t) => {
+    if (t - swept >= MINUTE) { swept = t; for (const [k, v] of seen) if (t - v.day0 >= DAY) seen.delete(k); }
+    while (seen.size > most) seen.delete(seen.keys().next().value);
+  };
   return {
+    size: () => seen.size,
     take(ip) {
       const t = now();
-      let r = seen.get(ip);
-      if (!r || t - r.day0 >= DAY) { r = { day0: t, day: 0, min: [] }; seen.set(ip, r); }
-      r.min = r.min.filter((x) => t - x < MINUTE);
-      if (r.day >= perDay) return { ok: false, limit: 'day', most: perDay, retry: Math.max(1, Math.ceil((r.day0 + DAY - t) / 1000)), message: DAY_FULL };
-      if (r.min.length >= perMinute) return { ok: false, limit: 'minute', most: perMinute, retry: Math.max(1, Math.ceil((r.min[0] + MINUTE - t) / 1000)), message: MINUTE_FULL };
-      r.min.push(t); r.day += 1;
-      if (seen.size > 10000) for (const [k, v] of seen) if (t - v.day0 >= DAY) seen.delete(k);
+      const everyone = check(all, t, allPerMinute, allPerDay, { day: ALL_FULL(allPerDay), minute: ALL_BUSY(allPerMinute) });
+      if (everyone) return Object.assign(everyone, { scope: 'site' });
+      let r = null;
+      if (ip) {
+        r = seen.get(ip);
+        if (!r) r = fresh(t);
+        seen.delete(ip); seen.set(ip, r);
+        const one = check(r, t, perMinute, perDay);
+        if (one) { sweep(t); return one; }
+      }
+      if (r) { r.min.push(t); r.day += 1; }
+      all.min.push(t); all.day += 1;
+      sweep(t);
       return { ok: true };
     }
   };
+}
+
+/* == a shared counter, when one is set up ==
+   An instance's memory starts again with each new instance, so the day's counts can run past their limits when
+   Vercel starts several. When a Redis with a REST API is linked to the project (Upstash, or Vercel's KV, which sets
+   KV_REST_API_URL and KV_REST_API_TOKEN), the day's counts for each address and for every address together are
+   kept there too, and an ask over either is refused. None is set up today: adding one is Russell's call. If the
+   counter can't be reached, the instance's own counts still hold. */
+export function sharedCounter(env, send, { perDay = PER_DAY, allPerDay = ALL_PER_DAY } = {}) {
+  const url = String(env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || '').trim().replace(/\/+$/, '');
+  const token = String(env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || '').trim();
+  if (!/^https:\/\//.test(url) || !token) return null;
+  return {
+    async take(ip, t) {
+      const day = new Date(t).toISOString().slice(0, 10), keys = ['smart:all:' + day].concat(ip ? ['smart:ip:' + ip + ':' + day] : []);
+      const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 1500);
+      try {
+        const res = await send(url + '/pipeline', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, signal: ac.signal,
+          body: JSON.stringify(keys.flatMap((k) => [['INCR', k], ['EXPIRE', k, 2 * 24 * 60 * 60]])) });
+        if (!res || !res.ok) return { ok: true, shared: false };
+        const out = await res.json();
+        const n = (i) => Number(out && out[i * 2] && out[i * 2].result);
+        const retry = Math.max(1, Math.ceil((Date.parse(day + 'T00:00:00Z') + DAY - t) / 1000));
+        if (n(0) > allPerDay) return { ok: false, limit: 'day', most: allPerDay, retry, message: ALL_FULL(allPerDay), scope: 'site' };
+        if (ip && n(1) > perDay) return { ok: false, limit: 'day', most: perDay, retry, message: DAY_FULL };
+        return { ok: true, shared: true };
+      } catch (e) {
+        return { ok: true, shared: false };
+      } finally { clearTimeout(timer); }
+    }
+  };
+}
+
+/* the body, read no further than max characters: a body with no length given (sent in chunks) can't run on */
+export async function readCapped(request, max) {
+  if (!request.body || !request.body.getReader) { const t = await request.text(); return t.length > max ? null : t; }
+  const reader = request.body.getReader(), dec = new TextDecoder();
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += dec.decode(value, { stream: true });
+    if (text.length > max) { try { await reader.cancel(); } catch (e) { /* gone */ } return null; }
+  }
+  return text + dec.decode();
 }
 
 /* == answers == */
@@ -301,7 +402,9 @@ export function makeHandler(opts = {}) {
   const send = opts.fetch || ((url, init) => globalThis.fetch(url, init));
   const now = opts.now || Date.now;
   const waitMs = opts.waitMs || WAIT_MS;
-  const limits = opts.limiter || makeLimiter({ now });
+  const cap = (v, d) => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n > 0 ? n : d; };
+  const limits = opts.limiter || makeLimiter({ now, allPerDay: cap(env.SMART_DAY_CAP, ALL_PER_DAY), allPerMinute: cap(env.SMART_MINUTE_CAP, ALL_PER_MINUTE) });
+  const shared = opts.shared !== undefined ? opts.shared : sharedCounter(env, send, { allPerDay: cap(env.SMART_DAY_CAP, ALL_PER_DAY) });
   return async function handle(request) {
     const method = request.method;
     /* the readiness check: yes or no, never an error (real errors are for asks, the POSTs) */
@@ -311,8 +414,8 @@ export function makeHandler(opts = {}) {
     if (!/^application\/json\b/i.test(request.headers.get('content-type') || '')) return fail(415, 'bad_request', 'Send the ask as JSON.');
     if (Number(request.headers.get('content-length') || 0) > MAX_BODY) return fail(413, 'bad_request', 'That’s more than a to-do’s words.');
     let text;
-    try { text = await request.text(); } catch (e) { return fail(400, 'bad_request', 'The ask didn’t arrive whole.'); }
-    if (text.length > MAX_BODY) return fail(413, 'bad_request', 'That’s more than a to-do’s words.');
+    try { text = await readCapped(request, MAX_BODY); } catch (e) { return fail(400, 'bad_request', 'The ask didn’t arrive whole.'); }
+    if (text == null) return fail(413, 'bad_request', 'That’s more than a to-do’s words.');
     let body;
     try { body = JSON.parse(text); } catch (e) { return fail(400, 'bad_request', 'Send the ask as JSON.'); }
     const ask = readAsk(body);
@@ -321,15 +424,17 @@ export function makeHandler(opts = {}) {
        whole line from a .env file (ANTHROPIC_API_KEY=...). Only the key itself goes to Claude. */
     const key = String(env.ANTHROPIC_API_KEY || '').trim().replace(/^ANTHROPIC_API_KEY\s*=\s*/, '').replace(/^["']+|["']+$/g, '').trim();
     if (!key) return fail(503, 'not_ready', 'Smart breakdowns aren’t set up on this site yet.');
-    const turn = limits.take(clientIp(request));
-    if (!turn.ok) return reply(429, { error: 'too_many', message: turn.message, limit: turn.limit, most: turn.most, retry: turn.retry }, { 'retry-after': String(turn.retry) });
+    const ip = clientIp(request);
+    let turn = limits.take(ip);
+    if (turn.ok && shared) turn = await shared.take(ip, now());
+    if (!turn.ok) return reply(429, Object.assign({ error: 'too_many', message: turn.message, limit: turn.limit, most: turn.most, retry: turn.retry }, turn.scope ? { scope: turn.scope } : {}), { 'retry-after': String(turn.retry) });
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), waitMs);
     try {
       const res = await send(API_URL, {
         method: 'POST',
         headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify(claudeRequest(ask, new Date(now()).toISOString().slice(0, 10))),
+        body: JSON.stringify(claudeRequest(ask, todayFor(body.today, now()))),
         signal: ac.signal
       });
       if (!res || !res.ok) { warn('claude said', res && res.status); return fail(502, 'upstream', NO_ANSWER); }

@@ -29,6 +29,9 @@ test('each cause is said as it is, with Try again only where trying again can he
   assert.deepEqual(say({ code: 'offline' }), { line: 'You’re offline, so these are the built-in steps. Ask Claude again when you’re back.', again: true });
   assert.deepEqual(say({ code: 'too_many', limit: 'minute', most: 10, at: NOW + 35000 }), { line: 'That’s 10 asks this minute. Try again at 4:16 pm.', again: true });
   assert.deepEqual(say({ code: 'too_many', limit: 'day', most: 100, at: NOW + 3600000 }), { line: 'That’s 100 asks today. Try again tomorrow.', again: false });
+  /* (V11-3: the whole site full is said as the site's limit, never as this person's 1000 asks) */
+  assert.deepEqual(say({ code: 'too_many', scope: 'site', limit: 'day', most: 1000, at: NOW + 3600000 }), { line: 'Smart breakdowns have answered all they can today. Try again tomorrow.', again: false });
+  assert.deepEqual(say({ code: 'too_many', scope: 'site', limit: 'minute', most: 60, at: NOW + 35000 }), { line: 'Smart breakdowns are answering all they can this minute. Try again at 4:16 pm.', again: true });
   assert.deepEqual(say({ code: 'not_ready' }), { line: 'Smart breakdowns aren’t set up here. These are the built-in steps.', again: false });
   assert.deepEqual(say({ code: 'timeout' }), { line: 'Claude didn’t answer in time.', again: true });
   assert.deepEqual(say({ code: 'odd' }), { line: 'Claude’s answer didn’t fit the board. These are the built-in steps.', again: true });
