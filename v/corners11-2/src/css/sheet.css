@@ -62,15 +62,18 @@ body.feel.phone #side.scrolled .c-shead, body.feel.phone-desk #side.scrolled .c-
 #side .c-sback-btn:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
 /* Done: the sheet's corner on a phone (its x on the desk) */
 #side .c-sx-done { display: none; }
+/* (V11-3, D18: an x, drawn in icons.js, the way the mock closes a sheet: the word Done belonged to the Done circles and
+   the band's Done. 44 to a finger, a round 36 to the eye, beside More) */
 body.feel.phone #side .c-shead > .side-x, body.feel.phone-desk #side .c-shead > .side-x {
-  position: static; float: none; flex: none;
-  width: auto; height: 44px; margin: 0; padding: 0 10px;
-  border-radius: 12px; background: transparent !important; color: var(--tx);
-  font: 600 16px var(--k-font); display: inline-flex; align-items: center;
+  position: relative; inset: auto; float: none; flex: none;
+  width: 44px; height: 44px; margin: 0; padding: 0;
+  border-radius: 50%; background: transparent !important; color: var(--tx);
+  display: inline-flex; align-items: center; justify-content: center;
 }
-body.feel.phone #side .c-shead > .side-x canvas, body.feel.phone-desk #side .c-shead > .side-x canvas { display: none; }
-body.feel.phone #side .c-shead > .side-x .c-sx-done, body.feel.phone-desk #side .c-shead > .side-x .c-sx-done { display: inline; }
-body.feel.phone #side .c-shead > .side-x:hover, body.feel.phone-desk #side .c-shead > .side-x:hover { background: var(--sf-hover) !important; }
+body.feel.phone #side .c-shead > .side-x::before, body.feel.phone-desk #side .c-shead > .side-x::before { content: ''; position: absolute; width: 36px; height: 36px; border-radius: 50%; background: var(--sf-raised); }
+body.feel.phone #side .c-shead > .side-x canvas, body.feel.phone-desk #side .c-shead > .side-x canvas { position: relative; display: block; width: 16px; height: 16px; }
+body.feel.phone #side .c-shead > .side-x .c-sx-done, body.feel.phone-desk #side .c-shead > .side-x .c-sx-done { display: none; }
+body.feel.phone #side .c-shead > .side-x:hover::before, body.feel.phone-desk #side .c-shead > .side-x:hover::before { background: var(--sf-hover); }
 body.feel.phone #side .c-shead > .side-x:active, body.feel.phone-desk #side .c-shead > .side-x:active { transform: translateY(1px); }
 body.feel.phone #side .c-shead > .side-x:focus-visible, body.feel.phone-desk #side .c-shead > .side-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
 
@@ -157,13 +160,15 @@ body.feel.phone .toast.good::before, body.feel.phone-desk .toast.good::before {
 }
 body.feel.phone .toast .toast-act, body.feel.phone-desk .toast .toast-act { flex: none; margin-left: auto; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: #FFFFFF; font: 600 16px var(--k-font); }
 body.feel.phone .toast .toast-act:hover, body.feel.phone-desk .toast .toast-act:hover { background: var(--sf-press); }
-/* over an open sheet: just above its footer, or under its header when the touch was where it would land */
+/* over an open sheet: in the room the sheet makes for it (app.js toastRoom), at the top of its footer or pinned to its
+   foot, so it never covers the sheet's own buttons (V11-3) */
+body.feel #side .c-stoast { flex: none; pointer-events: none; }
+body.feel #side .c-stoast.alone { position: sticky; bottom: 0; z-index: 2; background: var(--sf-sheet); }
 html body.feel.c-toasts-sheet:has(#side:not([hidden])) #toasts {
   top: auto !important; bottom: var(--toast-sheet-b, 96px) !important;
   left: max(12px, calc((100% - 576px) / 2)) !important; right: max(12px, calc((100% - 576px) / 2)) !important;
   transform: none; width: auto; z-index: 75;
 }
-html body.feel.c-toasts-sheet.c-toasts-sheet-top:has(#side:not([hidden])) #toasts { top: var(--toast-sheet-t, 76px) !important; bottom: auto !important; }
 @media (min-width: 601px) {
   html body.feel.dev-phone.c-toasts-sheet:has(#side:not([hidden])) #toasts { left: calc(50% - 183px) !important; right: calc(50% - 183px) !important; }
 }

@@ -14,8 +14,8 @@ import { Script, runInNewContext } from 'node:vm';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const build = (env = {}) => {
   const out = mkdtempSync(join(tmpdir(), 'sr-shell-'));
-  execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), 'corners11-3'], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: out }, env), stdio: 'pipe' });
-  return { out, root: join(out, 'corners11-3') };
+  execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), 'corners11-2'], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: out }, env), stdio: 'pipe' });
+  return { out, root: join(out, 'corners11-2') };
 };
 const shellOf = (sw) => (sw.match(/const SHELL = PREFIX \+ '([^']+)';/) || [])[1];
 
@@ -23,7 +23,7 @@ test('the copy is named from a hash of what it keeps, the same for the same buil
   const a = build(), b = build(), plain = build({ MV_MIN: '0' });
   try {
     const sa = readFileSync(join(a.root, 'sw.js'), 'utf8');
-    assert.match(sa, /const PREFIX = 'sundayreset-corners11-3-shell-';/);
+    assert.match(sa, /const PREFIX = 'sundayreset-corners11-2-shell-';/);
     assert.match(shellOf(sa) || '', /^[0-9a-f]{12}$/, 'a hash, never a name written by hand');
     assert.equal(shellOf(readFileSync(join(b.root, 'sw.js'), 'utf8')), shellOf(sa), 'the same files: the same copy');
     assert.notEqual(shellOf(readFileSync(join(plain.root, 'sw.js'), 'utf8')), shellOf(sa), 'different files: a new copy');
@@ -97,7 +97,7 @@ function worker(sw, { fail = () => false, start = {} } = {}) {
 test('an install that couldn’t fetch every file never deletes the older whole copy', async () => {
   const { out, root } = build();
   try {
-    const sw = readFileSync(join(root, 'sw.js'), 'utf8'), shell = 'sundayreset-corners11-3-shell-' + shellOf(sw), older = 'sundayreset-corners11-3-shell-0123456789ab';
+    const sw = readFileSync(join(root, 'sw.js'), 'utf8'), shell = 'sundayreset-corners11-2-shell-' + shellOf(sw), older = 'sundayreset-corners11-2-shell-0123456789ab';
     /* the 3D library can't be fetched: the new copy isn't whole, so the older one stays */
     const w = worker(sw, { fail: (u) => /three/.test(u), start: { [older]: ['/', '/src/app.js', '/__shell-whole'] } });
     await w.fire('install');

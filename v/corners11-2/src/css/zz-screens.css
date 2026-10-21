@@ -1,0 +1,65 @@
+/* == V11-3: screen sizes, the desk, setup, meals, settings, and small copy (docs/V11-3-REVIEWS.md, the design review) ==
+   Loads last of the area sheets (zz), so what it settles holds. Each rule names the finding it answers. */
+
+/* 47: Settings reads the same on the desk and the phone: section names in sentence case, the way the phone's
+   list has them */
+body.feel .set-gh { text-transform: none; letter-spacing: 0; }
+/* (the phone's list leads with what the desk's Overview says first: a sample week, or a made up board) */
+body.feel .set-nav .c-setnote { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 16px 0 0; }
+
+/* 50: one sample, one name. The desk names Alex with Sample week under it; the iPad and the open Duo say the same,
+   in place of a bare Sample */
+@media (min-width: 760px) and (max-width: 1180px) {
+  .k .c-me.c-sample .c-me-name { display: block; }
+  .k .c-me.c-sample .c-me-tag { display: none; }
+}
+
+/* 39: the phone's Today header keeps the date, the clock, and Settings on one row on a narrow phone (the Duo folded,
+   386 wide), where Settings used to drop alone onto a second row; the date steps down to 16 there */
+.c-ph-hrow:not(:has(.c-devchip)) { flex-wrap: nowrap; }
+@media (max-width: 400px) { .c-ph-hrow .c-ph-date { font-size: 16px; } }
+
+/* 49: the Dev chip on the phone's list names the board it shows, not only Dev; it has the row to itself */
+.td-top .c-devchip.c-devchip-list .c-devname { display: inline; max-width: 150px; font-weight: 500; }
+/* (the empty day's first step: its button sits under its line) */
+.td-note .td-acts .small { min-height: 44px; }
+
+/* 42: the welcome's three tiles are facts, not buttons: flat, a small mark in each one's block color, white words,
+   three across on every size (a gold tile beside the gold Set up my week read as a second call to action) */
+body.feel .onb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+body.feel .onb-tile { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 0; border-radius: 0; background: none; color: var(--tx, #FFFFFF); box-shadow: none; transform: none; animation: none; font: 700 14px/1.25 var(--font); white-space: normal; text-align: left; }
+.onb-sw { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 8px; background: var(--pc); }
+.onb-sw canvas { width: 16px; height: 16px; }
+@media (max-width: 600px) {
+  body.feel .onb-tile { flex-direction: column; justify-content: flex-start; gap: 6px; text-align: center; }
+}
+
+/* 41: a block to try in the setup rests as a quiet tile with its color as a mark (only Next is gold); lifted or shown
+   moving, it's the block in its own color */
+body.feel .onb-piece { background: var(--pc); color: var(--pi); }
+body.feel .onb-piece.onb-rest { gap: 10px; padding: 8px 14px 8px 8px; background: var(--sf-raised); color: var(--tx, #FFFFFF); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+body.feel .onb-piece.onb-rest small { color: var(--tx-2); }
+body.feel .onb-piece.onb-rest:hover { background: rgba(255, 255, 255, 0.1); }
+body.feel .onb-piece.onb-rest.lifted { background: none !important; }
+
+/* 41: Building your week on a phone keeps every line it said, ticked, under the week as it fills, so the page ends as
+   a list of what was built (it ended on one line, "Dinner at 6 pm", over half a blank screen) */
+.sheet.onb.onb-card.onb-at-build:not(.onb-landing) .onb-lines { gap: 10px; margin-top: 16px; }
+.sheet.onb.onb-card.onb-at-build:not(.onb-landing) .onb-line.done, .sheet.onb.onb-card.onb-at-build:not(.onb-landing) .onb-line.done:not(:has(+ .onb-line.done)) { display: flex; align-items: baseline; gap: 12px; font: 600 16px/1.35 var(--font); color: #FFFFFF; }
+.sheet.onb.onb-card.onb-at-build:not(.onb-landing) .onb-line.done::before { content: ''; flex: none; width: 5px; height: 10px; margin: 0 3px 0 4px; border: solid #FFFFFF; border-width: 0 2.5px 2.5px 0; transform: translateY(-2px) rotate(45deg); }
+
+/* 27: on the meal board with nights still open, Fill the week is the gold thing and Done steps back */
+.c-mat.c-fillgold .c-mat-head .c-go { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35); color: var(--tx, #FFFFFF); }
+.c-mat.c-fillgold .c-mat-head .c-go:hover { background: var(--sf-hover, rgba(255, 255, 255, 0.1)); }
+.c-mat.c-fillgold .c-fillbtn { background: var(--k-gold); color: #252928; box-shadow: none; }
+.c-mat.c-fillgold .c-fillbtn:hover { filter: brightness(1.05); }
+
+/* 32: Bare (nothing on the desk) is a row of its own at the end of the layouts, so no card sits alone on a row */
+.set-page .desk-themes.lays .desk-theme.c-bare { order: 99; grid-column: 1 / -1; display: flex; flex-direction: row; align-items: center; gap: 12px; text-align: left; }
+.set-page .desk-themes.lays .desk-theme.c-bare canvas { width: 88px; flex: none; }
+.c-mat.c-fillgold .c-fillbtn canvas { filter: brightness(0.15); }
+
+/* 46: a row's second line keeps its last part, when, whole; only what it names ellipsizes */
+.c-gs-rd.c-rd-split { display: flex; min-width: 0; }
+.c-gs-rd.c-rd-split .c-rd-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-gs-rd.c-rd-split .c-rd-when { flex: none; white-space: pre; }

@@ -7,7 +7,7 @@
 //
 //   npm run contrast        every screen at iPhone, Duo folded, Duo open, iPad, and Mac, one lane a size
 //   node scripts/gate/contrast.mjs -sizes phone,mac -screens phone,settings [-out folder] [-shots] [-verbose]
-//     [-build folder] (a build already made, V11-3's corners11-3, or an earlier one's) [-serve 4486 -cdp 9486] (the ports it starts on: Chrome on
+//     [-build folder] (a build already made, V11-2's corners11-2 or V11's) [-serve 4486 -cdp 9486] (the ports it starts on: Chrome on
 //     9486 unless -cdp says, the page on a free port unless -serve says)
 //     [-url http://localhost:4486/ -port 9486] (a build and a Chrome already running) [-one-lane]
 // Groups for -screens: first look phone today planner panels goals breakdown meals more reset todos rituals big

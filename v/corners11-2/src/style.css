@@ -597,7 +597,8 @@ body.drawer-open .scrim { background: rgba(28, 16, 6, 0.16); -webkit-backdrop-fi
 .now-top canvas { width: 16px; height: 16px; flex: none; }
 .now-name { font: 800 var(--t-input)/1.2 var(--name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .now-left { margin-left: auto; padding-left: 8px; font: 700 var(--t-small)/1.2 var(--font); color: #FFFFFF; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.now-left.soon { color: var(--gold); }
+/* V11-3 (one gold a screen): the last five minutes keep the time white and the pin red; gold is only ever the call to action */
+.now-left.soon { color: #FFFFFF; }
 .now-row { display: flex; align-items: center; gap: 3px; }
 /* the bar is a block: its own color, a lit top edge and a shaded lip, the spent part worn pale */
 .now-bar { position: relative; flex: 1; height: 14px; padding: 0; border: 0; border-radius: 5px; cursor: pointer; background: var(--bg, #EFB940);
@@ -606,10 +607,9 @@ body.drawer-open .scrim { background: rgba(28, 16, 6, 0.16); -webkit-backdrop-fi
 .now-bar.sleep { background: #5B616C; }
 .now-worn { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px 0 0 5px; background: rgba(255, 248, 236, 0.58); transition: width 1.2s ease-out; }
 .now-bar.open .now-worn, .now-bar.free .now-worn { background: rgba(242, 238, 230, 0.18); }
-/* the red enamel now pin, the same as on the board; gold in the last five minutes */
+/* the red enamel now pin, the same as on the board, red to the end (V11-3: no gold in the last five minutes) */
 .now-pin { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #D2503A; border-radius: 1px; transition: left 1.2s ease-out; }
 .now-pin::before { content: ""; position: absolute; left: 50%; top: -5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #D2503A; box-shadow: 0 0 0 2px var(--panel), inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
-.now-bar.soon .now-pin, .now-bar.soon .now-pin::before { background: #D9A43A; }
 .now-next { width: 22px; height: 14px; flex: none; border-radius: 5px 3px 3px 5px; background: var(--bg); opacity: 0.9; box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.25), inset 0 -2.5px 0 rgba(0, 0, 0, 0.2); -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent); mask-image: linear-gradient(90deg, #000 40%, transparent); }
 .now-line { font: 500 var(--t-label)/1.3 var(--font); color: var(--soft); min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now-bar:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 3px; }
@@ -760,7 +760,7 @@ body.mode-today .topbar, body.mode-today #corner { display: none !important; }
 .band-when { margin-left: auto; padding-left: 12px; display: flex; align-items: baseline; gap: 10px; white-space: nowrap; }
 .band-left { font: 800 var(--t-hud)/1 var(--name); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .band-at { font: 700 var(--t-body) var(--font); color: var(--soft); font-variant-numeric: tabular-nums; }
-.band-in.soon .band-left { color: var(--gold); }
+.band-in.soon .band-left { color: #FFFFFF; }
 .band-row { display: flex; align-items: center; gap: 5px; }
 .band-bar { position: relative; flex: 1; height: 18px; padding: 0; border: 0; border-radius: 6px; cursor: pointer; background: var(--bg, #EFB940);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.2); }
@@ -770,7 +770,6 @@ body.mode-today .topbar, body.mode-today #corner { display: none !important; }
 .band-bar.light .band-worn { background: rgba(92, 62, 22, 0.22); }
 .band-pin { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: #D2503A; border-radius: 1px; transition: left 1.2s ease-out; }
 .band-pin::before { content: ""; position: absolute; left: 50%; top: -6px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #D2503A; box-shadow: 0 0 0 2px var(--panel), inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
-.band-bar.soon .band-pin, .band-bar.soon .band-pin::before { background: #D9A43A; }
 .band-bar:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 3px; }
 .band-next { width: 40px; height: 18px; flex: none; border-radius: 6px; background: var(--bg); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.2); }
 .band-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 34px; }

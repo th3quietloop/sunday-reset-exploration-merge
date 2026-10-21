@@ -1,0 +1,32 @@
+/* == V11-3 (the design review): every hit area at least 44 by 44 ==
+   The drawing stays as it is; what a finger or a pointer can hit grows to 44 px around it, centered, with a clear
+   ::before (or ::after where ::before draws something). A control already 44 or more keeps its own size: the inset
+   is never positive. Controls that already stand absolutely (More below, the panel's x) keep their place; the rest
+   become the box their hit area is measured from. */
+body.feel :is(.k-pill, .k .c-rchip, .k-when, .k-arrow, .c-tr .k-seg button, .band-btn, .band-idea, .moment-kind, .moment-go, .moment-later,
+  .moment-x, .chip-btn, .c-weekbtn, .c-pill, .c-ghost, .c-mpop-x, .c-opt, .quick-acts .small, .quick-acts .go, #side .small, #side .go,
+  .set-link, .k-seg.c-for button, .dnote .small, .c-ts-due, .c-way):not([style*="position"]) { position: relative; }
+body.feel :is(.k-pill, .k .c-rchip, .k-when, .k-arrow, .c-tr .k-seg button, .band-btn, .band-idea, .moment-kind, .moment-go, .moment-later,
+  .moment-x, .chip-btn, .c-weekbtn, .c-pill, .c-ghost, .c-mpop-x, .c-opt, .quick-acts .small, .quick-acts .go, #side .small, #side .go,
+  .c-more, .side-x, .band-bar, .now-bar, .k-seg.c-for button, .dnote .small)::before {
+  content: ''; position: absolute; pointer-events: auto;
+  top: min(0px, calc((100% - 44px) / 2)); bottom: min(0px, calc((100% - 44px) / 2));
+  left: min(0px, calc((100% - 44px) / 2)); right: min(0px, calc((100% - 44px) / 2));
+}
+/* (the List button, a Settings page's link, and the meal board's pieces draw with ::before, so their hit area is their
+   ::after; a sheet's Due Thu is a word on a line) */
+body.feel .k .c-listbtn::after, body.feel:not(.phone) .set-link::after, body.feel .c-dblock.c-piece::after, body.feel .c-way::after, body.feel .c-ts-due::after {
+  content: ''; position: absolute; pointer-events: auto;
+  top: min(0px, calc((100% - 44px) / 2)); bottom: min(0px, calc((100% - 44px) / 2));
+  left: min(0px, calc((100% - 44px) / 2)); right: min(0px, calc((100% - 44px) / 2));
+}
+/* (a box to type in grows itself: it has no ::before) */
+body.feel .find-in { min-height: 44px; }
+/* (a grocery's check box, there for the keyboard and a screen reader under the drawn one, covers its whole row, 48 tall) */
+body.feel .c-shop-row > .c-shop-tick { top: 0; left: 0; width: 100%; height: 100%; margin: 0; }
+
+/* == V11-3 (the design review): More below never covers what it points past ==
+   The To-dos list keeps a strip under it for the button, as the meal board does (variant.js scrollHint with room), and
+   while a meal's own box is open over the board (its How chips, Skip among them) the board's More below steps away */
+.c-dock .c-scroll.c-tdscroll.c-more-room { margin-bottom: 44px; }
+.c-meals:has(.c-mpop) .c-more.on { opacity: 0; pointer-events: none; }

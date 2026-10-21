@@ -48,7 +48,7 @@ body.feel:not(.phone):not(.phone-desk) #side .c-shead:has(.c-sgap:not(:empty)) {
 .c-gs-day[aria-pressed="true"] { background: #FFFFFF; color: var(--sf-ink); box-shadow: none; }
 .c-gs-day:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
 .c-gs-dn { font: 600 12px/16px var(--k-font); color: var(--tx-2); }
-.c-gs-day b { font: 600 13px/18px var(--k-font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-gs-day b { max-width: 100%; padding: 0 4px; box-sizing: border-box; overflow: hidden; text-overflow: clip; font: 600 12px/18px var(--k-font); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .c-gs-day.none b { color: var(--tx-3); font-weight: 500; }
 .c-gs-day[aria-pressed="true"] .c-gs-dn { color: var(--sf-ink); }
 .c-gs-day[aria-pressed="true"].none b { color: #57575C; }

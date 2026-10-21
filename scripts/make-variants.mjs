@@ -7,24 +7,24 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8', 'corners9', 'corners10', 'corners11', 'corners11-2', 'corners11-3'];
-const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8', corners9: 'Corners V9', corners10: 'Corners V10', corners11: 'Corners V11', 'corners11-2': 'Corners V11-2', 'corners11-3': 'Corners V11-3' };
+const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8', 'corners9', 'corners10', 'corners11', 'corners11-2'];
+const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8', corners9: 'Corners V9', corners10: 'Corners V10', corners11: 'Corners V11', 'corners11-2': 'Corners V11-2' };
 const only = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const thaw = process.argv.includes('--thaw');
 /* a later round of a version is built from that version's source under its own name and link: V11-2 grows in
    variants/corners11, and v/corners11 stays as V11 went live (Oct 15), built again only with --thaw */
-const ALIAS = { 'corners11-2': 'corners11', 'corners11-3': 'corners11' };
-const FROZEN = new Set(['corners11', 'corners11-2']);
-const LINKS = { corners11: 'https://sunday-reset-corners-v11.vercel.app', 'corners11-2': 'https://sunday-reset-corners-v11-2.vercel.app', 'corners11-3': 'https://sunday-reset-corners-v11-3.vercel.app' };
-const FEEL = new Set(['corners11', 'corners11-2', 'corners11-3']);
+const ALIAS = { 'corners11-2': 'corners11' };
+const FROZEN = new Set(['corners11']);
+const LINKS = { corners11: 'https://sunday-reset-corners-v11.vercel.app', 'corners11-2': 'https://sunday-reset-corners-v11-2.vercel.app' };
+const FEEL = new Set(['corners11', 'corners11-2']);
 /* versions whose page code goes out minified (V11-3, code review 35: app.js alone was 1.59 MB to parse on a phone).
    Only the built copy is minified; the source and every test that reads it stay as written. MV_MIN=0 builds it
    plain, to read a stack trace */
-const MIN = new Set(['corners11-3']);
+const MIN = new Set(['corners11-2']);
 const minify = MIN.size && process.env.MV_MIN !== '0' ? (() => { try { return createRequire(import.meta.url)('esbuild'); } catch (e) { console.log('esbuild is not installed: the page code goes out as written'); return null; } })() : null;
 const jsUnder = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? jsUnder(join(dir, d.name)) : d.name.endsWith('.js') ? [join(dir, d.name)] : [])) : []);
 /* versions that draw their marks from Phosphor's vectors (board/src/icon-paths.js) */
-const VEC = new Set(['corners11', 'corners11-2', 'corners11-3']);
+const VEC = new Set(['corners11', 'corners11-2']);
 for (const id of ids) {
   if (only.length && !only.includes(id)) continue;
   const src = ALIAS[id] || id;
