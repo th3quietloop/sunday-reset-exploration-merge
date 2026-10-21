@@ -1,7 +1,9 @@
 // Builds each minimal version from the board: v/<id> is board/ with the kit and that version's own
 // chrome in place of round two's top bar. node scripts/make-variants.mjs
 import { cpSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
@@ -15,6 +17,12 @@ const ALIAS = { 'corners11-2': 'corners11', 'corners11-3': 'corners11' };
 const FROZEN = new Set(['corners11', 'corners11-2']);
 const LINKS = { corners11: 'https://sunday-reset-corners-v11.vercel.app', 'corners11-2': 'https://sunday-reset-corners-v11-2.vercel.app', 'corners11-3': 'https://sunday-reset-corners-v11-3.vercel.app' };
 const FEEL = new Set(['corners11', 'corners11-2', 'corners11-3']);
+/* versions whose page code goes out minified (V11-3, code review 35: app.js alone was 1.59 MB to parse on a phone).
+   Only the built copy is minified; the source and every test that reads it stay as written. MV_MIN=0 builds it
+   plain, to read a stack trace */
+const MIN = new Set(['corners11-3']);
+const minify = MIN.size && process.env.MV_MIN !== '0' ? (() => { try { return createRequire(import.meta.url)('esbuild'); } catch (e) { console.log('esbuild is not installed: the page code goes out as written'); return null; } })() : null;
+const jsUnder = (dir) => (existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? jsUnder(join(dir, d.name)) : d.name.endsWith('.js') ? [join(dir, d.name)] : [])) : []);
 /* versions that draw their marks from Phosphor's vectors (board/src/icon-paths.js) */
 const VEC = new Set(['corners11', 'corners11-2', 'corners11-3']);
 for (const id of ids) {
@@ -58,7 +66,9 @@ for (const id of ids) {
      shows the desk with a week on it (assets/og.png, rendered from the app) and the manifest's one line. */
   if (src === 'corners11') {
     const og = LINKS[id] + '/assets/og.png', line = 'Your week as wooden blocks. Plan it on Sunday, live it on your phone.';
-    html = html.replace('<title>Sunday Reset</title>', ['<title>Sunday Reset</title>', `<meta name="sunday-reset-version" content="${names[id]}">`,
+    /* (V11-3, design review 54: these sites have no sync server, so the page says so and never asks for /api/config,
+       which answered 404 on every load; the board's own page, served with its server, still asks) */
+    html = html.replace('<title>Sunday Reset</title>', ['<title>Sunday Reset</title>', `<meta name="sunday-reset-version" content="${names[id]}">`, '<meta name="sunday-reset-sync" content="off">',
       '<meta property="og:type" content="website">', '<meta property="og:site_name" content="Sunday Reset">', '<meta property="og:title" content="Sunday Reset">', `<meta property="og:description" content="${line}">`,
       `<meta property="og:image" content="${og}">`, '<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">', '<meta property="og:image:alt" content="A wooden desk with a week of colored blocks on it, Sunday to Saturday">',
       `<meta property="og:url" content="${LINKS[id]}/">`, '<meta name="twitter:card" content="summary_large_image">', '<meta name="twitter:title" content="Sunday Reset">', `<meta name="twitter:description" content="${line}">`, `<meta name="twitter:image" content="${og}">`].join('\n'));
@@ -66,14 +76,38 @@ for (const id of ids) {
   /* a version that moves on springs says so on its page (feel, in the board's own code) */
   html = html.replace('<body>', `<body class="v-${src}${src !== id ? ' v-' + id : ''}${FEEL.has(id) ? ' feel' : ''}">`);
   writeFileSync(join(out, 'index.html'), html);
+  /* the page's code, minified where the version says so: each script on its own, as a classic script, so its top
+     level names (what one script shares with the next) stay as they are and only what's inside is shortened */
+  if (MIN.has(id) && minify) {
+    let before = 0, after = 0;
+    for (const f of jsUnder(join(out, 'src'))) {
+      const code = readFileSync(f, 'utf8');
+      try {
+        const r = minify.transformSync(code, { minify: true, loader: 'js', legalComments: 'inline', sourcefile: relative(out, f) });
+        writeFileSync(f, r.code); before += code.length; after += r.code.length;
+      } catch (e) { throw new Error('could not minify ' + relative(out, f) + ': ' + e.message); }
+    }
+    console.log('  page code ' + Math.round(before / 1024) + ' KB, minified ' + Math.round(after / 1024) + ' KB');
+  }
   let sw = readFileSync(join(out, 'sw.js'), 'utf8');
-  sw = sw.replace("'/src/merge.js',", "'/src/kit.js', '/src/variant.js',").replace("'/src/merge.css',", "'/src/kit.css', '/src/variant.css'," + (polish ? " '/src/polish.css'," : '')).replace("'/src/icons.js',", VEC.has(id) ? "'/src/icon-paths.js', '/src/icons.js'," : "'/src/icons.js',").replace(/sundayreset-merge-shell-v\d+/g, `sundayreset-${id}-shell-v2`).replace("k.startsWith('sundayreset-merge-shell-')", `k.startsWith('sundayreset-${id}-shell-')`);
+  const swFrom = sw;
+  sw = sw.replace("'/src/merge.js',", "'/src/kit.js', '/src/variant.js',").replace("'/src/merge.css',", "'/src/kit.css', '/src/variant.css'," + (polish ? " '/src/polish.css'," : '')).replace("'/src/icons.js',", VEC.has(id) ? "'/src/icon-paths.js', '/src/icons.js'," : "'/src/icons.js',").replace("const PREFIX = 'sundayreset-merge-shell-';", `const PREFIX = 'sundayreset-${id}-shell-';`);
   /* V11-2 (the unhappy gate): the worker keeps what the page loads, all of it, so a phone that opened the app once opens it
      again with no connection and gets its desk: the version's own style sheets, and the 3D library from its CDN (kept
-     by the worker at install; the page's first visit asks for it before the worker is there). Shell v2, since the list
-     grew. */
+     by the worker at install; the page's first visit asks for it before the worker is there). */
   const libs = Array.from(html.matchAll(/<script src="(https:\/\/cdn\.jsdelivr\.net\/[^"]+)"/g)).map((m) => m[1]);
   sw = sw.replace("'/manifest.webmanifest',", areaCss.map((f) => "'/src/css/" + f + "', ").join('') + libs.map((u) => "'" + u + "', ").join('') + "'/manifest.webmanifest',");
+  /* V11-3 (code review 9): the copy's name comes from a hash of the files it keeps, their names and what's in them,
+     so every build that changes any of them keeps a new copy (the worker lets go of the older one only once the new
+     one is whole). A name written by hand (shell-v2) never changed for a build, so a bump in sw.js did nothing. */
+  const list = sw.match(/const files = \[([^\]]*)\]/);
+  if (!list || sw === swFrom || !sw.includes(`const PREFIX = 'sundayreset-${id}-shell-';`) || !sw.includes("const SHELL = PREFIX + 'v2';")) throw new Error(id + ': sw.js no longer has the lines this build fills in (const files, PREFIX, SHELL)');
+  const hash = createHash('sha256').update(sw);
+  for (const f of list[1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean)) {
+    hash.update(f + '\n');
+    if (f.startsWith('/')) { const file = join(out, f === '/' ? 'index.html' : f.slice(1)); if (existsSync(file)) hash.update(readFileSync(file)); }
+  }
+  sw = sw.replace("const SHELL = PREFIX + 'v2';", "const SHELL = PREFIX + '" + hash.digest('hex').slice(0, 12) + "';");
   writeFileSync(join(out, 'sw.js'), sw);
   console.log('v/' + id);
 }

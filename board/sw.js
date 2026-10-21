@@ -4,17 +4,36 @@
    whenever it can be; the copy is only for when the network can't answer. The API is never kept.
    What every desk needs is kept at install; a kit layout's own things are kept the first time that
    layout is used, the same way. */
-const SHELL = 'sundayreset-merge-shell-v2';
+/* (V11-3: a build names the copy from a hash of what it keeps, scripts/make-variants.mjs, so a new build always
+   keeps a new copy; the board's own page keeps v2) */
+const PREFIX = 'sundayreset-merge-shell-';
+const SHELL = PREFIX + 'v2';
+/* the copy holds this once every file below was kept */
+const WHOLE = '/__shell-whole';
 const KEEP = /\.(?:js|css|html|webmanifest|png|webp|svg|woff2?)$|\/$/;
 const OTHER = /^https:\/\/(?:cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
+const files = ['/', '/src/style.css', '/src/merge.css', '/src/focus.js', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 /* (V11-2, the unhappy gate: each file is kept on its own, so one that can't be fetched leaves the rest kept; addAll
    kept nothing when any one failed, and the first visit's own requests come before the worker is there to keep
-   them, so an app opened offline after one visit came up without the desk) */
+   them, so an app opened offline after one visit came up without the desk)
+   V11-3: each is asked of the network itself (cache: 'reload'), never the browser's own HTTP cache, which could hand
+   back a copy older than this build. fill(true) asks only for what the copy doesn't have yet. The copy is whole once
+   every file arrived, and only then does it say so. */
+const fill = (onlyMissing) => caches.open(SHELL).then((c) => Promise.all(files.map((f) =>
+  (onlyMissing ? c.match(f, { ignoreVary: true }) : Promise.resolve(null))
+    .then((hit) => hit || c.add(new Request(f, { cache: 'reload' })))
+    .then(() => true, () => false)))
+  .then((got) => (got.every(Boolean) ? c.put(WHOLE, new Response('whole')).then(() => true) : false)));
+const whole = () => caches.open(SHELL).then((c) => c.match(WHOLE)).then((hit) => !!hit, () => false);
 self.addEventListener('install', (e) => {
-  const files = ['/', '/src/style.css', '/src/merge.css', '/src/focus.js', '/src/merge.js', '/src/app.js', '/src/model.js', '/src/data.js', '/src/scene.js', '/src/store.js', '/src/cloud.js', '/src/diagnostics.js', '/src/onboard.js', '/src/scenarios.js', '/src/icons.js', '/src/sound.js', '/src/props-data.js', '/src/kit/themes.js', '/src/kit/desk-paint.js', '/src/kit/light.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
-  e.waitUntil(caches.open(SHELL).then((c) => Promise.all(files.map((f) => c.add(f).catch(() => {})))).then(() => self.skipWaiting()));
+  e.waitUntil(fill(false).catch(() => false).then(() => self.skipWaiting()));
 });
-self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('sundayreset-merge-shell-') && k !== SHELL).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
+/* an older copy goes only once this one is whole: an install that couldn't fetch every file tries the missing ones
+   again here, and if some still don't come, the older whole copy stays for the offline open */
+self.addEventListener('activate', (e) => e.waitUntil(whole()
+  .then((ok) => ok || fill(true).catch(() => false))
+  .then((ok) => (ok ? caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith(PREFIX) && k !== SHELL).map((k) => caches.delete(k)))) : null))
+  .then(() => self.clients.claim())));
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -30,7 +49,8 @@ self.addEventListener('fetch', (e) => {
     if (res && (res.ok || res.type === 'opaque')) { const copy = res.clone(); caches.open(SHELL).then((c) => c.put(key, copy)).catch(() => {}); }
     return res;
   /* (a library from another site is kept by its address: the network's Vary on how it was compressed doesn't matter) */
-  }).catch(() => caches.match(key, { ignoreVary: true }).then((hit) => hit || Response.error())));
+  /* (this build's copy first; an older whole copy, kept while this one isn't, after it) */
+  }).catch(() => caches.open(SHELL).then((c) => c.match(key, { ignoreVary: true })).then((hit) => hit || caches.match(key, { ignoreVary: true })).then((hit) => hit || Response.error())));
 });
 self.addEventListener('push', (e) => {
   let p = {};

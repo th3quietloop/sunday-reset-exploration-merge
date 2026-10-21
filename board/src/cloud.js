@@ -51,6 +51,9 @@
     /* Is there a server? Not inside claude.ai, and not from a file. */
     async probe() {
       if (root.claude || location.protocol === 'file:' || root.self !== root.top) return null;
+      /* (V11-3, design review 54: a site built with no sync server says so on its page, so the page never asks for
+         /api/config there; asking answered 404 on every load) */
+      if (root.document && document.querySelector && document.querySelector('meta[name="sunday-reset-sync"][content="off"]')) return null;
       try {
         const r = await Promise.race([fetch('/api/config', { cache: 'no-store' }), wait(4000).then(() => null)]);
         this.cfg = r && r.ok ? await r.json() : null;
@@ -286,16 +289,23 @@
         try { await this.api('DELETE', '/api/push'); } catch (e) { /* offline: the subscription above is gone already */ }
         return { on: false };
       }
+      /* (V11-3: a server with no push key says not-set-up before anything is asked; until then a missing key threw a
+         TypeError, which read as Offline. Only the requests themselves, to the push service and the household, can
+         be offline now; anything else that throws is failed) */
+      const vapid = this.cfg.vapid;
+      if (typeof vapid !== 'string' || !/^[A-Za-z0-9_-]{20,}$/.test(vapid)) return { error: 'not-set-up' };
+      let sub;
       try {
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') return { error: 'denied' };
-        const raw = atob(this.cfg.vapid.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - this.cfg.vapid.length % 4) % 4));
+        const raw = atob(vapid.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - vapid.length % 4) % 4));
         const key = Uint8Array.from(raw, (c) => c.charCodeAt(0));
-        let sub = await reg.pushManager.getSubscription();
+        sub = await reg.pushManager.getSubscription();
         if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-        const r = await this.api('POST', '/api/push', { sub: sub.toJSON(), prefs, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
-        return r.status === 200 ? { on: true } : { error: r.json.error || 'failed' };
-      } catch (e) { return { error: navigator.onLine === false || (e && e.name === 'TimeoutError') || e instanceof TypeError ? 'offline' : 'failed' }; }
+      } catch (e) { return { error: navigator.onLine === false ? 'offline' : 'failed' }; }
+      let r;
+      try { r = await this.api('POST', '/api/push', { sub: sub.toJSON(), prefs, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }); } catch (e) { return { error: 'offline' }; }
+      return r.status === 200 ? { on: true } : { error: (r.json && r.json.error) || 'failed' };
     },
     /* A calendar someone subscribed to, fetched by the server. Its address can be a secret (Google's
        and Outlook's private links are), so it travels in the body, never in the address the server logs. */

@@ -31,8 +31,9 @@ test('the service worker keeps every file V11-2’s page loads, one at a time', 
     /* and every local one it keeps is there to keep */
     const gone = [...kept].filter((u) => u.startsWith('/') && !existsSync(join(root, u === '/' ? 'index.html' : u)));
     assert.deepEqual(gone, [], 'files on the list that the build doesn’t have');
-    /* each is kept on its own, so one that can't be fetched leaves the rest */
-    assert.match(sw, /files\.map\(\(f\) => c\.add\(f\)\.catch\(/);
+    /* each is kept on its own, so one that can't be fetched leaves the rest, and each is asked of the network itself,
+       never the browser's HTTP cache (V11-3, code review 19) */
+    assert.match(sw, /c\.add\(new Request\(f, \{ cache: 'reload' \}\)\)/);
     assert.doesNotMatch(sw, /c\.addAll\(/);
   } finally { rmSync(out, { recursive: true, force: true }); }
 });
