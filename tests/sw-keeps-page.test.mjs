@@ -16,8 +16,8 @@ const REPO = fileURLToPath(new URL('..', import.meta.url));
 test('the service worker keeps every file V11-2’s page loads, one at a time', () => {
   const out = mkdtempSync(join(tmpdir(), 'sr-sw-'));
   try {
-    execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), 'corners11-2'], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: out }), stdio: 'pipe' });
-    const root = join(out, 'corners11-2');
+    execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), 'corners11-3'], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: out }), stdio: 'pipe' });
+    const root = join(out, 'corners11-3');
     const html = readFileSync(join(root, 'index.html'), 'utf8'), sw = readFileSync(join(root, 'sw.js'), 'utf8');
     const m = sw.match(/const files = \[([^\]]*)\]/);
     assert.ok(m, 'sw.js: the install list (const files = [...]) is gone');

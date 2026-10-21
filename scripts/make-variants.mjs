@@ -5,18 +5,18 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8', 'corners9', 'corners10', 'corners11', 'corners11-2'];
-const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8', corners9: 'Corners V9', corners10: 'Corners V10', corners11: 'Corners V11', 'corners11-2': 'Corners V11-2' };
+const ids = ['corners', 'rail', 'library', 'dock', 'corners2', 'corners3', 'corners4', 'corners5', 'corners6', 'corners7', 'corners8', 'corners9', 'corners10', 'corners11', 'corners11-2', 'corners11-3'];
+const names = { corners: 'Corners', rail: 'Rail', library: 'Library', dock: 'Dock', corners2: 'Corners V2', corners3: 'Corners V3', corners4: 'Corners V4', corners5: 'Corners V5', corners6: 'Corners V6', corners7: 'Corners V7', corners8: 'Corners V8', corners9: 'Corners V9', corners10: 'Corners V10', corners11: 'Corners V11', 'corners11-2': 'Corners V11-2', 'corners11-3': 'Corners V11-3' };
 const only = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const thaw = process.argv.includes('--thaw');
 /* a later round of a version is built from that version's source under its own name and link: V11-2 grows in
    variants/corners11, and v/corners11 stays as V11 went live (Oct 15), built again only with --thaw */
-const ALIAS = { 'corners11-2': 'corners11' };
-const FROZEN = new Set(['corners11']);
-const LINKS = { corners11: 'https://sunday-reset-corners-v11.vercel.app', 'corners11-2': 'https://sunday-reset-corners-v11-2.vercel.app' };
-const FEEL = new Set(['corners11', 'corners11-2']);
+const ALIAS = { 'corners11-2': 'corners11', 'corners11-3': 'corners11' };
+const FROZEN = new Set(['corners11', 'corners11-2']);
+const LINKS = { corners11: 'https://sunday-reset-corners-v11.vercel.app', 'corners11-2': 'https://sunday-reset-corners-v11-2.vercel.app', 'corners11-3': 'https://sunday-reset-corners-v11-3.vercel.app' };
+const FEEL = new Set(['corners11', 'corners11-2', 'corners11-3']);
 /* versions that draw their marks from Phosphor's vectors (board/src/icon-paths.js) */
-const VEC = new Set(['corners11', 'corners11-2']);
+const VEC = new Set(['corners11', 'corners11-2', 'corners11-3']);
 for (const id of ids) {
   if (only.length && !only.includes(id)) continue;
   const src = ALIAS[id] || id;

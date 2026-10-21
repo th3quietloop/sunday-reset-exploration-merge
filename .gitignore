@@ -10,3 +10,6 @@ docs/walk/*-after/
 docs/mocks/phone-redesign/built/
 docs/mocks/big-moments/built/
 docs/mocks/setup-week/built/
+
+# Helpers working in their own copies (Oct 20)
+.worktrees/

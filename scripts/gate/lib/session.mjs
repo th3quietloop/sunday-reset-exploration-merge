@@ -29,7 +29,7 @@ export function runDir(args, name) {
 
 /* the version in the works built from this repo into dir (the same build Vercel gets), and the folder its page is
    in: V11-2 since Oct 20 (V11 itself is frozen as it went live, in v/corners11) */
-export const BUILD_ID = 'corners11-2';
+export const BUILD_ID = 'corners11-3';
 export function build(dir, id = BUILD_ID) {
   mkdirSync(dir, { recursive: true });
   execFileSync(process.execPath, [join(REPO, 'scripts', 'make-variants.mjs'), id], { cwd: REPO, env: Object.assign({}, process.env, { MV_OUT: dir }), stdio: 'pipe' });
