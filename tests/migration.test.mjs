@@ -32,10 +32,10 @@ function v7Board() {
   return copy(st);
 }
 
-test('Data.VERSION is 9, and a fresh board starts with no goals', () => {
-  assert.equal(D.VERSION, 9);
+test('Data.VERSION is 10, and a fresh board starts with no goals', () => {
+  assert.equal(D.VERSION, 10);
   for (const st of [D.defaultState(today), D.sampleState(today), D.buildState({ name: 'Ana', kids: [], wake: { wd: 420, we: 480 }, bed: { wd: 1380, we: 1380 }, work: null }, today)]) {
-    assert.equal(st.v, 9);
+    assert.equal(st.v, D.VERSION);
     assert.deepEqual(st.goals, []);
   }
 });
@@ -43,7 +43,7 @@ test('Data.VERSION is 9, and a fresh board starts with no goals', () => {
 test('a version 7 board comes forward unchanged except for the new empty goals', () => {
   const old = v7Board(), before = copy(old);
   const st = D.migrate(copy(old));
-  assert.equal(st.v, 9);
+  assert.equal(st.v, D.VERSION);
   assert.deepEqual(st.goals, []);
   const rest = copy(st);
   delete rest.goals;
@@ -57,7 +57,7 @@ test('a version 7 board comes forward unchanged except for the new empty goals',
   assert.deepEqual(D.migrate(kept).goals, [{ id: 'g1', name: 'Kept' }]);
 });
 
-test('a version 9 board round trips: goals, spread steps, sessions, Meal prep, and leftovers', () => {
+test('a current board round trips: goals, spread steps, sessions, Meal prep, and leftovers', () => {
   const st = D.migrate(v7Board());
   const g = M.newGoal({ name: 'Pass the bar exam', kind: 'exam', date: '2027-02-24', today, parts: M.goalForExam('bar exam', D).parts, rhythm: { wd: 60, we: 120 } });
   st.goals.push(g);
@@ -74,7 +74,7 @@ test('a version 9 board round trips: goals, spread steps, sessions, Meal prep, a
   M.placeAdd(st, '2026-10-18', { name: 'Meal prep', cat: 'meals', icon: 'pot', dur: 90, src: { type: 'prep', week: '2026-10-18' }, makes: [{ date: '2026-10-19', slot: 'lunch', name: 'Leftovers: Turkey chili' }] }, 780);
   const saved = JSON.stringify(st);
   const back = D.migrate(JSON.parse(saved));
-  assert.equal(back.v, 9);
+  assert.equal(back.v, D.VERSION);
   assert.equal(JSON.stringify(back), saved, 'exactly as saved');
   assert.equal(JSON.stringify(D.migrate(D.migrate(JSON.parse(saved)))), saved, 'migrating twice changes nothing');
   assert.deepEqual(copy(M.goalProgress(back, g.id, today, 600)), copy(M.goalProgress(st, g.id, today, 600)));
@@ -86,7 +86,7 @@ test('every older version still comes all the way forward, with goals', () => {
     old.v = v;
     delete old.goals;
     const st = D.migrate(old);
-    assert.equal(st.v, 9, 'from version ' + v);
+    assert.equal(st.v, D.VERSION, 'from version ' + v);
     assert.deepEqual(st.goals, []);
   }
 });
