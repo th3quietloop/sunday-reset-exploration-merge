@@ -20,6 +20,7 @@ import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, runDir, session } from './lib/session.mjs';
 import { summarize } from './summarize.mjs';
+import { verdictOf } from './lib/verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
@@ -139,13 +140,16 @@ const text = md.join('\n');
 writeFileSync(join(dir, 'summary.md'), text);
 say(text);
 const brFailed = br.some((b) => b.code !== 0);
-const dropsFailed = res.some((r) => r.code !== 0) || (wk && wk.code !== 0) || brFailed || (!files.length && !args['no-matrix']) || lost.length > 0;
+/* drops that missed (the matrix or WebKit) can be the machine's load; nothing else here can: a break-it scenario
+   that failed, a run where nothing ran, and a cell the last green run had that this one lost are always real */
+const dropsFailed = res.some((r) => r.code !== 0) || !!(wk && wk.code !== 0);
+const otherFailed = brFailed || (!files.length && !args['no-matrix']) || lost.length > 0;
 const sizeFailed = !!(bs && bs.code !== 0);
-const failed = dropsFailed || sizeFailed;
+const failed = dropsFailed || otherFailed || sizeFailed;
 /* drops that failed while the machine was over twice its cores make the run INVALID, not RED: run it again on a
-   quieter machine. (A green run under that load stands: everything landed anyway. A board that's too small is
-   measured at rest, so it's RED whatever the load) */
-const invalid = dropsFailed && !sizeFailed && peak > LOAD_MAX;
+   quieter machine. Only drops: anything else that failed makes it RED whatever the load. (A green run under that
+   load stands: everything landed anyway. A board that's too small is measured at rest, so it's RED too) */
+const invalid = verdictOf({ drops: dropsFailed, other: otherFailed, size: sizeFailed, peak, max: LOAD_MAX }) === 'invalid';
 /* a green run keeps what it ran, for the next run to hold to */
 if (!failed && !args['no-baseline']) {
   const next = { about: 'The cells (path|size|input) the last green drag gate ran. A cell here that does not run fails the gate. Written by release-gate.mjs after a green run; take a cell out by hand only when its path is meant to leave that size.', chrome: [], webkit: [] };

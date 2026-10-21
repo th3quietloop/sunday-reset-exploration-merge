@@ -199,7 +199,9 @@ function tripBoard() {
   return st;
 }
 
-test('a message step’s words come from the model: the suggestion, the person’s own once kept, and the quick versions', { skip: typeof M.msgFor !== 'function' && 'Model.msgFor is not there yet' }, () => {
+test('a message step’s words come from the model: the suggestion, the person’s own once kept, and the quick versions', () => {
+  /* (V11-3, code review 34: the export is held to be there; a skip would pass quietly if it were renamed) */
+  assert.equal(typeof M.msgFor, 'function', 'Model.msgFor is gone');
   const r = stepsRig({ board: tripBoard() });
   const t = () => r.state.tasks.find((x) => x.id === 'lisa');
   const m = r.msgOf(t());

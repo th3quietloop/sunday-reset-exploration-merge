@@ -9,12 +9,13 @@
 //   3. it isn't a dead end: something on the screen can be done, and nothing waits forever;
 //   4. nothing threw: no exception and no console error from the app (a request the state cut on purpose is let
 //      through; what the page did about it is not).
-// Each state's contrast is measured too (lib/contrast-core.mjs, one look, no scrolling), and every state leaves a
+// Each state's contrast is measured too (lib/contrast-core.mjs, one look, no scrolling): text below AA, or contrast
+// that couldn't be measured, fails the state (-contrast-soft only reports it). Every state leaves a
 // picture. Made up boards only, and a fresh browser profile for every state.
 //
 //   npm run unhappy
 //   node scripts/gate/unhappy.mjs [-sizes mac,phone] [-groups offline,save,broken,ai,empty] [-only id,id]
-//     [-no-contrast] [-survey] [-out folder] [-build folder] [-serve 4480 -cdp 9480]
+//     [-no-contrast] [-contrast-soft] [-survey] [-out folder] [-build folder] [-serve 4480 -cdp 9480]
 // -survey prints what each state shows (its words and what can be pressed), to write a new state's expectations.
 // Exit code 1 when a state fails a check or couldn't be staged.
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
@@ -25,6 +26,7 @@ import { parseArgs, runDir, session } from './lib/session.mjs';
 import { KNOWN } from './lib/core.mjs';
 import { measure } from './lib/contrast-core.mjs';
 import { SIZES as CX } from './lib/contrast-walk.mjs';
+import { stateFails, stateWhy } from './lib/verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROBE = readFileSync(join(HERE, 'lib', 'probe.js'), 'utf8');
@@ -315,7 +317,7 @@ async function one(st, size, extra = {}) {
     if (!args['no-contrast']) {
       try { const m = await measure(t.c, { focus: false, scroll: false, settle: 1200 }); r.contrast = m.results.filter((x) => !x.pass).map((x) => ({ text: x.text, ratio: x.ratio, need: x.need, kind: x.kind })); } catch (e) { r.contrast = null; r.contrastError = String(e.message || e).slice(0, 160); }
     }
-    say('   ' + r.id + ': ' + (r.pass ? 'pass' : 'FAIL ' + r.why.join('; ')) + (r.contrast && r.contrast.length ? ' (contrast: ' + r.contrast.length + ' below)' : ''));
+    say('   ' + r.id + ': ' + (r.pass ? 'pass' : 'FAIL ' + r.why.join('; ')) + (r.contrast && r.contrast.length ? ' (contrast: ' + r.contrast.length + ' below)' : '') + (r.contrastError ? ' (contrast not measured: ' + r.contrastError + ')' : ''));
     if (args.survey) say('      words: ' + look.words.join(' | ').slice(0, 600) + '\n      toasts: ' + J(look.toasts.map((x) => x.text + (x.buttons.length ? ' [' + x.buttons.join(', ') + ']' : ''))) + '\n      can: ' + look.controls.map((x) => x.name).filter(Boolean).slice(0, 24).join(' | ') + (look.busy.length ? '\n      busy: ' + look.busy.join(', ') : '') + '\n      layer: ' + look.layer.join(', ') + (t.notes.length ? '\n      notes: ' + t.notes.join(' / ') : '') + (r.drawn ? '\n      drawn: ' + J(r.drawn) : ''));
   } catch (e) {
     r.error = String(e && e.message || e).slice(0, 300);
@@ -352,7 +354,9 @@ async function drawn(t) {
     const links = [...document.querySelectorAll('link[rel=stylesheet]')].filter((l) => !/fonts\\.googleapis/.test(l.href));
     /* (a sheet that didn't arrive can still be there, with no rules in it, where it had them with the connection) */
     const online = ${t.rulesOnline || '{}'};
-    const missing = links.filter((l) => { try { return !l.sheet || (!l.sheet.cssRules.length && online[l.getAttribute('href')] > 0); } catch (e) { return false; } }).map((l) => l.getAttribute('href'));
+    /* (a sheet whose rules can't be read, from another site, can't be shown to have arrived, so it counts as missing:
+       nothing that can't be checked passes) */
+    const missing = links.filter((l) => { try { return !l.sheet || (!l.sheet.cssRules.length && online[l.getAttribute('href')] > 0); } catch (e) { return true; } }).map((l) => l.getAttribute('href'));
     const desk = !!window.THREE, list = document.body.classList.contains('no-desk');
     const app = !!window.SR && !!SR.state;
     const why = [];
@@ -474,22 +478,24 @@ function helper(size) {
 /* == the summary: every state, then what failed, with who answers for it == */
 function report() {
   const ran = results.filter((r) => !r.skip && !r.error);
-  const failed = results.filter((r) => r.skip || r.error || !r.pass);
+  /* contrast below AA, or contrast that couldn't be measured, fails the state like the four checks (-contrast-soft
+     reports it beside them instead, for a run that's about something else) */
+  const failed = results.filter((r) => stateFails(r, { softContrast: !!args['contrast-soft'] }));
   const md = ['# The unhappy gate, ' + new Date().toISOString().slice(0, 16).replace('T', ' '), '',
-    results.length + ' states at ' + sizes.map((s) => SIZES[s].label).join(' and ') + ': ' + ran.filter((r) => r.pass).length + ' pass, ' + ran.filter((r) => !r.pass).length + ' fail, ' + results.filter((r) => r.skip || r.error).length + ' couldn’t be staged.', '',
+    results.length + ' states at ' + sizes.map((s) => SIZES[s].label).join(' and ') + ': ' + ran.filter((r) => !failed.includes(r)).length + ' pass, ' + ran.filter((r) => failed.includes(r)).length + ' fail, ' + results.filter((r) => r.skip || r.error).length + ' couldn’t be staged.', '',
     '| State | ' + sizes.map((s) => SIZES[s].label).join(' | ') + ' | Who answers for it |', '|---|' + sizes.map(() => '---').join('|') + '|---|'];
   const ids = Array.from(new Set(results.map((r) => r.id)));
   for (const id of ids) {
     const rs = results.filter((r) => r.id === id);
-    md.push('| ' + rs[0].name + ' | ' + sizes.map((s) => { const r = rs.find((x) => x.size === s); if (!r) return ''; if (r.skip) return 'not staged'; if (r.error) return 'error'; return (r.pass ? 'pass' : '**fail**') + (r.contrast && r.contrast.length ? ', contrast ' + r.contrast.length : ''); }).join(' | ') + ' | ' + rs[0].owner + ' |');
+    md.push('| ' + rs[0].name + ' | ' + sizes.map((s) => { const r = rs.find((x) => x.size === s); if (!r) return ''; if (r.skip) return 'not staged'; if (r.error) return 'error'; return (failed.includes(r) ? '**fail**' : 'pass') + (r.contrast && r.contrast.length ? ', contrast ' + r.contrast.length : '') + (r.contrastError ? ', contrast not measured' : ''); }).join(' | ') + ' | ' + rs[0].owner + ' |');
   }
   if (failed.length) {
     md.push('', '## What failed', '');
-    for (const r of failed) md.push('- **' + r.name + '** at ' + SIZES[r.size].label + ' (' + r.owner + '): ' + (r.skip ? 'couldn’t be staged: ' + r.skip : r.error ? 'error: ' + r.error : r.why.join('; ')) + (r.shot ? '. Picture: `' + r.shot + '`' : '') + (r.said ? '\n  - It said: “' + r.said.replace(/\s+\|\s+/g, ' / ').slice(0, 300) + '”' : ''));
+    for (const r of failed) md.push('- **' + r.name + '** at ' + SIZES[r.size].label + ' (' + r.owner + '): ' + (r.skip ? 'couldn’t be staged: ' + r.skip : r.error ? 'error: ' + r.error : stateWhy(r).join('; ')) + (r.shot ? '. Picture: `' + r.shot + '`' : '') + (r.said ? '\n  - It said: “' + r.said.replace(/\s+\|\s+/g, ' / ').slice(0, 300) + '”' : ''));
   }
   const cx = ran.filter((r) => r.contrast && r.contrast.length);
   if (cx.length) {
-    md.push('', '## Contrast below WCAG AA in these states (reported beside the four checks)', '');
+    md.push('', (args['contrast-soft'] ? '## Contrast below WCAG AA in these states (reported beside the four checks)' : '## Contrast below WCAG AA in these states (each fails its state)'), '');
     for (const r of cx) md.push('- ' + r.name + ' at ' + SIZES[r.size].label + ': ' + r.contrast.slice(0, 4).map((x) => '“' + String(x.text).slice(0, 40) + '” ' + x.ratio + ' of ' + x.need).join('; ') + (r.contrast.length > 4 ? '; and ' + (r.contrast.length - 4) + ' more' : ''));
   }
   const text = md.join('\n');
