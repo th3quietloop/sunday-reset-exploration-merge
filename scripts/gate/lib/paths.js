@@ -491,7 +491,7 @@
       const sheet = document.getElementById('sheet');
       const g = mx.rect(grip), lane = mx.rect($('.onb-lane') || grip.parentElement);
       const want = Math.min(lane.x + lane.w - 6, g.cx + Math.max(40, lane.w * 0.12));
-      return { from: { x: g.cx, y: g.cy, text: 'the placed block\'s right edge', w: g.w, top: mx.at(g.cx, g.cy) }, to: { x: Math.round(want), y: g.cy }, expect: 'post', post: "(document.getElementById('sheet').textContent || '').includes('whole idea')" };
+      return { from: { x: g.cx, y: g.cy, text: 'the placed block\'s right edge', w: g.w, top: mx.at(g.cx, g.cy) }, to: { x: Math.round(want), y: g.cy }, expect: 'post', post: "(document.getElementById('sheet').textContent || '').includes('board moves like this')" };
     }
   };
   /* == the setup on the desk: the name's letters onto the rack, then who's at home into its row == */
