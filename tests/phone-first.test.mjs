@@ -293,10 +293,17 @@ function toastSpot(o) {
     /* the panel (closed, unless o.sheet opens it as the phone's sheet, with its footer's top, and its header's More
        menu shut unless o.sheet.menu) and the toasts' box */
     const __props = {};
+    /* (V11-3: the sheet makes room for the toasts showing, o.toastH tall, at the top of its footer, or pinned to its
+       foot when it has none: app.js toastRoom) */
+    const __kids = [];
+    const __room = { style: {}, classList: { add() {} }, setAttribute() {}, remove() {}, getBoundingClientRect: () => ({ top: __o.sheet.foot != null ? __o.sheet.foot : 844 - __o.toastH - 8, height: __o.toastH }) };
+    const el = () => __room;
     const __side = __o.sheet
-      ? { hidden: false, getClientRects: () => [1], getBoundingClientRect: () => ({ top: __o.sheet.top, bottom: 844 }), querySelector: (sel) => (sel === '.c-smenu' ? (__o.sheet.menu ? {} : null) : __o.sheet.foot == null ? null : { getBoundingClientRect: () => ({ top: __o.sheet.foot, height: 844 - __o.sheet.foot }) }) }
+      ? { hidden: false, scrollTop: 0, getClientRects: () => [1], getBoundingClientRect: () => ({ top: __o.sheet.top, bottom: 844 }),
+          querySelector: (sel) => (sel === '.c-stoast' ? (__kids.length ? __room : null) : sel === '.side-in' ? { appendChild: (k) => __kids.push(k) } : /c-sfoot/.test(sel) && __o.sheet.foot != null ? { insertBefore: (k) => __kids.push(k) } : null) }
       : { hidden: true, getClientRects: () => [] };
-    const $ = (id) => (id === 'side' ? __side : { style: { setProperty: (k, v) => { __props[k] = v; } } });
+    const __toasts = { children: __o.toastH ? [{ _gone: false, getBoundingClientRect: () => ({ height: __o.toastH }) }] : [], style: { setProperty: (k, v) => { __props[k] = v; } } };
+    const $ = (id) => (id === 'side' ? __side : __toasts);
     const zoomOf = () => 1;
     ${app('  /* V11: on a phone a toast stands in the half of the screen away from the last touch', '  /* o (V11, lift and place): receipt, a drop saying where it went')}
     ({ phoneToasts, props: __props });`;
@@ -305,7 +312,7 @@ function toastSpot(o) {
   if (o.touchY != null) handlers.forEach((fn) => fn({ clientY: o.touchY }));
   fns.phoneToasts();
   /* (over the phone's sheet: above its footer, or under its header, at so many pixels) */
-  if (cls.has('c-toasts-sheet')) return cls.has('c-toasts-sheet-top') ? 'sheet top ' + fns.props['--toast-sheet-t'] : 'sheet bottom ' + fns.props['--toast-sheet-b'];
+  if (cls.has('c-toasts-sheet')) return 'sheet bottom ' + fns.props['--toast-sheet-b'];
   return cls.has('c-toasts-high') ? 'top' : 'bottom';
 }
 
@@ -318,12 +325,11 @@ test('a phone\'s toasts stand in the half of the screen away from the last touch
   assert.equal(toastSpot({ touchY: 700 }), 'bottom', 'the desk on a computer keeps its own places');
 });
 
-test('over the phone\'s sheet a toast sits just above its footer, or under its header when the touch was right there (docs/PHONE-REDESIGN.md, 5.7)', () => {
-  // a sheet from y 300 to the bottom (844), its footer's top at 720
-  assert.equal(toastSpot({ phone: true, touchY: 400, sheet: { top: 300, foot: 720 } }), 'sheet bottom 132px', 'a step checked high in the sheet: 8 above the footer (844 - 720 + 8)');
-  assert.equal(toastSpot({ phone: true, touchY: 690, sheet: { top: 300, foot: 720 } }), 'sheet top 364px', 'the touch was where it would land: under the 56 px header (300 + 56 + 8)');
-  assert.equal(toastSpot({ phone: true, touchY: 780, sheet: { top: 300, foot: 720 } }), 'sheet bottom 132px', 'the footer\'s own button: the toast stands above the footer, clear of it');
-  assert.equal(toastSpot({ phone: true, touchY: 600, sheet: { top: 300, foot: null } }), 'sheet bottom 8px', 'a sheet with no footer: 8 above its bottom edge');
-  assert.equal(toastSpot({ phoneDay: true, touchY: 300, sheet: { top: 420, foot: 760 } }), 'sheet bottom 92px', 'the phone\'s own day: the same, over its shorter sheet');
-  assert.equal(toastSpot({ phone: true, touchY: 690, sheet: { top: 300, foot: 720, menu: true } }), 'sheet bottom 132px', 'with the header\'s More open, the top is the menu\'s: the toast stays above the footer');
+test('over the phone\'s sheet a toast stands in a room the sheet makes for it, never over the sheet\'s own buttons (V11-3, the design review\'s first finding)', () => {
+  // a sheet from y 300 to the bottom (844), its footer's top at 720, a toast 60 tall: the room opens at the footer's
+  // top, 60 tall, and the toast stands on it, wherever the touch was
+  for (const touchY of [400, 690, 780]) assert.equal(toastSpot({ phone: true, touchY, toastH: 60, sheet: { top: 300, foot: 720 } }), 'sheet bottom 64px', 'touch at ' + touchY + ': on the room (844 - 720 - 60)');
+  assert.equal(toastSpot({ phone: true, touchY: 600, toastH: 60, sheet: { top: 300, foot: null } }), 'sheet bottom 8px', 'a sheet with no footer: the room pinned to its foot, 8 above its bottom edge');
+  assert.equal(toastSpot({ phoneDay: true, touchY: 300, toastH: 60, sheet: { top: 420, foot: 760 } }), 'sheet bottom 24px', 'the phone\'s own day: the same, over its shorter sheet');
+  assert.equal(toastSpot({ phone: true, touchY: 400, sheet: { top: 300, foot: 720 } }), 'sheet bottom 8px', 'nothing showing yet: 8 above the bottom edge until the toast is there and the room opens');
 });

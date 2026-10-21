@@ -55,6 +55,13 @@ body.feel.phone .td-head.c-ph-head { padding: 10px 8px 10px 16px; }
 .c-ph-q1.c-sp-ask .td-acts { flex-direction: column; align-items: stretch; }
 .c-ph-q1.c-sp-ask .td-acts .small { width: 100%; min-height: 52px; justify-content: center; font-size: 16px; }
 .c-ph-more { margin: 10px 0 0; font: 500 13px var(--k-font); color: var(--tx-2); }
+/* V11-3: the morning's kind of day, as the desk asks it: the question, three quiet kinds as tiles in a row, and Not today */
+.td-card.c-ph-kind h2 { margin: 0; font: 600 16px/1.35 var(--k-font); color: var(--tx); }
+.c-ph-kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.c-ph-kinds > .small.quiet { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); font: 600 14px var(--k-font); }
+.c-ph-kinds > .small.quiet:hover { background: var(--sf-hover); }
+.c-ph-kinds > .small.quiet canvas { width: 14px; height: 14px; flex: none; }
+.c-ph-kinds > .c-ph-kindno { background: transparent; padding: 0 10px; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 
 /* -- the next three, on the tan: the rest of today and what's over open in place -- */
 .c-ph-next { display: flex; flex-direction: column; gap: 8px; }
@@ -67,6 +74,10 @@ body.feel.phone .td-head.c-ph-head { padding: 10px 8px 10px 16px; }
 .c-ph-open:hover { background: rgba(255, 248, 236, 0.32); }
 .c-ph-open:active { transform: translateY(1px); }
 .c-ph-open:focus-visible { outline: 2.5px solid var(--ring-dark, #1E1408); outline-offset: 2px; }
+/* (V11-3, the design review: Later today and Earlier today are the dark cards the rest of the page is, not tan pills) */
+body.feel .c-ph-open { background: var(--sf); box-shadow: var(--sf-float); color: #FFFFFF; font-weight: 600; }
+body.feel .c-ph-open:hover { background: var(--sf-hover); }
+body.feel .c-ph-open:focus-visible { outline-color: #FFFFFF; }
 .c-ph-more-day { margin-top: 0; }
 
 /* -- This week: grouped rows, a count or a fraction on the right -- */

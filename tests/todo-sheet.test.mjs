@@ -98,7 +98,7 @@ test('when only the person’s own time holds it all, the sheet asks once for th
   assert.equal(sp(one('2026-10-22', 'afternoon')), 'This needs 30 min of your own time, Thursday afternoon.');
 });
 
-test('a step under way: Start in its first ten minutes (a timer sized to it), then Mark it done; Didn’t get to it is a normal button', () => {
+test('a step under way: Start in its first ten minutes (a timer sized to it), then Done; Didn’t get to it is a normal button', () => {
   const st = steps(3);
   const now = at(TODAY, 960, 's0'), c = ctx({ steps: st, next: { s0: now }, now });
   const s = sheet({ nowMin: 965 });
@@ -109,9 +109,9 @@ test('a step under way: Start in its first ten minutes (a timer sized to it), th
   assert.deepEqual(plain(s.calls.slice(-2)), [['focus', 'Step 1', 10], ['close']], 'Start hands the step to the timer, and on a phone the sheet steps aside for it');
   const later = sheet({ nowMin: 972 }).tsNext(task({ steps: st }), c).foot;
   assert.equal(said(later), 'Now: Step 1, 3 min left.');
-  assert.equal(later.gold[0], 'Mark it done', 'ten minutes in, the gold is Done');
+  assert.equal(later.gold[0], 'Done', 'ten minutes in, the gold is Done');
   const noTimer = sheet({ nowMin: 962, noFocus: true }).tsNext(task({ steps: st }), c).foot;
-  assert.equal(noTimer.gold[0], 'Mark it done', 'no timer on this board: Done, never a button that does nothing');
+  assert.equal(noTimer.gold[0], 'Done', 'no timer on this board: Done, never a button that does nothing');
 });
 
 test('a step’s time went by: check the ones that happened, and the rest move ahead (one gold)', () => {
@@ -134,7 +134,7 @@ test('every step has a time ahead: the line says when, and there’s no gold; do
   assert.equal(said(set), 'You’re set. Next: tomorrow at 7:30 am.');
   assert.equal(set.gold, undefined);
   const all = s.tsNext(task({ steps: steps(3, 3) }), ctx({ steps: steps(3, 3) })).foot;
-  assert.deepEqual([all.line, all.gold[0]], ['All 3 steps done.', 'Mark it done']);
+  assert.deepEqual([all.line, all.gold[0]], ['All 3 steps done.', 'Done']);
   const done = s.tsNext(task({ done: true }), ctx()).foot;
   assert.deepEqual([done.line, done.quiet[0], done.gold], ['Done.', 'Mark not done', undefined]);
 });

@@ -157,13 +157,15 @@ body.feel.phone .toast.good::before, body.feel.phone-desk .toast.good::before {
 }
 body.feel.phone .toast .toast-act, body.feel.phone-desk .toast .toast-act { flex: none; margin-left: auto; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-hover); color: #FFFFFF; font: 600 16px var(--k-font); }
 body.feel.phone .toast .toast-act:hover, body.feel.phone-desk .toast .toast-act:hover { background: var(--sf-press); }
-/* over an open sheet: just above its footer, or under its header when the touch was where it would land */
+/* over an open sheet: in the room the sheet makes for it (app.js toastRoom), at the top of its footer or pinned to its
+   foot, so it never covers the sheet's own buttons (V11-3) */
+body.feel #side .c-stoast { flex: none; pointer-events: none; }
+body.feel #side .c-stoast.alone { position: sticky; bottom: 0; z-index: 2; background: var(--sf-sheet); }
 html body.feel.c-toasts-sheet:has(#side:not([hidden])) #toasts {
   top: auto !important; bottom: var(--toast-sheet-b, 96px) !important;
   left: max(12px, calc((100% - 576px) / 2)) !important; right: max(12px, calc((100% - 576px) / 2)) !important;
   transform: none; width: auto; z-index: 75;
 }
-html body.feel.c-toasts-sheet.c-toasts-sheet-top:has(#side:not([hidden])) #toasts { top: var(--toast-sheet-t, 76px) !important; bottom: auto !important; }
 @media (min-width: 601px) {
   html body.feel.dev-phone.c-toasts-sheet:has(#side:not([hidden])) #toasts { left: calc(50% - 183px) !important; right: calc(50% - 183px) !important; }
 }

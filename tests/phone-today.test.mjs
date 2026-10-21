@@ -25,6 +25,7 @@ function world(o = {}) {
     const sourceDate = () => today, sourceKey = (b) => b.key, sourceMinute = () => nowMin, blockName = (b) => b.name;
     const eveningActs = () => __o.evening || [];
     const who = () => (__o.sample ? { sample: true } : {});
+    const addGold = () => !!__o.addGold;
     /* (a block whose to-do carries a list, BIG-MOMENTS C: none here unless o.list gives one) */
     const listTodo = () => __o.list || null, listDone = () => 'Done packing';
     const M = Object.assign(Object.create(__M), { previewExtend: () => ({ ok: __o.more !== false }) });
@@ -87,4 +88,12 @@ test('on the sample week, Set up my week is the one gold: the Now card and the q
   const offer = { first: { name: 'Outline torts essay', dur: 30 }, ideas: [], at: 975 };
   const g = world({ sample: true, offer, reset: { strong: true, label: 'Sunday Reset', run: () => {} } }).phoneGold(open(), dinner);
   assert.deepEqual([said(g), g.q], [['Start Sunday Reset', 'Start: Outline torts essay, 30 min'], false]);
+});
+
+test('V11-3: while Add in plain words shows a gold way on, it is the screen\'s one gold: the Now card and the question stay quiet (addGold)', () => {
+  const offer = { first: { name: 'Outline torts essay', dur: 30 }, ideas: [], at: 975 };
+  const g = world({ addGold: true, offer, reset: { strong: true, label: 'Sunday Reset', run: () => {} } }).phoneGold(open(), dinner);
+  assert.deepEqual([said(g), g.q], [['Start Sunday Reset', 'Start: Outline torts essay, 30 min'], false]);
+  const step = { name: 'Pull the numbers', add: 'a1', tpl: null, src: { type: 'step', task: 't', id: 's' } };
+  assert.deepEqual(said(world({ addGold: true, now: 975 }).phoneGold(block(step, { start: 960 }), [])), ['Done', 'Didn’t get to it']);
 });

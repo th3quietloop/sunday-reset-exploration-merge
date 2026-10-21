@@ -116,7 +116,7 @@ test('an error stays until its x puts it away; every other toast still fades', (
   const w = toasts();
   let tried = 0;
   w.toastFeel('Walk added', 'good');
-  w.toastFeel('Your last change didn’t save on this device. Try again, or download a backup.', 'error', { label: 'Try again', fn: () => { tried++; } }, { key: 'save', also: { label: 'Your data', fn: () => {} } });
+  w.toastFeel('Your last change didn’t save on this device. Try again, or download a backup.', 'error', { label: 'Try again', fn: () => { tried++; } }, { key: 'save', also: { label: 'Download a backup', fn: () => {} } });
   assert.equal(w.shown().length, 2);
   w.d.pass();
   assert.deepEqual(w.shown().map(said), ['Your last change didn’t save on this device. Try again, or download a backup.'], 'the success faded; the error stayed');
@@ -124,7 +124,7 @@ test('an error stays until its x puts it away; every other toast still fades', (
   assert.equal(e.attrs.role, 'alert', 'said at once');
   assert.ok(e.className.split(' ').includes('error'));
   const acts = e.querySelector('.toast-acts');
-  assert.deepEqual(acts.kids.map((b) => b.text), ['Your data', 'Try again']);
+  assert.deepEqual(acts.kids.map((b) => b.text), ['Download a backup', 'Try again']);
   const x = e.querySelector('.toast-x');
   assert.equal(x.attrs['aria-label'], 'Dismiss');
   acts.kids[1].click();
