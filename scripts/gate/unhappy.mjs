@@ -72,6 +72,9 @@ const S = (o) => STATES.push(Object.assign({ sizes: ['mac', 'phone'], wait: 1600
 const MORNING = 'Look at a sample week';
 
 /* == the connection lost in the middle of something == */
+/* (Oct 20: the V11 sites have no sync server, so their page says so with a meta tag and never asks for /api/config;
+   the states that need one take the tag away as the page is read, so the page asks, and CFG answers) */
+const WITH_SERVER = `new MutationObserver((ms, o) => { const m = document.querySelector('meta[name="sunday-reset-sync"]'); if (m) { m.remove(); o.disconnect(); } }).observe(document, { childList: true, subtree: true });`;
 S({ id: 'offline-breakdown', group: 'offline', name: 'Offline: Break it down asks Claude', owner: PHONE_HELPER, scope: '#side',
   said: /offline|connection|didn.t answer|built-in steps/i, way: /try again|use these|small|medium|big|add a step|back/i,
   async setup(t) {
@@ -87,7 +90,7 @@ S({ id: 'offline-calendar-refresh', group: 'offline', name: 'Offline: refreshing
   said: /offline|connection|couldn.t|can.t reach|showing what we had/i, way: /refresh|try again/i,
   async setup(t) {
     let off = false;
-    await t.page({ boot: 'real', routes: [['*/api/config*', () => CFG], ['*/api/ics*', () => (off ? 'fail' : { body: { text: ICS, url: 'https://calendar.example.test/school.ics' } })]] });
+    await t.page({ boot: 'real', init: [WITH_SERVER], routes: [['*/api/config*', () => CFG], ['*/api/ics*', () => (off ? 'fail' : { body: { text: ICS, url: 'https://calendar.example.test/school.ics' } })]] });
     await t.edit(`s.calendars = (s.calendars || []).concat({ id: 'uh-cal', name: 'School calendar', cat: 'work', url: 'https://calendar.example.test/school.ics', fetched: Date.now() })`);
     await t.ev(`SR.openDrawer('calendars'), 1`); await t.sleep(900);
     off = true; await t.offline(true);
@@ -97,7 +100,7 @@ S({ id: 'offline-calendar-refresh', group: 'offline', name: 'Offline: refreshing
 S({ id: 'offline-calendar-link', group: 'offline', name: 'Offline: subscribing to a calendar by its link', owner: 'Settings, Calendars (app.js)', scope: '#drawer',
   said: /offline|connection|couldn.t|can.t reach/i, way: /subscribe|try again|bring in a calendar file/i,
   async setup(t) {
-    await t.page({ boot: 'real', routes: [['*/api/config*', () => CFG], ['*/api/ics*', () => 'fail']] });
+    await t.page({ boot: 'real', init: [WITH_SERVER], routes: [['*/api/config*', () => CFG], ['*/api/ics*', () => 'fail']] });
     await t.ev(`SR.openDrawer('calendars'), 1`); await t.sleep(900);
     await t.offline(true);
     await t.mark();
@@ -107,7 +110,7 @@ S({ id: 'offline-calendar-link', group: 'offline', name: 'Offline: subscribing t
 S({ id: 'offline-link-device', group: 'offline', name: 'Offline: linking this device with a code', owner: SHARED, scope: '#drawer', stays: false,
   said: /couldn.t link|connection|offline/i, way: /link this device|try again/i,
   async setup(t) {
-    await t.page({ boot: 'real', routes: [['*/api/config*', () => CFG], ['*/api/link*', () => 'fail']] });
+    await t.page({ boot: 'real', init: [WITH_SERVER], routes: [['*/api/config*', () => CFG], ['*/api/link*', () => 'fail']] });
     await t.ev(`SR.openDrawer('sync'), 1`); await t.sleep(900);
     if (!(await t.click(/^I have a code$/))) return { skip: 'no I have a code (the page needs a server)' };
     await t.sleep(500);
@@ -119,7 +122,7 @@ S({ id: 'offline-link-device', group: 'offline', name: 'Offline: linking this de
 S({ id: 'offline-feedback', group: 'offline', name: 'Offline: sending feedback', owner: 'Help, feedback (app.js)', scope: '#side', stays: false,
   said: /couldn.t send|copied|copy it|offline|connection/i, way: /send it|copy|try again/i,
   async setup(t) {
-    await t.page({ routes: [['*/api/config*', () => CFG], ['*/api/feedback*', () => 'fail']] });
+    await t.page({ init: [WITH_SERVER], routes: [['*/api/config*', () => CFG], ['*/api/feedback*', () => 'fail']] });
     await t.ev(`SR.openSel({ type: 'feedback' }), 1`); await t.sleep(900);
     if (!(await t.type('textarea[data-fk="fb"]', 'The week view went blank after I added a dinner.'))) return { skip: 'no box for the words' };
     await t.offline(true);

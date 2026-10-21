@@ -61,4 +61,8 @@ body.k-today .moment.said .moment-later { box-shadow: inset 0 0 0 1px var(--sf-e
    It keeps its 44 px target (targets.css), its drawing a little smaller, and takes no more height than the row's own words, so the
    band is as tall as V11's. The line under the bar balances its words, so a time never sits alone on a second line */
 body.k-today .band-top > .band-btn.band-top-fc { flex: none; min-height: 34px; margin: -8px 0 -2px 6px; }
+/* (Oct 20: where the band is narrow, the open Duo's 435 px, the row has no room for it, so it goes to a line of its own
+   inside the band instead of reaching past the band's edge onto the desk) */
+body.k-today .band-top:has(> .band-top-fc) { flex-wrap: wrap; row-gap: 10px; }
+body.k-today .band-top > .band-btn.band-top-fc { margin-left: auto; }
 body.k-today .band-line { text-wrap: pretty; }
