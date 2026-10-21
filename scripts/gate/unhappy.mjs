@@ -427,8 +427,8 @@ function helper(size) {
       /* (a board of its own is the welcome's Look at a sample week, as a person reaches it; it was Look around first
          until Oct 15, which the drag gate's boot still looks for) */
       if (boot === 'real') {
-        for (let k = 0; k < 20 && !(await t.has(new RegExp('^(' + MORNING + '|Look around first)$'))); k++) await sleep(200);
-        if (!(await t.click(new RegExp('^(' + MORNING + '|Look around first)$')))) throw new Error('the welcome had no ' + MORNING);
+        for (let k = 0; k < 20 && !(await t.has(new RegExp('^(' + MORNING + '|Look around first)'))); k++) await sleep(200);
+        if (!(await t.click(new RegExp('^(' + MORNING + '|Look around first)')))) throw new Error('the welcome had no ' + MORNING);
         await sleep(1800);
         if (!(await c.ev(`!!(SR.state && !SR.view.preview && Store.savedAt)`))) { await t.edit(`s.settings.uhProbe = 1`); await sleep(1200); }
       } else {

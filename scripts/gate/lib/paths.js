@@ -21,8 +21,8 @@
     /* o.real: the board a first visit gets (the made up family as this device's own board, saved as it
        changes), reached the way a person does: Look at a sample week (Look around first until Oct 15) */
     if (o.real) {
-      for (let k = 0; k < 20 && !btn(/^(Look at a sample week|Look around first)$/); k++) await wait(200);
-      const look = btn(/^(Look at a sample week|Look around first)$/);
+      for (let k = 0; k < 20 && !btn(/^(Look at a sample week|Look around first)/); k++) await wait(200);
+      const look = btn(/^(Look at a sample week|Look around first)/);
       if (look) { look.click(); await wait(600); }
     } else {
       const close = $$('button').find((b) => /close/i.test(b.getAttribute('aria-label') || '') && shown(b) && b.closest('.k-sheet, .c-intro, .c-setupintro, #sheet, .sheet, [role=dialog]'));
