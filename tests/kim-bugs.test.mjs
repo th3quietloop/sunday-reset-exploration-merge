@@ -87,6 +87,8 @@ test('K18 and K20: a stretch says what it ends at now; picking a block up puts t
   const drop = app('  function finishBoardDrag(d) {', '  function tapped(hit, e) {');
   assert.match(drop, /' now ends at '/);
   assert.doesNotMatch(drop, /runs until/);
+  // (from the routine's own start, so a stretch of the last piece of a split Work says its real end)
+  assert.match(drop, /now ends at ' \+ M\.clock\(M\.dateTime\(d\.hit\.date, sourceSpan\(b, d\.hit\.date\)\.start \+ d\.preview\.dur\)/);
   const script = `
     const FEEL = true, view = { pick: { date: 'd', key: 'k' } }, picks = [];
     const document = { body: { classList: { toggle() {} } } };
@@ -106,4 +108,47 @@ test('K21: the sample week tip takes room beside the board on a wide window, und
   assert.equal(coachSide(1440), 'left');
   assert.equal(coachSide(1280), 'left');
   assert.equal(coachSide(1024), 'bottom');
+});
+
+test('K17: a flexible routine (Work yours to plan) moves and stretches for its day with the panel\'s edit', () => {
+  const s = D.sampleState(today), date = '2026-10-21', other = '2026-10-22';
+  const work = (st, d) => M.calendarDay(st, d).blocks.filter((b) => b.tpl === 'work');
+  const before = JSON.stringify(M.calendarDay(s, other).blocks);
+  const r = M.slideSoft(s, date, 'work', 600);
+  assert.ok(r.ok);
+  assert.equal(r.start, 600);
+  assert.deepEqual(s.dates[date].edits.work, { start: 600, dur: 480 }, 'the per-day edit the panel makes');
+  const ws = work(s, date);
+  assert.equal(Math.min(...ws.map((b) => b.start)) >= 600, true);
+  assert.equal(ws[0].sourceStart, 600);
+  // what's locked inside it stays where it was: the stand-up and the pick up
+  const day = M.calendarDay(s, date).blocks;
+  assert.equal(day.find((b) => b.name === 'Standup').start, 570);
+  assert.equal(day.find((b) => b.name.startsWith('Pick up')).start, 1005);
+  assert.equal(JSON.stringify(M.calendarDay(s, other).blocks), before, 'other days keep their usual');
+  // a stretch from its start
+  const r2 = M.slideSoft(s, date, 'work', 600, 360);
+  assert.equal(r2.dur, 360);
+  assert.deepEqual(s.dates[date].edits.work, { start: 600, dur: 360 });
+  // the preview and the drop make the same change, so the drop lands where it showed
+  const look = JSON.parse(JSON.stringify(D.sampleState(today))), real = JSON.parse(JSON.stringify(D.sampleState(today)));
+  const a = M.slideSoft(look, date, 'work', 615), b = M.slideSoft(real, date, 'work', a.start);
+  assert.deepEqual([b.date, b.start], [a.date, a.start]);
+  // it stays inside the day, and a locked or hard routine isn't moved this way
+  assert.equal(M.slideSoft(D.sampleState(today), date, 'work', 1300).start, M.RAIL1 - 480);
+  assert.equal(M.slideSoft(D.sampleState(today), date, 'pickup', 600).ok, false);
+  assert.equal(M.slideSoft(D.sampleState(today), date, 'winddown', 600).ok, false);
+  // the board: soft routines drag (slide) and stretch; locked ones don't, free time doesn't
+  const script = `
+    const FEEL = true;
+    ${app('  const softDrags = (b) =>')}
+    ({ softDrags });`;
+  const { softDrags } = runInNewContext(script, {});
+  assert.equal(softDrags({ soft: true, tpl: 'work' }), true);
+  assert.equal(softDrags({ soft: true, tpl: 'free', free: true }), false);
+  assert.equal(softDrags({ soft: true, tpl: 'work', fixed: true }), false);
+  assert.equal(softDrags({ tpl: 'pickup', fixed: true }), false);
+  const mode = app('  function boardMode(d, hit) {', '  /* V11: a finger finds');
+  assert.match(mode, /\(!b\.soft \|\| softDrags\(b\)\)[^\n]*'resize'/);
+  assert.match(mode, /\(!b\.soft \|\| softDrags\(b\)\)[^\n]*'slide'/);
 });

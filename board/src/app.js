@@ -8611,14 +8611,23 @@
   const spread = () => { const [a, b] = Array.from(fingers.values()); return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
   /* what pressing a block does: its stretch edge stretches (a sleep edge moves waking or bed), a placed
      block moves, a routine slides along its day, anything else is a tap */
+  /* K17 (Kim, Oct 20): a flexible routine (Work that's yours to plan) drags and stretches on the board like a placed
+     block, for its day (M.slideSoft, the panel's own edit); free time stays a place, not a brick */
+  const softDrags = (b) => FEEL && !!b.soft && !!b.tpl && !b.free && !b.handoff && !b.fixed;
+  /* the one change a slide or a stretch of a routine makes, for the preview and the drop alike (start and dur in its
+     own day's minutes; dur only for a stretch) */
+  function routineEdit(b, date, start, dur) {
+    if (softDrags(b)) return M.slideSoft(state, date, b.tpl, start, dur);
+    return dur == null ? M.moveTemplate(state, date, b.tpl, start) : M.resizeBlock(state, date, sourceKey(b), dur);
+  }
   function boardMode(d, hit) {
     const b = hit.block;
     const full = sourceSpan(b, hit.date), atEnd = b.start + b.dur === full.start + full.dur;
     if (b.sleep === 'am' && hit.nearR && atEnd) d.mode = 'wake';
     else if (b.sleep === 'pm' && hit.nearL && b.start === full.start) d.mode = 'bed';
-    else if (!b.sleep && !b.soft && !b.fixed && (b.add || b.tpl) && hit.nearR && atEnd) d.mode = 'resize';
+    else if (!b.sleep && (!b.soft || softDrags(b)) && !b.fixed && (b.add || b.tpl) && hit.nearR && atEnd) d.mode = 'resize';
     else if (b.add) d.mode = 'move';
-    else if (b.tpl && !b.soft && !b.fixed && !b.sleep) d.mode = 'slide';
+    else if (b.tpl && (!b.soft || softDrags(b)) && !b.fixed && !b.sleep) d.mode = 'slide';
     d.grabMin = hit.min - full.start;
     d.board = hit.board;
   }
@@ -8676,7 +8685,7 @@
     if (hit && hit.kind === 'block' && benchable()) boardMode(bdrag, hit);
     /* V11, lift and place: a finger stretches a block only from the handle on the picked block (#sgrip); a
        press on a block's end moves it like anywhere else on it. Waking and bed edges keep their own targets */
-    if (HAND && touchEdge && bdrag.mode === 'resize') bdrag.mode = hit.block.add ? 'move' : hit.block.tpl && !hit.block.soft && !hit.block.fixed ? 'slide' : 'click';
+    if (HAND && touchEdge && bdrag.mode === 'resize') bdrag.mode = hit.block.add ? 'move' : hit.block.tpl && (!hit.block.soft || softDrags(hit.block)) && !hit.block.fixed ? 'slide' : 'click';
     /* V11: a finger right past a block's end, on open board, holds that block's stretch edge too: a drag
        sideways from there stretches it, a tap there still opens that time. (Not on a phone's one day, where a
        sideways swipe on open board goes to the next day, and the blocks are wide enough to hold their own) */
@@ -8921,7 +8930,7 @@
         chip(d.cAim.title, d.cAim.sub);
         return;
       }
-      const tr = tryOn(() => (d.mode === 'move' ? M.moveAdd(state, b.add, date, snapStart) : M.moveTemplate(state, sourceDate(b, date), b.tpl, sourceMinute(b, date, snapStart))), true);
+      const tr = tryOn(() => (d.mode === 'move' ? M.moveAdd(state, b.add, date, snapStart) : routineEdit(b, sourceDate(b, date), sourceMinute(b, date, snapStart))), true);
       /* (V11, lift and place: the day's window: a block that would run past the end of the day says so,
          instead of going to tomorrow at midnight) */
       const hv = M.visibleHours(state);
@@ -8945,7 +8954,7 @@
       const want = M.snap(t.min - full.start);
       if (FEEL && d.ck === 'r' + want) { if (d.cAim) showChipAt(e.clientX, e.clientY - 30, d.cAim.title, d.cAim.sub); return; }
       if (FEEL) { d.ck = 'r' + want; d.cAim = null; }
-      const tr = tryOn(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want), true);
+      const tr = tryOn(() => (softDrags(b) ? routineEdit(b, sourceDate(b, date), sourceMinute(b, date, full.start), want) : M.resizeBlock(state, sourceDate(b, date), sourceKey(b), want)), true);
       d.preview = tr.r.ok ? { dur: tr.r.dur } : null;
       if (FEEL) d.why = tr.r.ok ? null : blockedText(tr.r, true);
       /* (V11, lift and place: one tick a step, at least 50 ms apart; against what's in the way, a low one) */
@@ -9015,8 +9024,8 @@
     /* (K19: the drop has to land where its preview said; anywhere else it doesn't land, and says so) */
     const shown = (x) => (FEEL && !landsAsShown(x, d.preview) ? { ok: false, reason: 'shifted' } : x);
     if (d.mode === 'move') r = commit(() => shown(M.moveAdd(state, b.add, d.preview.date, d.preview.start)));
-    else if (d.mode === 'slide') r = commit(() => shown(M.moveTemplate(state, sourceDate(b, d.hit.date), b.tpl, sourceMinute(b, d.preview.date, d.preview.start))));
-    else if (d.mode === 'resize') { r = commit(() => M.resizeBlock(state, sourceDate(b, d.hit.date), sourceKey(b), d.preview.dur)); if (r && r.ok) noteMove('stretch'); }
+    else if (d.mode === 'slide') r = commit(() => shown(routineEdit(b, sourceDate(b, d.hit.date), sourceMinute(b, d.preview.date, d.preview.start))));
+    else if (d.mode === 'resize') { r = commit(() => (softDrags(b) ? routineEdit(b, sourceDate(b, d.hit.date), sourceMinute(b, d.hit.date, sourceSpan(b, d.hit.date).start), d.preview.dur) : M.resizeBlock(state, sourceDate(b, d.hit.date), sourceKey(b), d.preview.dur))); if (r && r.ok) noteMove('stretch'); }
     else if (d.mode === 'wake') r = commit(() => { M.setWake(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
     else if (d.mode === 'bed') r = commit(() => { M.setBed(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
     if (d.mode === 'move' || d.mode === 'slide') {
@@ -9036,7 +9045,7 @@
           if (d.preview.date !== d.hit.date || d.preview.start !== b.start) {
             const nm = b.label || b.name, len = b.sourceDur || b.dur, room = movesWords(r, true);
             const land = r.date != null && r.start != null ? M.dateTime(r.date, r.start) : mAt;
-            const cut = room || land.date !== mAt.date ? '' : cutWords({ blocks: mWas.blocks.filter((x) => x.base !== b.base) }, land.start, len, overBy(land.date, land.start, len));
+            const cut = room || land.date !== mAt.date || softDrags(b) ? '' : cutWords({ blocks: mWas.blocks.filter((x) => x.base !== b.base) }, land.start, len, overBy(land.date, land.start, len));
             /* (V11, lift and place: said 150 ms after it touches, one receipt at a time) */
             const say = nm + ' moved to ' + boardToWords(sourceDate(b, d.hit.date), land.date, land.start) + (room || cut ? '. ' + (room || cut) : ''), act = undoAct(nm + ' is back where it was.');
             if (HAND) toastLater((W.fallMs || 0) + 150, say, 'good', act); else toast(say, 'good', act);
@@ -9052,7 +9061,7 @@
       /* V11: a stretch, a wake, and a bed time say what they are now, with Undo */
       if (FEEL) {
         const nm = b.label || b.name;
-        const said = d.mode === 'resize' ? nm + ' now ends at ' + M.clock(M.dateTime(d.hit.date, b.start + d.preview.dur).start)
+        const said = d.mode === 'resize' ? nm + ' now ends at ' + M.clock(M.dateTime(d.hit.date, sourceSpan(b, d.hit.date).start + d.preview.dur).start)
           : d.mode === 'wake' ? M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' starts at ' + M.clock(d.preview.v)
           : d.mode === 'bed' ? M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' ends at ' + M.clock(d.preview.v) : '';
         const back = d.mode === 'resize' ? nm + ' is ' + M.dur(b.sourceDur || b.dur) + ' again.' : M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' is as it was.';
@@ -10391,7 +10400,8 @@
     if (famLead) actions(p, [button(handoffWho() + ' has it this ' + M.DAY_LONG[wd], 'small primary', () => handOff(b, date))]);
     const setTime = (start, len) => {
       const r = commit(() => {
-        if (b.soft) { const rec = M.dateRec(state, date); rec.edits = rec.edits || {}; rec.edits[b.tpl] = Object.assign({}, rec.edits[b.tpl], { start: M.clamp(start, M.RAIL0, M.RAIL1 - len), dur: Math.max(15, len) }); return { ok: true }; }
+        /* (K17: the same edit a drag on the board makes, M.slideSoft) */
+        if (b.soft) return M.slideSoft(state, date, b.tpl, start, len);
         return M.moveTemplate(state, date, b.tpl, start, Math.max(15, len));
       });
       if (r && r.ok) Snd.clack(0.6); else { Snd.bad(); toast(blockedText(r || {}, FEEL && 'tap'), 'bad'); }
