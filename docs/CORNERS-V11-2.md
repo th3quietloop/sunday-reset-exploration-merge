@@ -122,6 +122,8 @@ Russell asked for these to go into V11-2 before the link.
 
 Russell asked for a grumpy code reviewer and a grumpy designer (91 findings: 8 critical, 44 medium, 39 low; both lists are in `docs/V11-3-REVIEWS.md`, C1 to C35 and D1 to D56), then for all of it to be built. It was first called V11-3; Russell chose to ship it as an update to V11-2 instead, so the link and its AI key stay as they are. The V11-2 that went live first is deployment `dpl_4SoPUqPkU8sNVyfwRK8ydSYcwFub`, the one to roll back to.
 
+Live since Oct 20, 9 pm, from commit 3dfa351 (deployment `dpl_3BsQYrKzd6aRfLsABh99nvYiK7he`). Checks at release: `npm test` 671 of 671; drag gate GREEN (board the same size as V11's); contrast GREEN (the iPad and the open Duo rerun after two fixes: the band's Focus button wraps inside a narrow band, and the account chip drops Sample week while a panel squeezes the iPad's top row); break-it gate GREEN, all 62 states (its sync states now bring their own pretend server, since these sites say they have none).
+
 Five helpers built it in their own copies of the repo (branches `v11-3-model`, `-infra`, `-moments`, `-chrome`, `-screens`), merged into `v11-3`.
 
 - **Quick add and the plan:** "text mom about dinner tomorrow 6pm" keeps its day, time and verb; a full day names every block in the way, people time too; trips read today, tomorrow and next week; meals keep their own window; sync merges a to-do field by field; goal sessions already placed stay put.
