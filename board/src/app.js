@@ -18191,6 +18191,9 @@
     if (!moves) startMovesQuiet();
     moves.hidden = false; saveMoves();
     if (view.drawer) closeDrawer();
+    /* (Kim's test follow-up, Oct 20: V11's phone Today has no Getting started card of its own, only a row in This week,
+       which folds away after bed, so on a phone the list opens as its panel, from the row or from Settings, Help) */
+    if (view.phone && FEEL) { renderToday(); openSel({ type: 'moves' }); return; }
     if (view.phone) { renderToday(); const c = document.querySelector('.td-moves'); if (c) c.scrollIntoView({ block: 'center' }); return; }
     /* (V11, the Planner walk, 1.2: in the Planner it opens as the card with the next thing to try; See all is on it) */
     if (FEEL && !inToday() && !noDesk && movesNext()) { if (view.sel) closeSel(); foldMoves(false); renderRack(); layoutInsets(); return; }
