@@ -222,3 +222,13 @@ test('K22, K23: the welcome keeps one gold button and offers Quick start and the
   // HUD type only on the token sizes
   for (const m of css.matchAll(/(\d+)px(?:\/[\d.]+)? var\(--font\)/g)) assert.ok([12, 13, 14, 16, 19, 22, 26, 30].includes(+m[1]), m[0]);
 });
+
+test('K22 follow-up: on a phone Getting started opens as its panel, from This week\'s row or Settings, Help, day or night', () => {
+  const open = APP.slice(APP.indexOf('  function openMoves() {'), APP.indexOf('  /* A move\'s line where it\'s read'));
+  // V11's phone Today has no card of its own (phoneToday returns before the older .td-moves card), so the panel opens
+  assert.match(open, /if \(view\.phone && FEEL\) \{ renderToday\(\); openSel\(\{ type: 'moves' \}\); return; \}/);
+  assert.ok(open.indexOf('view.phone && FEEL') < open.indexOf(".td-moves"), 'before the older card\'s way');
+  // the row is in This week by day; after bed the card folds to its first row, by design
+  assert.match(APP, /rows\.push\(\{ ic: 'check', name: 'Getting started', val: .*fn: \(\) => openMoves\(\)/);
+  assert.match(APP, /\(night \? rows\.slice\(0, 1\) : rows\)/);
+});
