@@ -1827,7 +1827,13 @@
     }
     W.setDayOnly(!doMode && view.zoom === 'day' && !view.reset && !trayCollapsed());
     W.setTight(!doMode && view.zoom === 'week' && (!!view.reset || !trayCollapsed()));
-    W.setInsets({ top, bottom, right, left, blockers, hold: !$('side').hidden });
+    /* K21: a tip that stands clear of the board takes its room beside it (or under it), and the board is framed in the rest */
+    const cr = FEEL ? coachRoom(left, right, bottom) : null;
+    /* (and a toast stands above a tip along the bottom, so its button is never under the tip) */
+    if (cr && cr.bottom !== bottom) $('toasts').style.setProperty('--toast-bottom', Math.round(cr.bottom + 2) + 'px');
+    const cc = cr && coachBox.querySelector('.coach-card');
+    if (cc) { coachPlace(); const r = cc.getBoundingClientRect(); blockers.push({ x0: Math.round(r.left), x1: Math.round(r.right), y0: Math.round(r.top), y1: Math.round(r.bottom) }); }
+    W.setInsets({ top, bottom: cr ? cr.bottom : bottom, right, left: cr ? cr.left : left, blockers, hold: !$('side').hidden });
   }
 
   /* a short spoken line for screen readers, for changes that don't move focus */
@@ -7510,7 +7516,9 @@
   }
   /* V11: something is in hand (a tile, a piece, a block being moved or stretched): toasts let it pass through
      to the board and step back (variant.css body.carrying), and nothing redraws the desk under it */
-  function carrying(on) { if (FEEL) document.body.classList.toggle('carrying', !!on); }
+  /* (K20, Kim, Oct 20: picking something up puts the picked block down, so its bar, Earlier, Later, Shorter, Longer,
+     never stays up under the time tag of the block in hand) */
+  function carrying(on) { if (FEEL) { document.body.classList.toggle('carrying', !!on); if (on && view.pick) selectBlock(null); } }
   const carryingNow = () => !!((tdrag && tdrag.started) || (bdrag && bdrag.started && bdrag.mode !== 'pan'));
   /* V11: a drop that throws never leaves a block in hand or a tile in the air: what's in hand goes home, the
      desk forgets the aim and draws the board as it is, and a toast says the drop hit a problem (the error is
@@ -8112,6 +8120,8 @@
     if (r.reason === 'long') return 'That’s longer than the day' + (FEEL && full ? '. Try a shorter length.' : '');
     /* V11, lift and place: the day's window: a block never runs past the end of the day unannounced */
     if (r.reason === 'end') return 'That runs past the end of the day' + (FEEL && full ? '. Try an earlier time.' : '');
+    /* (K19: a drop that would land somewhere its preview didn't say lands nowhere) */
+    if (r.reason === 'shifted') return 'That spot changed as you let go, so nothing moved' + (FEEL && full ? '. Try it again.' : '');
     /* V11: time that's over keeps what happened in it (keepPast) */
     if (r.reason === 'past') return FEEL && full ? 'That time is over and already has something in it. ' + (full === 'tap' ? 'Pick a time that’s open.' : 'Drop it on open time.') : 'That time is over and already has something in it';
     if (FEEL && full) return 'No room there, even moving things. ' + (full === 'tap' ? 'Pick another time.' : 'Drop it where there’s open time.');
@@ -8137,6 +8147,23 @@
   const atWords = (date, start) => { const at = M.dateTime(date, start); return atDay(at.date) + ' at ' + M.clock(at.start); };
   /* V11: the same, after "moved to": "tomorrow at noon", "Saturday at 7 pm" */
   const toWords = (date, start) => atWords(date, start).replace(/^on /, '');
+  /* K19 (Kim, Oct 20): where a block dragged on the board went, said the way the board shows it. A move within its own
+     day says only the time ("Wind down moved to 7:15 pm"); one to another day names that day by its weekday, as its
+     row does ("Monday at 9:15 pm"), never "yesterday" or "tomorrow", which a week of rows doesn't show */
+  function boardToWords(from, date, start) {
+    const at = M.dateTime(date, start), n = M.diffDays(today, at.date);
+    if (at.date === from) return M.clock(at.start);
+    if (n > -7 && n < 7) return M.DAY_LONG[M.weekday(at.date)] + ' at ' + M.clock(at.start);
+    return toWords(at.date, at.start);
+  }
+  /* K19: a drop lands where its preview said, or not at all. The preview keeps the time it showed (at: the date and
+     minute the block would start); the drop's own result has to be that same time */
+  function landsAsShown(r, preview) {
+    if (!r || !r.ok || !preview || !preview.at) return true;
+    if (r.date == null || r.start == null) return true;
+    const land = M.dateTime(r.date, r.start);
+    return land.date === preview.at.date && land.start === preview.at.start;
+  }
   /* V11: what taking it back says: "Run is off Friday" */
   const offWords = (name, date, moved) => { const n = M.diffDays(today, date); return name + ' is off ' + (n >= -1 && n <= 1 ? whenWord(date) : n > -7 && n < 7 ? M.DAY_LONG[M.weekday(date)] : (FEEL ? M.DAY_LONG[M.weekday(date)] + ', ' : '') + M.dateText(date)) + (moved ? '. What it moved is back' : ''); };
   /* V11: what a placement moves, in words, before you let go and after: "Dinner moves to 5:15 pm". named:
@@ -8595,6 +8622,19 @@
     d.grabMin = hit.min - full.start;
     d.board = hit.board;
   }
+  /* K17: a locked routine, grabbed (a block from the usual week that's locked; a meeting, an event, or sleep moves
+     another way, and a hand-off has its own) */
+  function lockedGrab(hit) {
+    const b = hit && hit.kind === 'block' ? hit.block : null;
+    return !!(b && b.fixed && b.tpl && !b.soft && !b.sleep && !b.handoff && !b.meeting && !b.event && benchable());
+  }
+  /* K17: said where it was grabbed (the note at the pointer) and in the toast, whose one button unlocks it for the day */
+  function sayLocked(b, date, e) {
+    const nm = b.label || b.name, day = sourceDate(b, date);
+    Snd.bad();
+    if (e) showChipAt(e.clientX, e.clientY - 30, nm + ' is locked', 'Unlock it for ' + M.DAY_LONG[M.weekday(day)] + ' to move it');
+    toast(nm + ' is locked on ' + M.DAY_LONG[M.weekday(day)] + '.', '', { label: 'Unlock this day', fn: () => { hideChip(); blockAction(b, day, 'unlock'); } });
+  }
   /* V11: a finger finds a block's stretch edge by a target about its own size (TOUCH_EDGE px each side of
      the block's end: part inside, never more than a third of the block, and part right past it), never by
      a sliver; a mouse finds it as before */
@@ -8700,6 +8740,8 @@
         d.edge = null;
         if (Math.abs(e.clientX - d.x) > Math.abs(e.clientY - d.y)) { boardMode(d, edge); if (d.mode === 'resize' || d.mode === 'wake') d.hit = edge; else d.mode = was; }
       }
+      /* K17 (Kim, Oct 20): a locked block grabbed and pulled says so where it is, with Unlock this day one tap away */
+      if (FEEL && d.mode === 'click' && !d.toldLock && lockedGrab(d.hit)) { d.toldLock = true; sayLocked(d.hit.block, d.hit.date, e); }
       if (d.mode === 'click') return;
       clearTimeout(d.holdWait);
       if (HAND && d.mode !== 'pan') liftBlock(d, e);
@@ -8886,7 +8928,7 @@
       if (HAND && t.kind === 'day' && tr.r.ok && snapStart + full.dur > hv.end) tr.r = { ok: false, reason: 'end' };
       const at = M.dateTime(tr.r.date || M.dateTime(date, snapStart).date, tr.r.start == null ? M.dateTime(date, snapStart).start : tr.r.start);
       const shownStart = M.windowTime(date, at.date, at.start), h = hv;
-      d.preview = tr.r.ok ? { date, start: shownStart } : null;
+      d.preview = tr.r.ok ? { date, start: shownStart, at: { date: at.date, start: at.start } } : null;
       const aimStart = tr.r.ok ? shownStart : M.clamp(start, h.start, h.end - full.dur);
       const past = false;
       const handSub = tr.r.ok ? M.span(at.start, at.start + full.dur) : '';
@@ -8953,7 +8995,7 @@
       if (HAND) {
         /* V11, lift and place: it flies to the slot it went to and lands; where no slot is drawn the pill presses */
         if (!(r && r.ok)) { refuse(null, 'No open time ' + whenWord(to) + '. Open the week to pick a time.', null, null); render(); return; }
-        const say = (b.label || b.name) + ' moved to ' + toWords(r.date || to, r.start) + (movesWords(r, true) ? '. ' + movesWords(r, true) : ''), act = undoAct((b.label || b.name) + ' is back where it was.');
+        const say = (b.label || b.name) + ' moved to ' + boardToWords(sourceDate(b, d.hit.date), r.date || to, r.start) + (movesWords(r, true) ? '. ' + movesWords(r, true) : ''), act = undoAct((b.label || b.name) + ' is back where it was.');
         const moved = boardDay(r.date || to).blocks.find((x) => x.add === b.add), key = moved ? moved.base : b.base;
         const flown = feelMoves() && W.handFly(r.date || to, key) ? 420 : 0;
         W.endDrag();
@@ -8970,8 +9012,10 @@
     let r = null;
     /* V11: where a moved block lands and its day as it was, for the time it takes from Work or a routine */
     const mAt = FEEL && (d.mode === 'move' || d.mode === 'slide') ? M.dateTime(d.preview.date, d.preview.start) : null, mWas = mAt ? day(mAt.date) : null;
-    if (d.mode === 'move') r = commit(() => M.moveAdd(state, b.add, d.preview.date, d.preview.start));
-    else if (d.mode === 'slide') r = commit(() => M.moveTemplate(state, sourceDate(b, d.hit.date), b.tpl, sourceMinute(b, d.preview.date, d.preview.start)));
+    /* (K19: the drop has to land where its preview said; anywhere else it doesn't land, and says so) */
+    const shown = (x) => (FEEL && !landsAsShown(x, d.preview) ? { ok: false, reason: 'shifted' } : x);
+    if (d.mode === 'move') r = commit(() => shown(M.moveAdd(state, b.add, d.preview.date, d.preview.start)));
+    else if (d.mode === 'slide') r = commit(() => shown(M.moveTemplate(state, sourceDate(b, d.hit.date), b.tpl, sourceMinute(b, d.preview.date, d.preview.start))));
     else if (d.mode === 'resize') { r = commit(() => M.resizeBlock(state, sourceDate(b, d.hit.date), sourceKey(b), d.preview.dur)); if (r && r.ok) noteMove('stretch'); }
     else if (d.mode === 'wake') r = commit(() => { M.setWake(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
     else if (d.mode === 'bed') r = commit(() => { M.setBed(state, sourceDate(b, d.hit.date), d.preview.v); return { ok: true }; });
@@ -8994,7 +9038,7 @@
             const land = r.date != null && r.start != null ? M.dateTime(r.date, r.start) : mAt;
             const cut = room || land.date !== mAt.date ? '' : cutWords({ blocks: mWas.blocks.filter((x) => x.base !== b.base) }, land.start, len, overBy(land.date, land.start, len));
             /* (V11, lift and place: said 150 ms after it touches, one receipt at a time) */
-            const say = nm + ' moved to ' + toWords(land.date, land.start) + (room || cut ? '. ' + (room || cut) : ''), act = undoAct(nm + ' is back where it was.');
+            const say = nm + ' moved to ' + boardToWords(sourceDate(b, d.hit.date), land.date, land.start) + (room || cut ? '. ' + (room || cut) : ''), act = undoAct(nm + ' is back where it was.');
             if (HAND) toastLater((W.fallMs || 0) + 150, say, 'good', act); else toast(say, 'good', act);
           }
         }
@@ -9008,7 +9052,7 @@
       /* V11: a stretch, a wake, and a bed time say what they are now, with Undo */
       if (FEEL) {
         const nm = b.label || b.name;
-        const said = d.mode === 'resize' ? nm + ' runs until ' + M.clock(M.dateTime(d.hit.date, b.start + d.preview.dur).start)
+        const said = d.mode === 'resize' ? nm + ' now ends at ' + M.clock(M.dateTime(d.hit.date, b.start + d.preview.dur).start)
           : d.mode === 'wake' ? M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' starts at ' + M.clock(d.preview.v)
           : d.mode === 'bed' ? M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' ends at ' + M.clock(d.preview.v) : '';
         const back = d.mode === 'resize' ? nm + ' is ' + M.dur(b.sourceDur || b.dur) + ' again.' : M.DAY_LONG[M.weekday(sourceDate(b, d.hit.date))] + ' is as it was.';
@@ -10352,14 +10396,10 @@
       });
       if (r && r.ok) Snd.clack(0.6); else { Snd.bad(); toast(blockedText(r || {}, FEEL && 'tap'), 'bad'); }
     };
-    const orig = templateBlock(date, b.tpl);
-    const baseStart = orig ? (dd.edits && dd.edits[b.tpl] && dd.edits[b.tpl].start != null ? dd.edits[b.tpl].start : orig.start) : b.start;
-    const baseDur = orig ? (dd.edits && dd.edits[b.tpl] && dd.edits[b.tpl].dur ? dd.edits[b.tpl].dur : orig.dur) : b.dur;
-    const row = el('div', 'row2');
-    field(row, 'Starts', stepper(baseStart, M.clock, (v) => setTime(v, baseDur)));
-    field(row, 'Length', stepper(baseDur, M.dur, (v) => setTime(baseStart, v)));
-    p.appendChild(row);
-    if (!b.soft) {
+    /* K17 (Kim, Oct 20): a locked block's panel leads with Unlock, right under what it is, so the way to move it is the
+       first thing there; an unlocked one keeps Lock after its time */
+    const lockPart = () => {
+      if (b.soft) return;
       /* locking: this day only, or every week */
       const tpl = M.templateFor(state, date), tb = tpl.blocks.find((x) => x.id === b.tpl);
       const dayEdit = dd.edits && dd.edits[b.tpl] && dd.edits[b.tpl].fixed != null;
@@ -10376,7 +10416,16 @@
         if (tb && !tb.fixed) lockBox.appendChild(button('Lock every ' + M.DAY_LONG[wd], 'small', () => setEveryLock(true)));
       }
       field(p, b.fixed ? (FEEL ? 'Unlock it' : 'Locked') : 'Lock', lockBox);
-    }
+    };
+    if (FEEL && b.fixed) lockPart();
+    const orig = templateBlock(date, b.tpl);
+    const baseStart = orig ? (dd.edits && dd.edits[b.tpl] && dd.edits[b.tpl].start != null ? dd.edits[b.tpl].start : orig.start) : b.start;
+    const baseDur = orig ? (dd.edits && dd.edits[b.tpl] && dd.edits[b.tpl].dur ? dd.edits[b.tpl].dur : orig.dur) : b.dur;
+    const row = el('div', 'row2');
+    field(row, 'Starts', stepper(baseStart, M.clock, (v) => setTime(v, baseDur)));
+    field(row, 'Length', stepper(baseDur, M.dur, (v) => setTime(baseStart, v)));
+    p.appendChild(row);
+    if (!(FEEL && b.fixed)) lockPart();
     field(p, 'Name on this day', textInput(b.name, (v) => { if (!v || v === b.name) return; const r = commit(() => { const rec = M.dateRec(state, date); rec.edits = rec.edits || {}; rec.edits[b.tpl] = Object.assign({}, rec.edits[b.tpl], { name: v }); }); if (FEEL && r) toast(v + ' on ' + M.DAY_LONG[wd], 'good', undoAct(b.name + ' is its name again.')); }));
     if (edited) actions(p, [
       button('Make this the usual for ' + M.DAY_LONG[wd] + 's', 'small primary', () => {
@@ -15187,7 +15236,10 @@
     box.append(tab, rows, liveTicks(h));
     if (opt.big) {
       const key = el('div', 'onb-live-key');
-      D.CAT_ORDER.filter((c) => kinds.has(c)).forEach((c) => { const sw = el('i'); sw.style.background = W.look({ cat: c, sleep: c === 'sleep' }).base; const s = el('span'); s.append(sw, c === 'sleep' ? 'Sleep' : cat(c).name); key.appendChild(s); });
+      /* (the names are the setup's own board's, "You and Russell", never the board saved behind it: on a phone, or before
+         Building, that's still a sample someone looked at, with its Sam) */
+      const keyName = (c) => { if (c === 'sleep') return 'Sleep'; if (typeof state === 'undefined') return cat(c).name; const was = state; state = st; try { return cat(c).name; } finally { state = was; } };
+      D.CAT_ORDER.filter((c) => kinds.has(c)).forEach((c) => { const sw = el('i'); sw.style.background = W.look({ cat: c, sleep: c === 'sleep' }).base; const s = el('span'); s.append(sw, keyName(c)); key.appendChild(s); });
       box.appendChild(key);
     }
     box.dataset.sig = sig;
@@ -15502,7 +15554,7 @@
   function sampleTip() {
     if (!who().sample || coachBox || view.sel || view.reset || !$('sheet').hidden || view.drawer || noDesk || view.list || (view.phone && !phoneDay())) return;
     if (!movableRect()) return;
-    coach(null, 'Drag any block. Everything here moves like that. It’s a sample, so try anything.', { title: 'A sample week', track: () => movableRect(), move: 'sample', quiet: true });
+    coach(null, 'Drag any block. Everything here moves like that. It’s a sample, so try anything.', { title: 'A sample week', track: () => movableRect(), move: 'sample', quiet: true, aside: true });
   }
   /* V11: on iPhone and iPad Safari, outside the Home Screen, the front door says to set up there first: Safari can
      clear a site's storage after a week without a visit, and the app on the Home Screen keeps storage of its own.
@@ -15616,6 +15668,8 @@
     const su = view.got.setup, box = $('sheet');
     if (!su) return;
     if (!OB) { closeSheet(); return; }
+    /* (K15: the sample week's tip is about the sample; it goes when the setup opens over it) */
+    if (FEEL && coachFor === 'sample') endCoach();
     const same = box.dataset.step === su.at && box.classList.contains('onb');
     const was = document.activeElement, oldScroll = box.querySelector('.onb-scroll');
     const keep = { top: same && oldScroll ? oldScroll.scrollTop : 0, fk: su.focusKey || (same && was && box.contains(was) && was.dataset ? was.dataset.fk : null) };
@@ -16032,6 +16086,17 @@
   function inSetupBehind() {
     const su = view.got.setup, sh = $('sheet');
     return !!(su && sh && !sh.hidden && (su.at === 'build' || su.at === 'plan' || (su.at === 'reset' && !!su.desk)));
+  }
+  /* A tap on the scrim. Outside the setup's card it closes the setup with its answers kept, the same as its close
+     mark, except while the card shows their week on the desk (Building, the plan, the reset beside the desk): there
+     the desk is their new week under a clear scrim, and a tap that missed See my plan by a little closed the setup
+     and put the board as it was back, a sample week someone looked at earlier (Kim, Oct 20, K15). There the desk
+     takes no taps; the close mark and Escape still close it. */
+  function scrimTap() {
+    if ($('sheet').hidden) { closeDrawer(); return; }
+    if (!view.got.setup || !$('sheet').classList.contains('onb')) return;
+    if (inSetupBehind()) return;
+    closeSetup();
   }
   /* called again, it shows the week as rebuilt. V11-2: st, a week to show in place of the one built (the reset step's,
      with the Sunday Reset in its day), and focus, a day in the week the desk shows (today unless said) */
@@ -18019,7 +18084,9 @@
   let coachBox = null, coachFor = null, coachKey = null, coachTick = null;
   function endCoach() {
     if (!coachBox) return;
-    coachBox.remove(); coachBox = null; coachFor = null; coachTrack = null;
+    const wasAside = coachAside;
+    coachBox.remove(); coachBox = null; coachFor = null; coachTrack = null; coachAside = false;
+    if (wasAside) layoutInsets();
     clearInterval(coachTick); coachTick = null;
     window.removeEventListener('keydown', coachKey, true);
     window.removeEventListener('resize', coachPlace);
@@ -18028,9 +18095,39 @@
   }
   /* V11 (Oct 15, the first-visit walk): a tip can ring something drawn on the desk (a block, a piece in Block
      library): track gives its rectangle on screen each time the ring is placed, or null when it isn't in view */
-  let coachAt = null, coachTrack = null;
+  let coachAt = null, coachTrack = null, coachAside = false;
+  /* K21 (Kim, Oct 20): the sample week's tip sat over Wednesday to Friday. A tip with aside stands clear of the board's
+     rows: on a window wide enough for a board beside it, in a column at the left with the board framed in the room to
+     its right; narrower, along the bottom over the tray bar with the board framed above it. coachRoom gives the insets
+     the desk keeps for it (layoutInsets), coachSpot where the card goes */
+  const COACH_W = 340, COACH_GAP = 16;
+  function coachSide(vw) { return vw - (COACH_W + COACH_GAP * 2) >= 760 ? 'left' : 'bottom'; }
+  function coachRoom(left, right, bottom) {
+    if (!coachBox || !coachAside || view.phone || phoneDay() || noDesk || view.list) return null;
+    const vw = window.innerWidth, card = coachBox.querySelector('.coach-card'), ch = (card && card.offsetHeight) || 170;
+    if (coachSide(vw) === 'left') return { left: Math.max(left, COACH_GAP + COACH_W + COACH_GAP + 8), bottom };
+    return { left, bottom: bottom + ch + COACH_GAP };
+  }
+  function coachSpot(vw, vh, ch, bottom) {
+    if (coachSide(vw) === 'left') return { left: COACH_GAP, top: Math.round(Math.max(96, (vh - ch) / 2)), width: COACH_W };
+    const w = Math.min(360, vw - 32);
+    return { left: Math.round((vw - w) / 2), top: Math.round(vh - bottom - ch - 4), width: w };
+  }
   function coachPlace() {
     if (!coachBox) return;
+    if (coachAside && !view.phone && !phoneDay() && !noDesk && !view.list) {
+      /* (the ring still follows what it points at; the card keeps to its own room) */
+      let tr2 = null;
+      try { tr2 = coachTrack ? coachTrack() : null; } catch (e) { tr2 = null; }
+      const ring2 = coachBox.querySelector('.coach-ring'), card2 = coachBox.querySelector('.coach-card');
+      ring2.hidden = !tr2;
+      if (tr2) Object.assign(ring2.style, { left: tr2.left - 8 + 'px', top: tr2.top - 8 + 'px', width: tr2.width + 16 + 'px', height: tr2.height + 16 + 'px' });
+      const rk = rackBox(), bot = Math.max(window.innerHeight - rk.top + 12, chromeEdges().bottom + 12);
+      const sp = coachSpot(window.innerWidth, window.innerHeight, card2.offsetHeight || 170, bot);
+      coachBox.classList.toggle('loose', !tr2);
+      Object.assign(card2.style, { width: sp.width + 'px', left: sp.left + 'px', top: sp.top + 'px', bottom: 'auto' });
+      return;
+    }
     let tr = null;
     try { tr = coachTrack ? coachTrack() : null; } catch (e) { tr = null; }
     const t = tr ? { getBoundingClientRect: () => tr } : coachAt ? document.querySelector(coachAt) : null;
@@ -18060,7 +18157,7 @@
   function coach(sel, text, opts) {
     endCoach();
     const o = opts || {};
-    coachAt = sel; coachFor = o.move || null; coachTrack = o.track || null;
+    coachAt = sel; coachFor = o.move || null; coachTrack = o.track || null; coachAside = !!(FEEL && o.aside);
     const box = el('div', 'coach');
     const ring = el('div', 'coach-ring');
     const card = el('div', 'coach-card');
@@ -18089,6 +18186,7 @@
     coachTick = setInterval(coachPlace, 250);
     coachPlace();
     requestAnimationFrame(coachPlace);
+    if (coachAside) { layoutInsets(); requestAnimationFrame(() => { if (coachBox === box) { layoutInsets(); coachPlace(); } }); }
     ok.focus({ preventScroll: true });
     say((o.title ? o.title + '. ' : '') + text);
   }
@@ -18982,9 +19080,9 @@
     if (!r || !r.ok) { Snd.bad(); toast(moreHint(b, r || {}), 'bad'); return; }
     Snd.clack(0.4);
     W.squash(today, b.base);
-    bandSay(blockName(b) + ' runs until ' + M.clock(r.end) + '. ' + (was === 'Nothing else moves' ? 'Nothing else moved.' : was.replace(' slides to ', ' moved to ') + '.'));
-    if (FEEL) { const u = undoAct(blockName(b) + ' ends at ' + M.clock(r.end - 15) + ' again.', blockName(b) + ' runs until ' + M.clock(r.end) + '.'); toast(blockName(b) + ' runs until ' + M.clock(r.end), '', { label: 'Undo', live: u.live, fn: () => { if (u.live()) view.bandSaid = null; u.fn(); } }); }
-    else toast(blockName(b) + ' runs until ' + M.clock(r.end), '', { label: 'Undo', fn: () => { view.bandSaid = null; undo(); } });
+    bandSay(blockName(b) + ' now ends at ' + M.clock(r.end) + '. ' + (was === 'Nothing else moves' ? 'Nothing else moved.' : was.replace(' slides to ', ' moved to ') + '.'));
+    if (FEEL) { const u = undoAct(blockName(b) + ' ends at ' + M.clock(r.end - 15) + ' again.', blockName(b) + ' now ends at ' + M.clock(r.end) + '.'); toast(blockName(b) + ' now ends at ' + M.clock(r.end), '', { label: 'Undo', live: u.live, fn: () => { if (u.live()) view.bandSaid = null; u.fn(); } }); }
+    else toast(blockName(b) + ' now ends at ' + M.clock(r.end), '', { label: 'Undo', fn: () => { view.bandSaid = null; undo(); } });
   }
   function fillWith(p, at) {
     const r = commit(() => M.placeAdd(state, today, { name: p.name, cat: p.cat, icon: p.icon, dur: p.dur, src: { type: 'block', id: p.id } }, at));
@@ -21849,7 +21947,7 @@
   $('hud-kicker').addEventListener('click', () => { Snd.init(); if (view.drawer) closeDrawer(); else openDrawer(); });
   $('drawer-x').addEventListener('click', () => { Snd.init(); closeDrawer(); });
   /* a click outside the setup closes it with its answers kept, the same as its close mark */
-  $('scrim').addEventListener('click', () => { if (!$('sheet').hidden) { if (view.got.setup && $('sheet').classList.contains('onb')) closeSetup(); } else closeDrawer(); });
+  $('scrim').addEventListener('click', () => scrimTap());
   /* Escape closes the setup from anywhere inside it, a text box too (they keep Escape to themselves);
      a time being typed into a stepper takes the first Escape to put its number back */
   $('sheet').addEventListener('keydown', (e) => {
