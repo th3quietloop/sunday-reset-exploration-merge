@@ -65,3 +65,14 @@ Her words are quoted where they say it best. Each note ends with what we'll chan
 **K23. "Look at a sample week" is easy to miss.** Russell: "This is the first page. It's not super clear, but you can look at a sample week." **Change:** the welcome makes the sample a clear second choice.
 
 **K24. Too much reading overall.** Every setup line becomes one short sentence, and the bold goes from anything that isn't a title.
+
+## Shipped (Oct 20, 2026, late)
+
+Live on V11-2's own link from commit 95ccfca (deployment `dpl_EdLL6qcw9XQzHB4mtD4L94eRWY6z`; the version before it is `dpl_3BsQYrKzd6aRfLsABh99nvYiK7he`). Checks: `npm test` 693 of 693; drag gate GREEN (317 of 317 drops, the board the same size as V11's at all five sizes); contrast GREEN; break-it GREEN, all 62 states.
+
+- **K15's cause:** on Building your week, a click on the clear scrim around the card closed the setup and put back the board saved before it (the sample). The scrim ignores clicks while the new week is on the desk; the close mark and Escape still close. The same mix-up made the week's key say "You and Sam"; it reads the setup's own names now.
+- **K19** never reproduced in about 20 tries. A drop now has to land where its preview said, or nothing moves and it says to try again.
+- **K17:** flexible routines (Work set as Mine to plan) drag and stretch for one day, through the same per-day change as the panel's steppers (`M.slideSoft`), with one Undo. A dropped flexible routine pushes nothing; locked things in it stay put and cut it.
+- **K8** changed the saved board: `Data.VERSION` is 10.
+- On the phone, Getting started is a row in This week by day and hides after bedtime; tapping it, or Settings, Help, Getting started, now opens it (it did nothing before).
+- Kept: the 2017 meal planning study, since no newer peer reviewed one could be confirmed.
