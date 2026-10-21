@@ -23,7 +23,10 @@ test('what a meal is, and its window: its usual time, an hour either way', () =>
   const st = sam();
   const meals = M.calendarDay(st, WED).blocks.filter((b) => M.mealBlock(b)).map((b) => b.name);
   assert.deepEqual(meals, ['Breakfast', 'Lunch', 'Dinner']);
-  assert.equal(M.mealBlock({ name: 'Meal prep', cat: 'meals', start: 600, dur: 90 }), true, 'anything that’s Meals');
+  // (V11-3, C5: Meals as a kind of time isn't a meal; a block that says it is one is)
+  assert.equal(M.mealBlock({ name: 'Meal prep', cat: 'meals', start: 600, dur: 90 }), false, 'Meals as a kind of time is not enough');
+  assert.equal(M.mealBlock({ name: 'Groceries after', cat: 'meals', add: 'g1', src: { type: 'step' } }), false);
+  assert.equal(M.mealBlock({ name: 'Brunch', cat: 'meals', meal: true, start: 600, dur: 90 }), true, 'a block marked as a meal');
   assert.equal(M.mealBlock({ name: 'Tacos', dinner: true, cat: 'meals' }), true);
   assert.equal(M.mealBlock({ name: 'Lunch, pack them up', tpl: 'lunch', cat: 'family', start: 720, dur: 120 }), true, 'a template lunch by its name');
   assert.equal(M.mealBlock({ name: 'Lunch with Jo', cat: 'friends', add: 'a1' }), false, 'a placed block is a meal by its kind of time, not its name');
@@ -35,7 +38,9 @@ test('what a meal is, and its window: its usual time, an hour either way', () =>
   st.dates[WED] = { edits: { dinner: { start: 1140, dur: 45 } } };
   assert.deepEqual(M.mealWindow(st, blockOn(st, WED, 'Dinner'), WED), { lo: 1020, hi: 1140, at: 1080 });
   // a placed meal's window is its own start
-  assert.deepEqual(M.mealWindow(st, { name: 'Meal prep', cat: 'meals', add: 'mp', sourceDate: WED, sourceStart: 840, start: 840, dur: 90 }, WED), { lo: 780, hi: 900, at: 840 });
+  assert.deepEqual(M.mealWindow(st, { name: 'Brunch', cat: 'meals', meal: true, add: 'mp', sourceDate: WED, sourceStart: 840, start: 840, dur: 90 }, WED), { lo: 780, hi: 900, at: 840 });
+  // (V11-3, C4: once it was put somewhere, that's the middle of its window, wherever a push took it)
+  assert.deepEqual(M.mealWindow(st, { name: 'Brunch', cat: 'meals', meal: true, add: 'mp', mealAt: 780, sourceDate: WED, sourceStart: 840, start: 840, dur: 90 }, WED), { lo: 720, hi: 840, at: 780 });
   assert.equal(M.mealWindow(st, blockOn(st, WED, 'Get ready'), WED), null);
 });
 

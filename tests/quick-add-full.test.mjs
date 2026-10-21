@@ -93,10 +93,11 @@ test('a full evening says the ask back, what’s in the way, and offers real way
   const st = partyNight(), r = quickRig(st, TODAY, NOW);
   const plan = r.plan('Movie today 8pm 3h');
   assert.equal(plan.ok, false);
-  assert.equal(plan.text, 'Movie, 8 pm, 3 h. Tonight, Party is there until 10:30 pm. Saturday at 8 pm is open.');
+  // (V11-3, D8: every block it reaches into is named, each with when it ends)
+  assert.equal(sp(plan.text), 'Movie, 8 pm, 3 h. Tonight, Party is there until 10:30 pm and Wind down until 11 pm. Saturday at 8 pm is open.');
   // (45 minutes before the party is under half the ask, and 3 pm is in Work hours: neither is offered)
   assert.deepEqual(plain(plan.options.map((o) => [o.id, o.label])), [['day', 'Put it on Saturday']]);
-  assert.equal(plan.todo, false);
+  assert.equal(plan.todo, true, 'with one way on, a to-do is the second');
   const [day] = plan.options;
   assert.deepEqual(plain([day.plan.date, day.plan.start, day.plan.add.dur, day.plan.ok]), ['2026-10-24', 1200, 180, true], 'the same time on the nearest day where it fits');
   assert.ok(quietAt(st, '2026-10-24', 1200, 180), 'and nothing moves there');
@@ -207,7 +208,9 @@ test('the hour asked for is the person’s: any soft block there makes room, bef
   const st = D.sampleState(TODAY), r = quickRig(st, TODAY, NOW);
   const plan = r.plan('Movie tomorrow 8pm 3h');
   assert.equal(plan.ok, false);
-  assert.equal(sp(plan.text), 'Movie, 8 pm, 3 h. Tomorrow, bed is at 10:30 pm.');
+  // (V11-3, D8: what's in the way by name, Evening with Sam too, and what both ways on take time from)
+  assert.equal(sp(plan.text), 'Movie, 8 pm, 3 h. Tomorrow, Evening with Sam is there until 10 pm and Wind down until 10:30 pm. Bed is at 10:30 pm. Either way, it takes time from Evening with Sam.');
+  assert.equal(plan.todo, false, 'two ways on');
   assert.deepEqual(plain(plan.options.map((o) => [o.id, sp(o.label)])), [['shorter', 'Make it 2 h tomorrow'], ['near', 'At 7 pm tomorrow']]);
   const [shorter, near] = plan.options;
   assert.deepEqual(plain([shorter.plan.date, shorter.plan.start, shorter.plan.add.dur, shorter.plan.ok]), [WED, 1200, 120, true]);

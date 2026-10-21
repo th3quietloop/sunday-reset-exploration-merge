@@ -793,7 +793,11 @@
          session's add.
      An event saved without its own ready list keeps the suggestions it always had (Model.readySuggest's
      version 8 list); a new date gets the version 9 defaults when it's made. Version 8 builds read 8, so
-     one of them takes a version 9 board as newer: read only, never written over. */
+     one of them takes a version 9 board as newer: read only, never written over.
+     V11-3 (Oct 20): VERSION stays 9. Three optional fields on a placed add, each read with a default, so nothing
+     migrates: own (true: a goal session the person's yes put in their own time, apart from pinned, which is placed
+     by hand), meal (true: a block that is a meal, beside a Dinner block and a template meal), and mealAt (minutes:
+     where a meal was put, the middle of its window). An older build ignores all three. */
   const VERSION = 9;
   /* Who the board belongs to. Names in the app's own words (tabs, buttons, lines) come from here,
      never from code. Russell's board keeps Kim, Elijah, and Kim's cookbook. */

@@ -148,7 +148,7 @@ test('Use it puts the first week’s sessions in her own time and keeps them; St
   assert.equal(r.own.min, 270);
   const mine = M.goalSessions(board, g.id);
   assert.ok(mine.length && mine.every((x) => x.date <= end), 'own time only in the week it asked about');
-  assert.ok(mine.every((x) => x.add.pinned), 'a yes stays: planned again, they keep their place');
+  assert.ok(mine.every((x) => x.add.own && !x.add.pinned), 'a yes stays (own, never pinned: V11-3, C16): planned again, they keep their place');
   M.planGoal(board, g.id, TODAY, NOW, { horizon: 14 });
   assert.deepEqual(M.goalSessions(board, g.id).map((x) => x.add.id), mine.map((x) => x.add.id));
   assert.match(sp(w.standWords(g, M.goalProgress(board, g.id, TODAY, NOW))), /^Days hold about/, 'never Behind in its first week');

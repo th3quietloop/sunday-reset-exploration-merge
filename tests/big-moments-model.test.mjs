@@ -219,8 +219,8 @@ test('a goal’s first week counts only from when it was made, and own time only
   assert.ok(r.own.days.every((x) => x.part === 'evening' && x.name === 'Free evening' && x.min > 0));
   assert.equal(r.own.min, r.own.days.reduce((a, x) => a + x.min, 0));
   const inOwn = M.goalSessions(yes, gy.id).filter((x) => x.date <= sat);
-  assert.ok(inOwn.length && inOwn.every((x) => x.add.pinned), 'the yes stays');
-  assert.ok(M.goalSessions(yes, gy.id).filter((x) => x.date > sat).every((x) => !x.add.pinned), 'and goes no further than the day it was given');
+  assert.ok(inOwn.length && inOwn.every((x) => x.add.own && !x.add.pinned), 'the yes stays, as its own flag (V11-3, C16)');
+  assert.ok(M.goalSessions(yes, gy.id).filter((x) => x.date > sat).every((x) => !x.add.pinned && !x.add.own), 'and goes no further than the day it was given');
   assert.ok(before.THU > 0);
   M.planGoal(yes, gy.id, THU, 600);
   assert.deepEqual(M.goalSessions(yes, gy.id).filter((x) => x.date <= sat).map((x) => x.add.id), inOwn.map((x) => x.add.id), 'planned again, they stay');
@@ -554,7 +554,11 @@ test('"Not sure yet": this month, next month, a season, or a few months, in plai
   assert.deepEqual(M.windowFor('summer', TODAY), { from: '2027-06-01', to: '2027-08-31' });
   assert.deepEqual(M.windowFor('fall', TODAY), { from: '2026-09-01', to: '2026-11-30' }, 'the one under way');
   assert.deepEqual(M.windowFor('winter', TODAY), { from: '2026-12-01', to: '2027-02-28' });
-  assert.deepEqual(M.windowFor('winter', '2027-02-10'), { from: '2026-12-01', to: '2027-02-28' });
+  assert.deepEqual(M.windowFor('winter', '2027-02-01'), { from: '2026-12-01', to: '2027-02-28' });
+  // (V11-3, C26: three weeks or less left of it, a season means the next one; this winter keeps the one under way)
+  assert.deepEqual(M.windowFor('winter', '2027-02-10'), { from: '2027-12-01', to: '2028-02-29' });
+  assert.deepEqual(M.windowFor('spring', '2027-05-25'), { from: '2028-03-01', to: '2028-05-31' });
+  assert.deepEqual(M.windowFor('winter', '2027-02-10', true), { from: '2026-12-01', to: '2027-02-28' });
   assert.equal(M.windowFor('someday', TODAY), null);
   const say = (c) => M.windowWords(M.windowFor(c, TODAY), TODAY);
   assert.equal(say('spring'), 'Sometime in spring · Mar to May');
