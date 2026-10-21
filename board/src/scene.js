@@ -349,6 +349,20 @@
     }
     if (minS) {
       for (let i = cand.length - 1; i >= 0; i--) if (cand[i].s < minS) cand.splice(i, 1);
+      /* V11-3 (design review 6): before a block gives way to its mark, its name may stand taller in its face, the way a
+         week block's does (up to half its depth on one line), so a shallow board (a phone folded, 386 wide) still
+         names Sleep and Work wherever the name reads at the floor */
+      if (!cand.length && label) {
+        /* (at the floor or a little over it, never shouting: a fallback name is as big as it needs to be to read) */
+        const at = (x) => Math.min(x, minS * 1.25);
+        if (W > H * 1.3) cand.push({ k: 'icon1', s: at(sizeFor(g, label, iconRoom, H * 0.46)), bonus: 1.12 });
+        cand.push({ k: 'text1', s: at(sizeFor(g, label, W - 2 * pad, H * 0.5)), bonus: 1 });
+        /* two lines, as the wrap prints them (centered, a line and a little apart), up to 0.37 of the depth each */
+        const nm2 = wrapFit(g, label, W - 2 * padX, at(H * 0.37), 2);
+        if (nm2.lines.length === 2 && nm2.lines.length * nm2.s * 1.08 <= H - 2 * pad) cand.push({ k: 'wrap', s: nm2.s, nm: nm2, sub: null, ck: 0, bonus: 0.97 });
+        if (W < H * 0.9) cand.push({ k: 'vert1', s: at(Math.min(sizeFor(g, label, H * 0.88, W * 0.62), W * 0.62)), bonus: 0.92 });
+        for (let i = cand.length - 1; i >= 0; i--) if (cand[i].s < minS) cand.splice(i, 1);
+      }
       if (!cand.length) {
         if (W > 8) Icons.draw(g, icon, W / 2, H / 2, Math.min(W * 0.6, H * 0.36), sp.ink);
         return keep(key, cv);
@@ -1646,6 +1660,9 @@
     while (bits.length && total() > room) {
       const wide = bits.reduce((m, it) => (it.w > m.w ? it : m), bits[0]);
       if (wide.w <= 160 * fk) { bits.shift(); continue; }
+      /* V11-3 (design review 46): on the phone's narrow header, the first fact steps out before the longest one is cut,
+         when that leaves the longest whole ("Thai place on Pacific", not "Thai place o…" beside "1 h for you") */
+      if (FEEL && tall && bits.length > 1 && bits[0] !== wide && total() - bits[0].w - ICON - GAP <= room) { bits.shift(); continue; }
       const cut = ellipsize(g, said(wide.b), Math.max(160 * fk, wide.w - (total() - room)));
       /* V11: a fact cut down to a stub ("Left…") says nothing; the first one steps out instead */
       if (FEEL && cut.replace('…', '').length < 7 && cut !== said(wide.b)) { bits.shift(); continue; }
@@ -2909,7 +2926,7 @@
      all there is (they come back when it's put away) */
   let benchAway = false;
   function setPropsAway(on) { on = !!on; if (on === propsAway) return; propsAway = on; camSig = ''; maybeSolve(); }
-  function seenProps(cam, W, H) {
+  function seenProps(cam, W, H, whole) {
     if (propsAway || benchAway) return propList.map(() => false);
     const blockers = insets.blockers || [];
     return propList.map((p) => {
@@ -2924,13 +2941,18 @@
       const cut = (a) => Math.max(0, Math.min(x1, a.x1) - Math.max(x0, a.x0)) * Math.max(0, Math.min(y1, a.y1) - Math.max(y0, a.y0));
       let seen = cut({ x0: 0, x1: W, y0: 0, y1: H });
       blockers.forEach((b) => { seen -= cut(b); });
-      return seen / area >= 0.8 && !p.dropped;
+      if (whole) p.seenR = +(seen / area).toFixed(3);
+      return seen / area >= (whole || 0.8) && !p.dropped;
     });
   }
   /* A thing that rides with another (the pencil with the notepad) shows only with it. While a panel is
      open nothing new comes onto the desk; things only step out if the panel covers them. */
   function decideProps(cam, W, H) {
-    const seen = seenProps(cam, W, H), at = new Map(propList.map((p, i) => [p, i]));
+    /* (V11-3, design review 31: what stays is whole. The box is the thing's corners seen in 3D, which reads larger than
+       the thing itself, so a thing wholly on screen measures 0.85 to 1; the lamp cut by the window's edge at 1440 wide
+       measured 0.82 and stayed under the old 0.8. The camera's search keeps 0.8, so where it frames the board doesn't
+       change, only what's allowed to stand there) */
+    const seen = seenProps(cam, W, H, FEEL ? 0.84 : 0), at = new Map(propList.map((p, i) => [p, i]));
     const was = new Map(propList.map((p) => [p, p.to]));
     propList.forEach((p, i) => {
       const lead = p.rides && p.lead ? seen[at.get(p.lead)] : true;
@@ -3069,9 +3091,14 @@
     /* with the tray open the board matters more than the mat around it: the mat's front and back
        edges may slide under the panels, and the week keeps its size */
     const u = union(list);
-    if (tight) return { x0: u.x0 - 1.2, x1: u.x1 + 1.2, z0: u.z0 - 0.45, z1: u.z1 + 0.2, y1: 0.5, elev: 1.1 };
-    return Object.assign(grow(u), { y1: 0.5, elev: 1.1 });
+    /* V11-3 (design review 38): a room taller than it is wide (an iPad upright) sees the week from higher, so its seven
+       rows stand taller in the height a wide board leaves empty; its width is the same, so it's never smaller */
+    const elev = FEEL ? 1.1 + Math.min(0.22, Math.max(0, (roomAspect - 0.9) * 0.8)) : 1.1;
+    if (tight) return { x0: u.x0 - 1.2, x1: u.x1 + 1.2, z0: u.z0 - 0.45, z1: u.z1 + 0.2, y1: 0.5, elev };
+    return Object.assign(grow(u), { y1: 0.5, elev });
   }
+  /* (the room the board is framed in, tall over wide, from the last solve) */
+  let roomAspect = 0.6;
   let tight = false;
   function setTight(on) { on = !!on; if (on === tight) return; tight = on; maybeSolve(); }
   const tmpCam = new T.PerspectiveCamera(30, 1, 1, 400);
@@ -3257,6 +3284,7 @@
       for (let k = 0; k <= 30; k++) { const d = hi * (1 + k * 0.01); if (fits(d, true)) return { box, look, dir, d }; }
       return { box, look, dir, d: Infinity };
     };
+    roomAspect = (sy1 - sy0) / Math.max(1, sx1 - sx0);
     const vb = viewBox();
     let pick = frame(vb);
     /* Things sit beside the mat when the camera shows them there. When it would leave some out, it can
@@ -4196,12 +4224,50 @@
   }
   /* sinking into the board: the way a block leaves (taken off, or its day changed) */
   function sinkScale(m, s) { m.scale.set(0.92 + 0.08 * s, Math.max(0.001, s * s), 0.92 + 0.08 * s); }
+  /* V11-3 (design review 30): nothing on the desk throws its shadow onto a board, where the print is (the lamp's shade,
+     leaning over the board's back edge, laid a round dark patch over the day's header, under 4.5 to 1). Each part of a
+     thing whose shadow, along the key light, would reach the boards casts none; the rest of it keeps its shadow on the
+     desk. Worked out again only when the light, the boards, or a thing has moved */
+  const shadowCast = { sig: '', d: null, b: null, v: null };
+  function propShadows() {
+    if (!FEEL || !sun || !propList.length) return;
+    const mt = matTarget();
+    let sig = mt ? [mt.x0, mt.x1, mt.z0, mt.z1].map((v) => v.toFixed(2)).join() : '-';
+    sig += '|' + [sun.position.x, sun.position.y, sun.position.z].map((v) => v.toFixed(2)).join();
+    for (const p of propList) sig += '|' + p.mover.position.x.toFixed(2) + ',' + p.mover.position.z.toFixed(2) + ',' + p.mover.rotation.y.toFixed(2) + ',' + p.k.toFixed(2);
+    if (sig === shadowCast.sig) return;
+    shadowCast.sig = sig;
+    if (!shadowCast.d) { shadowCast.d = new T.Vector3(); shadowCast.b = new T.Box3(); shadowCast.v = new T.Vector3(); }
+    const d = shadowCast.d.copy(sun.target.position).sub(sun.position).normalize(), bb = shadowCast.b, v = shadowCast.v;
+    /* the boards themselves, a little wider than their wood (matTarget is the mat: the boards and 1.1 around them) */
+    const zone = mt && d.y < -0.05 ? { x0: mt.x0 + 0.8, x1: mt.x1 - 0.8, z0: mt.z0 + 0.8, z1: mt.z1 - 0.8 } : null;
+    for (const p of propList) {
+      p.obj.updateWorldMatrix(true, true);
+      p.obj.traverse((me) => {
+        if (!me.isMesh) return;
+        if (me.userData.cast0 == null) me.userData.cast0 = me.castShadow;
+        if (!me.userData.cast0) return;
+        if (!zone) { me.castShadow = true; return; }
+        if (!me.geometry.boundingBox) me.geometry.computeBoundingBox();
+        bb.copy(me.geometry.boundingBox).applyMatrix4(me.matrixWorld);
+        world.worldToLocal(bb.min); world.worldToLocal(bb.max);
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const x of [bb.min.x, bb.max.x]) for (const y of [bb.min.y, bb.max.y]) for (const z of [bb.min.z, bb.max.z]) {
+          const t = Math.max(0, (y - BOARD_Y) / -d.y);
+          v.set(x + d.x * t, BOARD_Y, z + d.z * t);
+          x0 = Math.min(x0, v.x, x); x1 = Math.max(x1, v.x, x); z0 = Math.min(z0, v.z, z); z1 = Math.max(z1, v.z, z);
+        }
+        me.castShadow = !(x1 > zone.x0 && x0 < zone.x1 && z1 > zone.z0 && z0 < zone.z1);
+      });
+    }
+  }
   function step(dt) {
     const k = 1 - Math.exp(-dt * 13);
     moving = false; steaming = false;
     stepHolds(dt);
     stepMat(dt);
     stepProps(dt);
+    propShadows();
     stepSteam(dt);
     stepTiles(dt);
     /* a block taken off shrinks away (feel: it sinks into the board) */
@@ -5883,7 +5949,7 @@
     /* V11: the bench's close framing, for checking by hand: wanted, how close, where it is now, in hand */
     get benchView() { const b = benchCam; return { want: b.want, s: +b.s.toFixed(3), z: +b.z.toFixed(3), zTo: +b.zTo.toFixed(3), carry: b.carry, back: !!b.back, at: [+b.at.x.toFixed(2), +b.at.z.toFixed(2)], pan: [+b.pan.x.toFixed(2), +b.pan.z.toFixed(2)] }; },
     get stats() { return renderer ? { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, calls: renderer.info.render.calls } : null; },
-    get props() { return { mode: propMode, cost: propCost, list: propList.map((p) => ({ id: p.id, side: p.side, to: p.to, keep: p.keep, rides: !!p.rides, foot: [p.foot0.x0, p.foot0.z0, p.foot0.x1, p.foot0.z1].map((v) => +v.toFixed(1)), tall: +tallOf(p).toFixed(1), k: +p.k.toFixed(2), dropped: !!p.dropped, box: p.box && [p.box.min.x, p.box.min.z, p.box.max.x, p.box.max.z].map((v) => +v.toFixed(1)), tf: TF[p.side === 'L' ? 'propsL' : 'propsR'].x })) }; }
+    get props() { return { mode: propMode, cost: propCost, list: propList.map((p) => ({ id: p.id, side: p.side, to: p.to, keep: p.keep, rides: !!p.rides, foot: [p.foot0.x0, p.foot0.z0, p.foot0.x1, p.foot0.z1].map((v) => +v.toFixed(1)), tall: +tallOf(p).toFixed(1), k: +p.k.toFixed(2), dropped: !!p.dropped, seen: p.seenR, box: p.box && [p.box.min.x, p.box.min.z, p.box.max.x, p.box.max.z].map((v) => +v.toFixed(1)), tf: TF[p.side === 'L' ? 'propsL' : 'propsR'].x })) }; }
   };
   Object.assign(root.World, changes);
 })(typeof window !== 'undefined' ? window : globalThis);

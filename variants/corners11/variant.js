@@ -235,7 +235,10 @@
       }
       gs.hidden = on || !mi.shown || !!v.phone || !!v.reset;
       if (gsf.hidden === on) { gsf.hidden = !on; requestAnimationFrame(() => SR.layoutInsets()); }
-      if (on) gsf.style.bottom = Math.round(16 + (br.hidden || !br.offsetHeight ? 0 : br.offsetHeight + 8)) + 'px';
+      /* (V11-3, design review 40: on the phone's own day the round Add stands bottom right where the bar would, so the
+         card stands above it, never over it) */
+      const pa = document.getElementById('pd-add'), paH = pa && !pa.hidden && document.body.classList.contains('phone-desk') ? pa.offsetHeight : 0;
+      if (on) gsf.style.bottom = Math.round(16 + (br.hidden || !br.offsetHeight ? 0 : br.offsetHeight + 8) + (paH ? paH + 8 : 0)) + 'px';
     }
     { const sd = document.getElementById('side'); if (sd && window.MutationObserver) new MutationObserver(() => drawGsf()).observe(sd, { attributes: true, attributeFilter: ['hidden'] }); }
     /* V11 (the Planner walk, 15.1): Undo you can reach after its toast is gone, on every device: here while there's
@@ -2243,7 +2246,18 @@
     }
     /* V11: which meals the board shows (the meal board's Show toggles, kept on this device) */
     const MEAL_ROWS = 'sundayreset.v7.mealRows';
-    const mealRows = () => { try { const r = JSON.parse(localStorage.getItem(MEAL_ROWS) || 'null'); if (Array.isArray(r) && r.length) return MEAL_KINDS.map(([k]) => k).filter((k) => r.includes(k)); } catch (e) { /* storage off */ } return ['breakfast', 'lunch', 'dinner']; };
+    /* (V11-3, design review 28: until this device picks its rows, the board shows Dinner, and Breakfast or Lunch only where
+       the board has them: a meal of that kind on a day, or its block in the usual days, from the setup's Which meals.
+       Fourteen empty Add cells read as homework) */
+    const mealsUsed = () => {
+      const st = SR.state, used = new Set(['dinner']);
+      Object.values(st.meals || {}).forEach((x) => { if (x && typeof x === 'object') ['breakfast', 'lunch'].forEach((k) => { if (x[k]) used.add(k); }); });
+      const rh = st.rhythm || {}, days = [].concat(Object.values(rh.days || {}), ...Object.values(rh.shapes || {}).map((x) => Object.values((x && x.days) || {})));
+      const tpl = [].concat(...days.map((x) => (x && Array.isArray(x.blocks) ? x.blocks : [])));
+      tpl.forEach((b) => { const w = ((b && (b.id || '')) + ' ' + (b && (b.name || ''))).toLowerCase(); ['breakfast', 'lunch'].forEach((k) => { if (w.includes(k)) used.add(k); }); });
+      return MEAL_KINDS.map(([k]) => k).filter((k) => used.has(k));
+    };
+    const mealRows = () => { try { const r = JSON.parse(localStorage.getItem(MEAL_ROWS) || 'null'); if (Array.isArray(r) && r.length) return MEAL_KINDS.map(([k]) => k).filter((k) => r.includes(k)); } catch (e) { /* storage off */ } try { return mealsUsed(); } catch (e) { return ['breakfast', 'lunch', 'dinner']; } };
     const mealDayWords = (d, k) => M.DAY_LONG[M.weekday(d)] + ' ' + kindName(k).toLowerCase();
     /* V11: last week's meals for the open days of this one, in the rows shown */
     /* (V11, the rituals walk: back, in days, reaches any earlier week: 7 is last week, 14 the week before) */
@@ -3041,6 +3055,8 @@
           }
           /* V11-2 (every dead end gets a next step): an empty day says what it's for, in words anyone sees, not only a
              screen reader: a quiet + Add (deadends.css holds it at 4.5 to 1 on the wood) */
+          /* (V11-3, design review 28: a day that's over says Not planned, as the dinners strip does, never + Add) */
+          if (!m && d < SR.today) { cell.classList.add('c-mpast'); cell.appendChild(h('span', 'c-madd c-mnone', 'Not planned')); cell.setAttribute('aria-label', dayWords(d, k) + ': not planned. Add what you had'); return cell; }
           if (!m) { const add = h('span', 'c-madd'); add.append(SR.icon('plus', 7, '#2E1E0C'), h('span', '', 'Add')); cell.appendChild(add); cell.setAttribute('aria-label', dayWords(d, k) + ': nothing yet. Add a meal'); return cell; }
           const easy = notCooking(m.how);
           /* V11 goals: leftovers read as the dish they are, with the meal they come from under it ("From Sun
@@ -3749,6 +3765,9 @@
           again.classList.toggle('on', fillMode === 'weeks');
           /* while a proposal is up, its Use this plan is the one gold thing: Done steps back (rituals.css) */
           if (mat) mat.classList.toggle('c-proposing', proposing);
+          /* (V11-3, design review 27: while nights from today on have no dinner, Fill the week is the one gold thing and
+             Done steps back, as it does for a proposal; with the week's dinners all decided, Done is gold again) */
+          if (mat) mat.classList.toggle('c-fillgold', !on && !fillBtn.hidden && dates.some((d) => d >= SR.today && !mealAt(d, 'dinner')));
           sugBar.classList.toggle('c-prepbar', !!prepView);
           if (!on) return;
           sugBar.replaceChildren();
@@ -6567,7 +6586,8 @@
     /* == V11: what's on screen, by view and by size (docs/V11-ON-SCREEN.md) ==
        The bottom bar holds what works where you are. Block library and To-dos lay their pieces out beside
        the day or the week, so they show there (To-dos in Now too, where Due soon comes out beside today);
-       in Month, Year, and the list they could only take you somewhere else. Add works everywhere, and the
+       in Month and Year they take you to the week and lay them out there (V11-3), and in the list they'd only take you
+       somewhere else. Add works everywhere, and the
        reset follows its own rule (drawChip). With every kind of day laid out the bar steps aside, since
        the cards are the page, and a bar with nothing in it isn't drawn. */
     const spreadBar = h('div', 'c-spreadbar'); spreadBar.hidden = true;
@@ -6581,8 +6601,11 @@
     function onScreen() {
       const v = SR.view, now = SR.inToday(), ag = document.getElementById('agenda'), listOn = !!(ag && !ag.hidden);
       const spread = spreadOn(), board = !now && !listOn && (v.zoom === 'day' || v.zoom === 'week');
-      lib.hidden = !board;
-      todos.hidden = !(board || now);
+      /* (V11-3, design review 55: Month and Year keep To-dos and Block library too, so the bar doesn't change under
+         you as you zoom out; either one takes you to the week and lays its pieces out there, toBoard) */
+      const zoomedOut = !now && !listOn && (v.zoom === 'month' || v.zoom === 'year');
+      lib.hidden = !(board || zoomedOut);
+      todos.hidden = !(board || now || zoomedOut);
       document.body.classList.toggle('c-spread', spread);
       spreadBar.hidden = !spread;
       if (spread) {

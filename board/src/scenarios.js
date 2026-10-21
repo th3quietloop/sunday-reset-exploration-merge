@@ -10,7 +10,7 @@
      board ones open on the year behind today, where their history is). heavy: a build long enough to
      say it's making the board first. */
   const LIST = [
-    { id: 'firstrun', group: 'First visit', name: 'Brand new', line: 'Someone opening it for the first time: their name on the letter rack, then the sample week.' },
+    { id: 'firstrun', group: 'First visit', name: 'Brand new', line: 'Someone opening it for the first time: the welcome, then the setup or the sample week.' },
     { id: 'sample', group: 'Weeks', name: 'Sample family', line: 'What someone new sees behind the welcome.' },
     { id: 'batchcook', group: 'Weeks', name: 'Batch cook week', line: 'Two batch cooks with leftovers on lunches, a Meal prep block, three things in the cart, milk on the list, and vegetarian.' },
     { id: 'busy', group: 'People', name: 'Busy person', line: 'Long work days, an early workout, errands in every gap, and a pile of to dos.' },
@@ -138,7 +138,7 @@
       st.dinners[M.addDays(last, 2)] = { name: 'Pizza place', recipe: null, cook: 'order', items: [] };
       return st;
     }
-    /* brand new: the sample week with no name yet, for the first visit's letter rack */
+    /* brand new: the sample week with no name yet, for the first visit (the setup asks the name) */
     if (id === 'firstrun') { const st = D.sampleState(today); st.profile = Object.assign({}, st.profile, { name: '' }); return st; }
 
     if (id === 'busy') {
