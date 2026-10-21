@@ -184,6 +184,8 @@ function behindRig(o) {
     const boardTime = (date, start) => ({ date, start });
     const landing = () => { __ctx.landed++; };
     const setTimeout = () => 0;
+    const closeSetup = () => { __ctx.closedSetup = (__ctx.closedSetup || 0) + 1; closeSheet(); }, closeDrawer = () => { __ctx.closedDrawer = (__ctx.closedDrawer || 0) + 1; };
+    sheet.classList = { contains: (c) => c === 'onb' };
     ${app('  /* (V11: never the week a setup is showing behind its card', '  /* Something broke that the person didn\'t cause.')}
     ${app('  /* == V11: the week behind the setup', '  /* (the end of the week behind the setup) */')}
     ${app('  function closeSheet() {', '  /* What the first visit keeps while a step is open')}
@@ -191,7 +193,7 @@ function behindRig(o) {
     ${app('  function showPreview(st, label, id) {', '  /* What a tap left behind belongs to the board it was made on.')}
     ({
       get state() { return state; }, set state(v) { state = v; }, view, sheet,
-      persist, changed, commit, showBehind, dropBehind, behindFor, closeSheet, finishSetup, showPreview, endPreview,
+      persist, changed, commit, showBehind, dropBehind, behindFor, closeSheet, finishSetup, showPreview, endPreview, scrimTap,
       /* the setup open on a step, with the week it built */
       open(at, mode) { view.got.setup = { at, mode: mode || 'first', a: { name: 'Nate', resetAt: { day: 0, min: 1140 } }, built: JSON.parse(JSON.stringify(__built)), extras: [] }; sheet.hidden = false; behindFor(view.got.setup); },
       edit() { return commit(() => { state.edits = (state.edits || 0) + 1; return { ok: true }; }); }
@@ -250,6 +252,36 @@ test('while the setup shows their week behind its card, nothing saves; every way
   assert.equal(p.state.n, 'real');
   p.edit();
   assert.deepEqual(p.ctx.saved, ['real']);
+});
+
+test('K15: a tap on the desk behind Building or the plan never closes the setup; See my plan shows the new week', () => {
+  // Kim had looked at the sample week earlier, so the board under the setup was the sample (Alex here). On Building the
+  // desk is her new week under a clear scrim; a tap there that missed See my plan closed the setup and the sample came back
+  for (const at of ['build', 'plan']) {
+    const t = behindRig();
+    t.open(at);
+    assert.equal(t.state.n, 'built');
+    t.scrimTap();
+    assert.equal(t.ctx.closedSetup || 0, 0, at + ': the desk behind takes no taps');
+    assert.ok(t.view.behind, at + ': the new week stays on the desk');
+    assert.equal(t.state.n, 'built');
+    assert.equal(t.sheet.hidden, false);
+  }
+  // the reset step beside the desk is the same
+  const r = behindRig();
+  r.open('build'); r.view.got.setup.at = 'reset'; r.view.got.setup.desk = true;
+  r.scrimTap();
+  assert.equal(r.ctx.closedSetup || 0, 0);
+  // any other step: a tap outside the card closes it with the answers kept, as before
+  const n = behindRig();
+  n.open('name');
+  n.scrimTap();
+  assert.equal(n.ctx.closedSetup, 1);
+  assert.equal(n.state.n, 'real');
+  // no sheet open: the scrim belongs to Settings
+  const d = behindRig();
+  d.scrimTap();
+  assert.equal(d.ctx.closedDrawer, 1);
 });
 
 test('something that throws mid-setup never leaves saving stopped', () => {

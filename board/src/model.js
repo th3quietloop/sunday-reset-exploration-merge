@@ -716,6 +716,21 @@
     dd.edits[tplId] = Object.assign({}, dd.edits[tplId], { start: windowTime(date, r.date, r.start), dur: d });
     return r;
   }
+  /* K17 (Kim, Oct 20): a routine that's flexible (soft, like Work that's yours to plan) moved or stretched on one day.
+     It's the same per-day edit the block panel's Starts and Length make: a soft routine is the layer under everything
+     else, so it pushes nothing, and what's set inside it (a locked pick up, a meeting, a block placed there) cuts it as
+     always (free time too, from its panel). Anything that isn't soft is refused; start and dur are that date's minutes. */
+  function slideSoft(state, date, tplId, start, dur) {
+    const t = templateFor(state, date).blocks.find((x) => x.id === tplId);
+    const b = t ? Object.assign({}, t, (((state.dates[date] || {}).edits) || {})[tplId]) : null;
+    if (!b || !b.soft || b.fixed || b.gone || !Number.isFinite(start)) return { ok: false };
+    const d = Math.max(MIN_LEN, snap(Number.isFinite(dur) ? dur : b.dur));
+    const st = clamp(snap(start), RAIL0, RAIL1 - d);
+    const dd = dateRec(state, date);
+    dd.edits = dd.edits || {};
+    dd.edits[tplId] = Object.assign({}, dd.edits[tplId], { start: st, dur: d });
+    return { ok: true, date, start: st, dur: d, recordStart: st, pushes: [] };
+  }
   /* Change a block's length from its start, pushing later blocks. Shrinks the ask until it fits. */
   function canResize(state, date, key, newDur, opts) {
     const b = blockRecord(state, date, key);
@@ -4755,7 +4770,7 @@
     iso, parts, addDays, addMonths, weekday, diffDays, weekStart, sundayOf, setWeekStart, weekStartDay, weekOrder, shiftWeeks, monthKey, monthStart, daysInMonth, todayIso, range, weekDates, monthGrid, dateTime, windowTime, visibleHours, windowPosition,
     dateText, spanText, relText, clock, setClock24, span, dur, hours,
     markersOn, tripOn, timedOn, shapeOf, templateFor, resolveDay, calendarRecords, calendarDay, resolveWindow, gaps, totals, awake,
-    canPlace, magnet, firstFit, gridDur, placeAdd, findAdd, removeAdd, moveAdd, moveTemplate, canResize, resizeBlock, setWake, setBed, applyPushes, dateRec,
+    canPlace, magnet, firstFit, gridDur, placeAdd, findAdd, removeAdd, moveAdd, moveTemplate, slideSoft, canResize, resizeBlock, setWake, setBed, applyPushes, dateRec,
     withMeals, mealBlock, mealWindow, pushInsert,
     placements, taskDur, taskPlan, taskStatus, dueSoon, REPEATS, nextDue, completeTask, reopenTask, suggestSteps, clashes, clashesIn, capacity,
     presetSlot, applyPreset, presetFromDay,
