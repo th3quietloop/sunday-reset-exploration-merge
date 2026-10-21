@@ -7,7 +7,7 @@
 /* (V11-3: a build names the copy from a hash of what it keeps, scripts/make-variants.mjs, so a new build always
    keeps a new copy; the board's own page keeps v2) */
 const PREFIX = 'sundayreset-corners11-2-shell-';
-const SHELL = PREFIX + 'dee8c4707bc2';
+const SHELL = PREFIX + '1624a5f6e2ac';
 /* the copy holds this once every file below was kept */
 const WHOLE = '/__shell-whole';
 const KEEP = /\.(?:js|css|html|webmanifest|png|webp|svg|woff2?)$|\/$/;

@@ -12,6 +12,9 @@ body.feel .set-nav .c-setnote { display: flex; flex-direction: column; align-ite
 @media (min-width: 760px) and (max-width: 1180px) {
   .k .c-me.c-sample .c-me-name { display: block; }
   .k .c-me.c-sample .c-me-tag { display: none; }
+  /* (Oct 20, the contrast gate: with a panel open on the left the top row is squeezed and the zoom tabs slid over
+     Sample week, so then the chip keeps only the name) */
+  body.c-docked .k .c-me.c-sample .c-me-name::after, body:has(#side:not([hidden])) .k .c-me.c-sample .c-me-name::after { display: none; }
 }
 
 /* 39: the phone's Today header keeps the date, the clock, and Settings on one row on a narrow phone (the Duo folded,
