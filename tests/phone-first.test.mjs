@@ -180,22 +180,25 @@ test('Open the desk keeps the desk; the List button, Esc, and the notepad keep t
   assert.equal(p.view.phoneDesk, false, 'it still goes to the list, where the meal board opens');
 });
 
-test('a new person\'s first look on a phone is the desk, with Getting started\'s Open the desk done quietly', () => {
+test('a new person\'s first look on a phone is its Today list, on today, kept from then on (V11-3, design review 40)', () => {
   const moves = { kind: 'phone', done: { build: true }, hidden: false };
-  const p = ways(desk({ mode: 'today', phone: true, todayOff: 3 }), { moves });
+  const p = ways(desk({ mode: 'planner', zoom: 'week', phone: true, todayOff: 3 }), { moves, stored: 'desk' });
   assert.equal(p.firstLookDesk(), true);
-  assert.equal(p.store.get(KEY), 'desk', 'and it is this phone\'s view from now on');
-  assert.deepEqual([p.view.phoneDesk, p.view.zoom, p.view.focus], [true, 'day', today], 'today, whatever day the list showed');
-  assert.equal(p.moves.done.desk, true);
-  assert.equal(p.said.saved.done.desk, true, 'kept on the device');
-  // (noteMove still hears it, and finds it done, so no second toast follows "Your week is ready.")
-  assert.deepEqual(p.said.moves, ['desk']);
-  // a made up board: the first look is the desk too, and nothing reaches the device
+  assert.equal(p.store.get(KEY), 'list', 'the list is this phone\'s view from now on');
+  assert.deepEqual([p.view.phoneDesk, p.view.mode, p.view.todayOff], [false, 'today', 0], 'Today, whatever day the list showed');
+  assert.equal(p.moves.done.desk, undefined, 'Getting started\'s Open the desk is still a thing to try');
+  assert.deepEqual(p.said.moves, []);
+  // from the phone's own day (a setup finished there), back to the list
+  const q = ways(desk({ mode: 'today', phone: true }), { moves: { kind: 'phone', done: { build: true } } });
+  q.openPhoneDesk();
+  assert.equal(q.view.phoneDesk, true);
+  q.firstLookDesk();
+  assert.deepEqual([q.view.phoneDesk, q.view.mode], [false, 'today']);
+  // a made up board: the list too, and nothing reaches the device
   const pv = ways(desk({ mode: 'today', phone: true, preview: { id: 'firstrun' } }), { moves: { kind: 'phone', done: { build: true } } });
   pv.firstLookDesk();
-  assert.equal(pv.view.phoneDesk, true);
+  assert.equal(pv.view.phoneDesk, false);
   assert.equal(pv.store.has(KEY), false);
-  assert.equal(pv.moves.done.desk, undefined, 'the device\'s list is left as it was');
 });
 
 test('the first look waits for a phone\'s size and a desk that draws', () => {

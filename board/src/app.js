@@ -1723,6 +1723,13 @@
     /* V11: any other panel that steps the sheet aside leaves the week where it was, at the size it was, and
        stands over its right part (a tablet) or all of it (a phone): opening and closing one never moves the week */
     else if (sheetAside) right = Math.max(16, edges.right + 12);
+    /* V11-3 (design review 9): quick add on the desk stands at the right; the board is framed in the room beside it, so
+       where the thing would land stays in view (with room for a board, 520 wide; narrower, it stays as it was) */
+    const qk = $('quick');
+    if (FEEL && qk && !qk.hidden && !view.phone && !phoneDay() && qk.offsetParent !== null) {
+      const qr = qk.getBoundingClientRect(), qRight = window.innerWidth - qr.left + 12;
+      if (qr.left > window.innerWidth / 3 && window.innerWidth - qRight - left >= 520) right = Math.max(right, qRight);
+    }
     /* A preview's bar sits on the tray's top edge, centered in the room beside an open panel; the board
        and the toasts stay above it, so it never covers the work or what a tap did. On the phone
        style.css puts it at the top. */
@@ -9293,6 +9300,16 @@
 
   /* hover tips */
   let hoverKey = null, hoverTickAt = 0;
+  /* V11-3 (design review 38): open time's "Tap to add something" teaches once: on the day this device first showed it,
+     to a mouse only (a finger, or a pen, never hovers, so on an iPad it only ever showed unasked) */
+  const OPEN_TIP = 'sundayreset.v113.openTip';
+  let openTipDay = null;
+  function openTipOk(e) {
+    if (e && e.pointerType && e.pointerType !== 'mouse') return false;
+    if (openTipDay == null) { try { openTipDay = localStorage.getItem(OPEN_TIP) || ''; } catch (err) { openTipDay = today; } }
+    if (!openTipDay) { openTipDay = today; if (!view.preview) { try { localStorage.setItem(OPEN_TIP, today); } catch (err) { /* fine: this visit only */ } } }
+    return openTipDay === today;
+  }
   function hover(e) {
     if (!ready) return;
     const under = document.elementFromPoint(e.clientX, e.clientY);
@@ -9305,7 +9322,7 @@
       const t = FEEL && !view.kindSpread && !view.reset && !view.pick && !carryingNow() ? targetAt(e.clientX, e.clientY) : null;
       const at = t && (t.kind === 'day' || t.kind === 'week') ? M.dateTime(t.date, t.min) : null;
       const g = at ? M.gaps(day(at.date)).find((x) => x[0] <= at.start && at.start < x[1]) : null;
-      if (g && !(at.date === today && g[1] <= nowMin)) {
+      if (g && !(at.date === today && g[1] <= nowMin) && openTipOk(e)) {
         const len = g[1] - Math.max(g[0], at.date === today ? Math.min(g[1], Math.ceil(nowMin / 15) * 15) : g[0]);
         hoverKey = 'open' + at.date + g[0]; W.setHover(null); stage.className = 'pointer';
         showChipAt(e.clientX, e.clientY, (len >= 60 ? M.hours(len) : M.dur(len)) + ' open', 'Tap to add something');
@@ -13774,6 +13791,14 @@
       nav.appendChild(g);
       if (!hits.length) g.appendChild(button('Show all pages', 'small quiet', () => { view.setFind = ''; renderDrawer(); }));
     } else {
+      /* V11-3 (design review 47): the phone has no Overview, so what the desk's Overview says first, a sample week
+         or a made up board, leads the phone's list, with the same button */
+      if (FEEL && narrow && (view.preview || who().sample)) {
+        const note = el('div', 'dnote c-setnote');
+        if (view.preview) { note.appendChild(el('span', '', 'You’re looking at ' + previewLabel() + '. Nothing here is saved.')); note.appendChild(button('Back to my board', 'small primary', endPreview)); }
+        else { note.appendChild(el('span', '', 'This is a sample week, so you can look around.')); note.appendChild(button('Set up my week', 'small primary', () => { closeDrawer(); openWelcome('setup'); })); }
+        nav.appendChild(note);
+      }
       (narrow ? [] : ['']).concat([...new Set(pages.map((p) => p.group).filter(Boolean))]).forEach((gn) => {
         const g = el('div', 'set-group');
         if (gn) g.appendChild(el('h3', 'set-gh', gn));
@@ -13781,13 +13806,14 @@
         /* V11 goals: on the phone, Settings is the one door to what the desk's corner menu holds, so Goals stands
            in Your week, the first thing the phone sees here; it closes Settings and opens Goals over the list,
            the way to a first goal as well as the rest */
-        if (FEEL && gn === 'Your week' && (view.phone || phoneDay())) {
+        /* (V11-3, design review 47: on the desk too, so Settings lists the same pages everywhere) */
+        if (FEEL && gn === 'Your week') {
           const gb = el('button', 'set-link');
           gb.type = 'button';
           gb.dataset.fk = 'set-goals';
           gb.append(icon('mountain', 9, narrow ? UI.white : UI.soft), el('span', 'grow', 'Goals'));
           if (narrow) { const v = setValue('goals'); if (v) gb.appendChild(v); gb.appendChild(icon('right', 7, SET_CHEV)); }
-          gb.addEventListener('click', () => { Snd.init(); Snd.pick(); closeDrawer(); openSel({ type: 'goals' }); });
+          gb.addEventListener('click', () => { Snd.init(); Snd.pick(); closeDrawer(); if (!narrow && window.SR && typeof window.SR.openGoals === 'function') window.SR.openGoals(); else openSel({ type: 'goals' }); });
           g.appendChild(gb);
         }
         nav.appendChild(g);
@@ -14066,6 +14092,9 @@
       K.LAYOUT_ORDER.forEach((id) => {
         const L = K.LAYOUTS[id], b = el('button', 'desk-theme');
         b.type = 'button';
+        /* (V11-3, design review 32: Bare, the one with nothing on it, is a row of its own at the end, so the twelve with
+           things on them fill their rows and no card sits alone) */
+        if (FEEL && id === 'bare') b.classList.add('c-bare');
         b.setAttribute('aria-pressed', String(view.desk.layout === id));
         b.append(layoutCard(R, L), el('span', 'desk-theme-name', L.name));
         /* (V11, the Planner walk, 19.1: each card says what's on it before it's picked, in its tip and its name) */
@@ -14077,7 +14106,19 @@
       const nameOf = (id) => (K.LEGACY[id] ? K.LEGACY[id].name : window.PropKit && PropKit.index[id] ? PropKit.index[id].name : id.replace(/_/g, ' '));
       const L = K.LAYOUTS[view.desk.layout];
       const side = (ids) => ids.flat().map(nameOf).join(', ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
-      p.appendChild(el('p', 'dsec-line', L && (L.L.length || L.R.length) ? 'On the left: ' + (side(L.L) || 'nothing') + '. On the right: ' + (side(L.R) || 'nothing') + '.' : 'Nothing around the board.'));
+      /* V11-3 (design review 32): the line says what stands on the desk now; a thing stepped out for the board's room is
+         named as that, never listed as if it showed (the desk settles after a pick, so the line looks again) */
+      const sides = () => {
+        if (!(L && (L.L.length || L.R.length))) return 'Nothing around the board.';
+        if (!FEEL) return 'On the left: ' + (side(L.L) || 'nothing') + '. On the right: ' + (side(L.R) || 'nothing') + '.';
+        const list = (W.props && W.props.list) || [], out = new Set(list.filter((x) => x.to === 0).map((x) => x.id));
+        const say = (ids) => side(ids.flat().filter((x) => !out.has(x)));
+        const gone = [...L.L.flat(), ...L.R.flat()].filter((x) => out.has(x)).map(nameOf).join(', ').toLowerCase();
+        return 'On the left: ' + (say(L.L) || 'nothing') + '. On the right: ' + (say(L.R) || 'nothing') + '.' + (gone ? ' Stepped out to give the board room: ' + gone + '.' : '');
+      };
+      const sl = el('p', 'dsec-line', sides());
+      p.appendChild(sl);
+      if (FEEL) [1200, 3500].forEach((ms) => setTimeout(() => { if (sl.isConnected) sl.textContent = sides(); }, ms));
       /* the light: even on the work at every hour; these two change what's around it */
       const li = dsec(p, 'Light', 'The work is lit evenly at every hour. The desk around it is what changes.');
       const g = el('div', 'switches');
@@ -15440,8 +15481,10 @@
     const tiles = el('div', 'onb-tiles');
     [['work', 'calendar', 'The whole week'], ['yours', 'sun', 'Time for you'], ['meals', 'pot', 'Dinners, decided']].forEach(([c, ic, t]) => {
       const lk = W.look({ cat: c }), x = el('span', 'onb-tile');
-      x.style.background = lk.base; x.style.color = lk.ink;
-      x.append(icon(ic, 8, lk.ink), document.createTextNode(t));
+      /* V11-3 (design review 42): what the week holds, said as three facts, each with its block color as a small mark,
+         never three raised colored tiles that read as buttons (and a gold one beside the gold Set up my week) */
+      if (FEEL) { const sw = el('span', 'onb-sw'); sw.style.setProperty('--pc', lk.base); sw.appendChild(icon(ic, 8, lk.ink)); x.append(sw, el('span', '', t)); }
+      else { x.style.background = lk.base; x.style.color = lk.ink; x.append(icon(ic, 8, lk.ink), document.createTextNode(t)); }
       tiles.appendChild(x);
     });
     words.appendChild(tiles);
@@ -16558,8 +16601,17 @@
         const chip = el('button', 'onb-piece');
         chip.type = 'button';
         const lk = W.look(p);
-        chip.style.background = lk.base; chip.style.color = lk.ink;
-        chip.append(icon(p.icon, 9, lk.ink), el('b', '', p.name), el('small', '', M.dur(p.dur)));
+        /* V11-3 (design review 41): at rest a block to try is a quiet tile with its color as a mark, so nothing beside the
+           gold Next is gold (Workout's yellow read as a second call to action); lifted, it's the block in its color */
+        if (FEEL) {
+          chip.classList.add('onb-rest');
+          chip.style.setProperty('--pc', lk.base); chip.style.setProperty('--pi', lk.ink);
+          const sw = el('span', 'onb-sw'); sw.appendChild(icon(p.icon, 9, lk.ink));
+          chip.append(sw, el('b', '', p.name), el('small', '', M.dur(p.dur)));
+        } else {
+          chip.style.background = lk.base; chip.style.color = lk.ink;
+          chip.append(icon(p.icon, 9, lk.ink), el('b', '', p.name), el('small', '', M.dur(p.dur)));
+        }
         chip.setAttribute('aria-label', p.name + ', ' + M.dur(p.dur) + '. Drag it onto tomorrow, or press to put it in the first open time.');
         if (!k) chip.dataset.first = '1';
         chip.addEventListener('pointerdown', (e) => pieceDrag(e, chip, p));
@@ -18183,8 +18235,10 @@
     renderQuick();
     setTimeout(() => inp.focus(), 0);
     Snd.pick();
+    /* (V11-3: the board steps aside for it, layoutInsets) */
+    if (FEEL && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => layoutInsets());
   }
-  function closeQuick() { $('quick').hidden = true; quick.p = quick.plan = null; quick.cat = quick.catFor = null; }
+  function closeQuick() { $('quick').hidden = true; quick.p = quick.plan = null; quick.cat = quick.catFor = null; if (FEEL && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => layoutInsets()); }
   /* What adding a parsed block would do: where it lands and what moves. */
   /* The closest start to the one asked for, a quarter hour at a time either way: first where it
      moves nothing (open time, or open blocks it can take from), then anywhere it fits. */
@@ -20392,15 +20446,17 @@
     view.bench = null; view.level = null; view.dockOpen = false; view.pick = null;
     return true;
   }
-  /* a new person's first look on a phone is the desk, kept from then on: after the setup's Open my week, and
-     after Look around first. Getting started's Open the desk is done by then, quietly, so no second toast
-     follows the first */
+  /* a new person's first look on a phone: after the setup's Open my week, and after Look at a sample week.
+     V11-3 (design review 40): it's the phone's Today, the list of what's now and next, on today, kept from then on;
+     the desk is one tap away (Open the desk), and Getting started's Open the desk stays a thing to try */
   const firstDeskOk = () => FEEL && !noDesk && !deskAlways && !view.reset && (phoneSize() || devPhone);
   function firstLookDesk() {
     if (!firstDeskOk()) return false;
-    if (moves && OB && !moves.done.desk && !(view.preview && !moves.dev)) { moves.done.desk = true; saveMoves(); }
+    keepPhoneView('list');
+    if (view.phoneDesk) { view.phoneDesk = false; view.pick = null; W.setSelected(null); leavePhoneDay(); }
     view.todayOff = 0;
-    openPhoneDesk();
+    deskAt('today');
+    closeSel(); setPhone(); render();
     return true;
   }
   function openPhoneDesk() {
@@ -21207,7 +21263,14 @@
       const tile = el('span', 'c-ts-rt'); tile.appendChild(icon(r.ic, 8, '#FFFFFF'));
       const words = el('span', 'c-ts-rn');
       words.appendChild(el('span', 'c-gs-rw', r.name));
-      if (r.sub) words.appendChild(el('span', 'c-gs-rd' + (r.dot && !/^Today/.test(r.sub) ? ' c-ph-ask' : ''), r.sub));
+      if (r.sub) {
+        /* (V11-3, design review 46: a line too long for the row gives up the start of what it names, never its last part,
+           which says when: "Birthday gift for Jo… · by Sunday") */
+        const sd = el('span', 'c-gs-rd' + (r.dot && !/^Today/.test(r.sub) ? ' c-ph-ask' : '')), cut = FEEL ? r.sub.lastIndexOf(' · ') : -1;
+        if (cut > 0) { sd.classList.add('c-rd-split'); sd.append(el('span', 'c-rd-what', r.sub.slice(0, cut)), el('span', 'c-rd-when', r.sub.slice(cut))); }
+        else sd.textContent = r.sub;
+        words.appendChild(sd);
+      }
       b.append(tile, words);
       if (r.val || r.dot) { const v = el('span', 'c-ph-val'); if (r.dot) v.appendChild(el('i', 'c-ph-vdot')); v.appendChild(document.createTextNode(r.val)); b.appendChild(v); }
       b.appendChild(icon('right', 7, UI.soft));
@@ -21360,6 +21423,16 @@
   /* the notes at the end of the day: keeping the week on this phone (while this browser can clear it), linking and
      reminders, adding it to the Home Screen, and telling whoever shared it */
   function todayNotes(main, keyControl, off) {
+    /* V11-3 (design review 49): a day with nothing on it but sleep says what to do first, in place of half a screen of
+       bare desk: one thing typed in the Add line, or the setup */
+    if (FEEL && off === 0 && !day(today).blocks.some((b) => !b.sleep)) {
+      const card = noteCard('plus', 'Your day is open');
+      card.appendChild(el('p', '', 'Type one thing in the Add line below, like Gym 6pm, and it lands on today. Or set up your usual week in about 5 minutes.'));
+      const acts = el('div', 'td-acts');
+      acts.append(keyControl(button('Set up my week', 'small quiet', () => { Snd.init(); if (window.SR && window.SR.openSetup) window.SR.openSetup(); else openWelcome('setup'); }), 'open-setup'));
+      card.appendChild(acts);
+      main.appendChild(card);
+    }
     /* a board only in a browser that clears storage after a week away: how to keep it */
     if (off === 0 && keepAtRisk() && Store.savedAt && !(keepSeen().hideUntil > Date.now())) {
       /* (V11, docs/PHONE-REDESIGN.md 8.7: one note, and every browser on an iPhone has the same rule, so it says This
@@ -21969,7 +22042,9 @@
     /* V11 goals: New goal from anywhere, with a name filled in (the to-dos open it for a to-do that looks like a
        goal), Goals itself, each goal's week for the plan and the finish, and whether a block is a goal's session */
     openGoal(o) { if (FEEL) openGoalFlow((o && o.name) || null, null, null, { date: o && o.date, task: o && o.task }); },
-    openGoals() { if (!FEEL) return; if (inToday()) setMode('planner'); openSel({ type: 'goals' }); },
+    /* (V11-3, design review 33: Goals opens where you are; from Today it no longer jumps to the week, whose blocks lost
+       their names in the room the panel leaves) */
+    openGoals() { if (!FEEL) return; openSel({ type: 'goals' }); },
     goalWeek, isSession,
     /* V11: who can cook (You, every partner, family who live with you) and a cook's name, for the meal board */
     cookChoices, cookWho, cookName,
