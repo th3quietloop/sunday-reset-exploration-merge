@@ -35,7 +35,7 @@ const PARTS = [
 function rig() {
   const said = [], errors = [];
   const script = `
-    const FEEL = true;
+    const FEEL = true, HW = false;
     let reduced = false, moving = false, zoomName = 'week', layout = 'week';
     const BLOCK_D = 1.08, H_HARD = 0.3, BOARD_Y = 0.3, GAP = 0.03, ONE = new T.Vector3(1, 1, 1);
     const world = new T.Group(), weekGroup = new T.Group(); world.add(weekGroup);

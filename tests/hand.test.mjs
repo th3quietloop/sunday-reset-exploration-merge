@@ -28,7 +28,7 @@ const PARTS = [
 
 function rig(o = {}) {
   const script = `
-    const FEEL = true, root = {}, said = [];
+    const FEEL = true, HW = false, root = {}, said = [];
     let reduced = ${o.calm ? 'true' : 'false'}, moving = false, zoomName = 'week', layout = 'week';
     const BLOCK_D = 1.08, H_HARD = 0.3, BOARD_Y = 0.3, GAP = 0.03, DU = 2.4, DB_D = 2.05, DB_HMUL = 1.55, ONE = new T.Vector3(1, 1, 1);
     let clock = 0;

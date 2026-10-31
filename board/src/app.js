@@ -8071,7 +8071,8 @@
       const n = Math.ceil(dt * 240), h = dt / n;
       for (let i = 0; i < n; i++) { carry.rot.v += (-101 * (carry.rot.x - lean) - 7.24 * carry.rot.v + 0.145 * a) * h; carry.rot.x += carry.rot.v * h; }
       if (!Number.isFinite(carry.rot.x) || !Number.isFinite(carry.rot.v)) carry.rot = { x: 0, v: 0 };
-      carry.g.style.rotate = (-2 + 12 * Math.tanh(carry.rot.x / 12)).toFixed(2) + 'deg';
+      /* (V11 Halloween, Russell's call on the Stageshow audit: a softer cap, 7 degrees, so it swings without reading loose) */
+      carry.g.style.rotate = (HW ? -2 + 7 * Math.tanh(carry.rot.x / 7) : -2 + 12 * Math.tanh(carry.rot.x / 12)).toFixed(2) + 'deg';
       carry.raf = requestAnimationFrame(carryStep);
       return;
     }
@@ -17011,7 +17012,8 @@
           const n = Math.ceil(dt * 240), hh = dt / n;
           for (let k = 0; k < n; k++) { sw.v += (-101 * (sw.x - lean) - 7.24 * sw.v + 0.145 * acc) * hh; sw.x += sw.v * hh; }
           if (!Number.isFinite(sw.x) || !Number.isFinite(sw.v)) { sw.x = 0; sw.v = 0; }
-          d.float.style.rotate = (-2 + 12 * Math.tanh(sw.x / 12)).toFixed(2) + 'deg';
+          /* (V11 Halloween: the softer 7 degree cap, as the card in hand on the desk) */
+          d.float.style.rotate = (HW ? -2 + 7 * Math.tanh(sw.x / 7) : -2 + 12 * Math.tanh(sw.x / 12)).toFixed(2) + 'deg';
           sw.raf = requestAnimationFrame(swing);
         };
         try { chip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
@@ -17343,6 +17345,8 @@
       const st = onbWeek(a).st, tomorrow = M.addDays(today, 1);
       let at = 'day', playing = [];
       LV.forEach(([z, t]) => { const b = el('button', '', t); b.type = 'button'; b.dataset.fk = 'zoom-' + z; b.addEventListener('click', () => { Snd.init(); stopPlay(); if (z !== at) Snd.zoom(LV.findIndex((x) => x[0] === z) > LV.findIndex((x) => x[0] === at)); show(z); }); b.dataset.z = z; tabs.appendChild(b); });
+      /* V11 Halloween (Stageshow, D2): its white slides from level to level, the way the desk's zoom switch does */
+      if (HW) slidePill(tabs);
       /* a marker on the month and the year: solid once it's theirs, dashed while it's the example */
       const tag = (m) => { const t = el('em', '', m.name); t.prepend(icon(OB.markFor(m.name), 7, UI.dark)); if (m.example) t.title = m.name + ', an example'; return t; };
       const draw = (z) => {
@@ -22651,6 +22655,79 @@
   /* V11-2 (every dead end gets a next step): a day that went by, said calmly, for the version's own lists (To-dos and the
      reset's To-dos step): Was due Oct 15, the groups (From last week), and Give it a new day */
   if (FEEL) Object.assign(window.SR, { pastDue, wasDue, wasSet: (t, where) => wasSet(t, where), fromGroups, giveNewDay: (t) => giveNewDay(t), noDayTodos: () => noDayTodos() });
+  /* == V11 Halloween: counts roll, switches slide ==
+     V11 Halloween (Stageshow, D1): a count that changes while you watch rolls. Each digit that changed slides in its
+     own clipped slot, the old one up and out and the new one in from below, the last digit first; the digits that
+     didn't change stay still, and then it holds, with no pop and no pulse after. The number it is going to sits in
+     el.dataset.n, so a redraw that sets the same number mid roll leaves the roll alone, and opt.elapsed picks a roll
+     up where it was when its element was drawn again. Calmer motion and reduced motion set the number at once. */
+  const ROLL_MS = 300, ROLL_STEP = 60, ROLL_EASE = 'cubic-bezier(0.45, 0, 0.1, 1)';
+  const rollSpan = (n) => ROLL_MS + Math.max(0, n - 1) * ROLL_STEP;
+  function rollCount(node, to, opt) {
+    to = to == null ? '' : String(to);
+    const was = node.dataset.n != null ? node.dataset.n : node.textContent;
+    if (node._roll) { if (node._roll.to === to) return; clearTimeout(node._roll.timer); node._roll = null; node.classList.remove('hw-rolling'); node.textContent = was; }
+    node.dataset.n = to;
+    if (was === to) { if (node.textContent !== to) node.textContent = to; return; }
+    if (!HW || onbCalm() || !was || !to || !node.isConnected || !node.getClientRects().length || !node.animate) { node.textContent = to; return; }
+    const L = Math.max(was.length, to.length), a = was.padStart(L, '\u0000'), b = to.padStart(L, '\u0000');
+    node.textContent = '';
+    node.classList.add('hw-rolling');
+    const moves = [];
+    for (let i = 0; i < L; i++) {
+      const oa = a[i] === '\u0000' ? '' : a[i], ob = b[i] === '\u0000' ? '' : b[i];
+      const slot = el('span', 'hw-slot');
+      node.appendChild(slot);
+      if (oa === ob) { slot.textContent = ob; continue; }
+      /* the new digit holds the slot open; the old one lies over it, and is left out of what a screen reader says.
+         A digit that goes away holds its own slot while the slot closes */
+      const nw = el('span', 'hw-new', ob), od = el('span', 'hw-old' + (ob ? '' : ' hw-alone'), oa);
+      od.setAttribute('aria-hidden', 'true');
+      slot.append(nw, od);
+      moves.push({ slot, nw, od, oa, ob });
+    }
+    const since = Math.max(0, (opt && opt.elapsed) || 0);
+    moves.forEach((m, k) => {
+      const o = { duration: ROLL_MS, delay: (moves.length - 1 - k) * ROLL_STEP, easing: ROLL_EASE, fill: 'both' };
+      const runs = [m.od.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-110%)' }], o), m.nw.animate([{ transform: 'translateY(110%)' }, { transform: 'translateY(0)' }], o)];
+      /* a digit that comes or goes opens or closes its slot as it rolls, so what follows moves by its width */
+      if (!m.oa || !m.ob) { const w = (m.ob ? m.nw : m.od).offsetWidth; runs.push(m.slot.animate([{ width: (m.oa ? w : 0) + 'px' }, { width: (m.ob ? w : 0) + 'px' }], o)); }
+      if (since) runs.forEach((r) => { r.currentTime = since; });
+    });
+    node._roll = { to, timer: setTimeout(() => { node._roll = null; node.classList.remove('hw-rolling'); node.textContent = node.dataset.n; }, Math.max(0, rollSpan(moves.length) - since) + 20) };
+  }
+  /* V11 Halloween (Stageshow, D2): a switch's white fill slides to the one you picked, 200 ms on one curve, and a pick
+     changed mid move turns it from where it is; the picked label takes its dark ink as the fill arrives (hw-motion.css).
+     One fill per switch, kept across redraws of its buttons; it follows aria-pressed, and the switch's size. Calmer
+     motion and reduced motion move it at once. */
+  const SLIDE_MS = 200, SLIDE_EASE = 'cubic-bezier(0.45, 0, 0.1, 1)';
+  function slidePill(seg) {
+    if (!HW || !seg || seg._hwSlide) return;
+    seg.classList.add('hw-slide');
+    const pill = el('i', 'hw-pill'); pill.setAttribute('aria-hidden', 'true');
+    let at = null, run = null;
+    const put = (still) => {
+      if (pill.parentNode !== seg) seg.prepend(pill);
+      const on = seg.querySelector(':scope > button[aria-pressed="true"]');
+      if (!on || !seg.offsetWidth || !on.offsetWidth) { pill.style.opacity = '0'; at = null; return; }
+      const to = { x: on.offsetLeft, y: on.offsetTop, w: on.offsetWidth, h: on.offsetHeight };
+      if (at && at.x === to.x && at.y === to.y && at.w === to.w && at.h === to.h) return;
+      const moving = run && run.playState === 'running', cs = moving ? getComputedStyle(pill) : null;
+      const from = moving ? { t: cs.transform, w: cs.width, h: cs.height } : at ? { t: 'translate(' + at.x + 'px, ' + at.y + 'px)', w: at.w + 'px', h: at.h + 'px' } : null;
+      if (run) { run.cancel(); run = null; }
+      const tt = 'translate(' + to.x + 'px, ' + to.y + 'px)';
+      Object.assign(pill.style, { opacity: '1', width: to.w + 'px', height: to.h + 'px', transform: tt, borderRadius: getComputedStyle(on).borderTopLeftRadius });
+      if (from && !still && !onbCalm() && pill.animate) run = pill.animate([{ transform: from.t, width: from.w, height: from.h }, { transform: tt, width: to.w + 'px', height: to.h + 'px' }], { duration: SLIDE_MS, easing: SLIDE_EASE });
+      at = to;
+    };
+    seg._hwSlide = put;
+    seg.prepend(pill);
+    new MutationObserver((ms) => { if (ms.some((m) => m.type === 'childList' || m.attributeName === 'aria-pressed')) put(); }).observe(seg, { subtree: true, childList: true, attributes: true, attributeFilter: ['aria-pressed'] });
+    if (window.ResizeObserver) new ResizeObserver(() => put()).observe(seg);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => put());
+    put(true);
+  }
+  if (HW) Object.assign(window.SR, { hwRoll: rollCount, hwSlide: slidePill, hwRollSpan: rollSpan });
   boot().catch(bootFailed);
 
   const debugOk = isLocal || new URLSearchParams(location.search).has('debug');
