@@ -15616,6 +15616,179 @@
     box.appendChild(how);
     return box;
   }
+  /* == V11 Halloween: the welcome as a product shot (Stageshow, W1 to W3) ==
+     The week drawn the way the desk draws it, wood and bricks, on a stage that crops it like a product shot: the board
+     runs off the stage's far edge, so the eye stays on the morning and afternoon where the story is. Only Saturday has
+     words (its blocks and its open hours); the other six days are quiet bars. The story is the app's own gesture: a
+     Bike ride is carried in, a dashed slot opens in Saturday's open time as it nears, it lands, the open hours roll down
+     by its length, and a tag says what that bought. It plays once, when the card opens; what stays is the landed frame,
+     which is also what calmer motion, reduced motion, and a screenshot show. */
+  function hwHero(st, from) {
+    const stage = el('div', 'onb-hero hw-hero');
+    stage.setAttribute('aria-hidden', 'true');
+    const days = M.range(from, 7), focus = days[6], h = M.visibleHours(st), span = h.end - h.start;
+    const board = el('div', 'hw-board');
+    const pct = (m) => (100 * (m - h.start)) / span + '%';
+    /* the hours along the top, cut into the wood like the desk's ruler */
+    const ruler = el('div', 'hw-ruler');
+    ruler.appendChild(el('span'));
+    const tl = el('div', 'hw-ticks');
+    for (let m = Math.ceil(h.start / 180) * 180; m < h.end; m += 180) { const t = el('span', '', M.clock(m % 1440).replace(':00', '')); t.style.left = pct(m); tl.appendChild(t); }
+    ruler.appendChild(tl);
+    board.appendChild(ruler);
+    const day = M.resolveDay(st, focus);
+    /* where the Bike ride goes: the start of Saturday's longest open stretch, on the half hour, two hours or less */
+    const gap = M.gaps(day).filter((g) => g[0] >= h.start && g[1] <= h.end).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]))[0];
+    const at = gap ? Math.ceil(gap[0] / 30) * 30 : null, len = gap ? Math.max(60, Math.min(120, Math.floor((gap[1] - at - 60) / 30) * 30)) : 0;
+    const hrs = (mins) => { const hh = Math.round(mins / 30) / 2; return (hh % 1 ? hh.toFixed(1) : String(hh)) + ' h'; };
+    let openLabel = null, slot = null, lane6 = null;
+    days.forEach((d, i) => {
+      const row = el('div', 'hw-row' + (d === focus ? ' focus' : '') + (d === today ? ' today' : ''));
+      row.appendChild(el('span', 'hw-day', M.DAY_SHORT[M.weekday(d)]));
+      const lane = el('div', 'hw-lane');
+      M.resolveWindow(st, d).blocks.forEach((b) => {
+        if (b.start + b.dur <= h.start || b.start >= h.end) return;
+        const s = Math.max(h.start, b.start), e = Math.min(h.end, b.start + b.dur);
+        const x = el('div', 'hw-b' + (b.free ? ' free' : '') + (b.sleep ? ' sleep' : ''));
+        x.style.left = pct(s); x.style.width = (100 * (e - s)) / span + '%';
+        const lk = W.look(b);
+        if (!b.free) { x.style.background = lk.base; x.style.color = lk.ink; }
+        /* words only on the day the story is about, and only where a name fits */
+        if (d === focus && e - s >= 50) x.appendChild(el('b', '', b.label || b.name));
+        lane.appendChild(x);
+      });
+      if (d === focus && gap) {
+        lane6 = lane;
+        /* the open hours, printed in the gap the way the board prints them; the label is the gap's own width, so its
+           words center in what's left once the block is in */
+        openLabel = el('span', 'hw-open');
+        openLabel.style.left = pct(gap[0]); openLabel.style.width = (100 * (gap[1] - gap[0])) / span + '%';
+        openLabel.append(hwRoll(hrs(gap[1] - gap[0])), el('span', 'hw-word', 'open'));
+        lane.appendChild(openLabel);
+        slot = el('div', 'hw-slot');
+        slot.style.left = pct(at); slot.style.width = (100 * len) / span + '%';
+        lane.appendChild(slot);
+      }
+      row.appendChild(lane);
+      board.appendChild(row);
+    });
+    stage.appendChild(board);
+    board.appendChild(el('span', 'hw-sample', 'Sample week'));
+    /* a name that doesn't fit whole comes off once the card can be measured: a real word is never cut short */
+    const fitNames = () => {
+      stage.querySelectorAll('.hw-row.focus .hw-b:not(.hw-mine) b').forEach((n) => { if (n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1) n.remove(); });
+      /* and nothing with words is sliced by the stage's far edge: an hour or a name there steps out instead */
+      const edge = stage.getBoundingClientRect().right - 6;
+      stage.querySelectorAll('.hw-ticks span, .hw-row.focus .hw-b b').forEach((n) => { if (n.getBoundingClientRect().right > edge) n.style.visibility = 'hidden'; });
+    };
+    if (!gap) return stage;
+    /* the block that's carried in, and where it ends up: the landed block is the board's own brick */
+    const lk = W.look({ cat: 'yours' });
+    const landed = el('div', 'hw-b hw-mine');
+    landed.style.left = pct(at); landed.style.width = (100 * len) / span + '%';
+    landed.style.background = lk.base; landed.style.color = lk.ink;
+    landed.appendChild(el('b', '', 'Bike ride'));
+    lane6.appendChild(landed);
+    const tag = el('span', 'hw-tag', '+' + hrs(len) + ' to yourself');
+    tag.style.left = 'calc(' + pct(at + len / 2) + ' + 0px)';
+    lane6.appendChild(tag);
+    const after = gap[1] - (at + len);
+    const settle = () => {
+      landed.classList.add('in'); tag.classList.add('in'); slot.classList.remove('in');
+      /* what's left of the stretch after the block: its words move to the middle of the new gap */
+      if (after >= 60) { openLabel.style.left = pct(at + len); openLabel.style.width = (100 * after) / span + '%'; }
+      else openLabel.classList.add('gone');
+      hwRollTo(openLabel.firstChild, hrs(after), true);
+    };
+    if (onbCalm()) { settle(); requestAnimationFrame(() => requestAnimationFrame(fitNames)); return stage; }
+    const piece = el('div', 'hw-piece');
+    piece.style.background = lk.base; piece.style.color = lk.ink;
+    piece.append(icon('sun', 8, lk.ink), el('b', '', 'Bike ride'));
+    const pt = el('div', 'onb-pointer hw-pointer'); const tip = el('i'); pt.appendChild(tip);
+    stage.append(piece, pt);
+    /* the showing: it waits until the card is on screen and has been still for a beat (the opening frame is a finished
+       picture), measures once, and plays once. The desk boots behind the card meanwhile, so the beat is counted from when
+       the card can be seen, not from when it was made. */
+    let tries = 0;
+    const ready = () => {
+      if (!stage.isConnected) return;
+      const S = stage.getBoundingClientRect();
+      if (!S.width || document.hidden) { if (tries++ < 200) onbLater(ready, 100); else settle(); return; }
+      fitNames();
+      onbLater(play, 700);
+    };
+    requestAnimationFrame(() => requestAnimationFrame(ready));
+    const play = () => {
+      if (!stage.isConnected) return;
+      stage.dataset.played = String(Math.round(performance.now()));
+      const S = stage.getBoundingClientRect(), T = landed.getBoundingClientRect();
+      if (!S.width || !T.width) { settle(); return; }
+      /* in hand it's the brick it will be, at its true size, so the hand off on landing changes nothing */
+      piece.style.width = T.width + 'px'; piece.style.height = T.height + 'px';
+      if (piece.scrollWidth > T.width + 1) piece.querySelectorAll('small, canvas').forEach((n) => n.remove());
+      const P = piece.getBoundingClientRect();
+      /* it lands where the brick will be; the hand holds its far end, off its name, so the words stay readable */
+      const land = { x: T.left - S.left + T.width / 2 - P.width / 2, y: T.top - S.top + T.height / 2 - P.height / 2 };
+      const start = { x: S.width + 24, y: Math.min(S.height - P.height - 8, land.y + 70) };
+      const grip = { x: P.width * 0.86, y: P.height * 0.72 };
+      const pose = (p, s, r) => 'translate(' + p.x + 'px, ' + p.y + 'px) scale(' + s + ') rotate(' + r + 'deg)';
+      /* travel on the skill's travel curve, along a shallow arc: the middle of the trip rides a little higher */
+      const mid = { x: (start.x + land.x) / 2, y: Math.min(start.y, land.y) - 26 };
+      const travel = 'cubic-bezier(0.45, 0, 0.1, 1)';
+      piece.animate([{ transform: pose(start, 1.06, -2) }, { transform: pose(mid, 1.06, -2.5), offset: 0.55 }, { transform: pose(land, 1.06, -1) }], { duration: 1300, delay: 500, easing: travel, fill: 'both' });
+      const ptAt = (p) => 'translate(' + (p.x + grip.x - 17) + 'px, ' + (p.y + grip.y - 17) + 'px)';
+      pt.animate([{ transform: ptAt(start) }, { transform: ptAt(mid), offset: 0.55 }, { transform: ptAt(land) }], { duration: 1300, delay: 500, easing: travel, fill: 'both' });
+      /* the slot opens as the block nears it and holds still; it never travels */
+      onbLater(() => slot.classList.add('in'), 1250);
+      /* the drop: the hand lets go, the block sets down flat at its true size, with no bounce */
+      onbLater(() => {
+        tip.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.78)' }, { transform: 'scale(1)' }], { duration: 220 });
+        piece.animate([{ transform: pose(land, 1.06, -1), boxShadow: '0 12px 18px rgba(60, 35, 10, 0.32)' }, { transform: pose(land, 1, 0), boxShadow: '0 2px 3px rgba(60, 35, 10, 0.25)' }], { duration: 180, easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)', fill: 'forwards' });
+      }, 1820);
+      /* the brick takes over at the same place and size, the hours roll, and the tag says what it bought */
+      onbLater(() => { landed.classList.add('in'); piece.remove(); slot.classList.remove('in'); }, 2010);
+      onbLater(() => {
+        if (after >= 60) { openLabel.style.left = pct(at + len); openLabel.style.width = (100 * after) / span + '%'; }
+        else openLabel.classList.add('gone');
+        hwRollTo(openLabel.firstChild, hrs(after));
+      }, 2260);
+      onbLater(() => tag.classList.add('in'), 2700);
+      /* the hand moves off the block onto open wood, then goes */
+      onbLater(() => pt.animate([{ transform: ptAt(land), opacity: 1 }, { transform: ptAt({ x: land.x + 40, y: land.y + 46 }), opacity: 0 }], { duration: 900, easing: travel, fill: 'forwards' }), 3000);
+    };
+    return stage;
+  }
+  /* a number that rolls: each character in its own slot, so only the digits that change move */
+  function hwRoll(text) {
+    const r = el('span', 'hw-roll');
+    r.dataset.v = text;
+    [...text].forEach((ch) => { const s = el('span', 'hw-ch'); s.appendChild(el('i', '', ch === ' ' ? '\u00a0' : ch)); r.appendChild(s); });
+    return r;
+  }
+  /* roll to new text: the last changed digit first, unchanged ones still; at once when calm */
+  function hwRollTo(r, text, now) {
+    if (!r || r.dataset.v === text) return;
+    const sp = (ch) => (ch === ' ' ? '\u00a0' : ch), old = [...r.dataset.v].map(sp), next = [...text].map(sp);
+    r.dataset.v = text;
+    r.setAttribute('aria-label', text);
+    /* right aligned, so the units stay put and the digits change in front of them */
+    while (old.length < next.length) old.unshift('');
+    while (next.length < old.length) next.unshift('');
+    const kids = [...r.children];
+    while (kids.length < next.length) { const s = el('span', 'hw-ch'); s.appendChild(el('i', '', '')); r.insertBefore(s, r.firstChild); kids.unshift(s); }
+    let n = 0;
+    for (let i = next.length - 1; i >= 0; i--) {
+      const s = kids[i], was = old[i], is = next[i];
+      if (was === is) continue;
+      if (now || onbCalm()) { s.replaceChildren(el('i', '', is)); continue; }
+      const out = s.firstChild, inn = el('i', 'hw-in', is);
+      s.appendChild(inn);
+      const delay = n++ * 70;
+      out.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-100%)', opacity: 0 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'forwards' });
+      inn.animate([{ transform: 'translateY(100%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'both' }).finished.then(() => { if (out.isConnected) out.remove(); inn.classList.remove('hw-in'); }).catch(() => {});
+    }
+    kids.forEach((s) => { if (!s.textContent && s.isConnected && !s.querySelector('.hw-in')) s.remove(); });
+  }
   /* The welcome: what it is, in one look, and the way in. The picture explains (the week's blocks
      drop in like tiles, and one of your own lands in open time); the words are a few: a headline, one
      line, three tiles in the board's colors. One strong button where a thumb is, a plain Look around
@@ -15630,12 +15803,14 @@
     else if (sharedBy) { const f = el('span', 'onb-from'); f.append(el('i', '', sharedBy.charAt(0).toUpperCase()), document.createTextNode('From ' + sharedBy)); head.appendChild(f); }
     else head.appendChild(el('span', 'onb-from plain', 'Sunday Reset'));
     box.appendChild(head);
+    const st0 = preview ? D.sampleState(today) : state, ws = M.weekStart(today);
+    /* V11 Halloween (Stageshow, W1 to W3): the week as a product shot, with one block carried into Saturday */
+    if (HW) box.appendChild(hwHero(st0, ws));
     const hero = el('div', 'onb-hero');
     hero.setAttribute('aria-hidden', 'true');
-    const st0 = preview ? D.sampleState(today) : state, ws = M.weekStart(today);
-    hero.appendChild(onbWeekRows(st0, ws, false));
+    if (!HW) hero.appendChild(onbWeekRows(st0, ws, false));
     /* one block of your own lands in Saturday's open stretch, after the week has dropped in */
-    const sat = hero.querySelectorAll('.onb-row')[6];
+    const sat = !HW && hero.querySelectorAll('.onb-row')[6];
     if (sat) {
       const lane = sat.querySelector('.onb-lane'), h = M.visibleHours(st0);
       const lk = W.look({ cat: 'yours' }), drop = el('div', 'onb-b onb-drop');
@@ -15644,8 +15819,7 @@
       drop.style.background = lk.base;
       if (lane) lane.appendChild(drop);
     }
-    hero.appendChild(el('span', 'onb-sample', 'Sample week'));
-    box.appendChild(hero);
+    if (!HW) { hero.appendChild(el('span', 'onb-sample', 'Sample week')); box.appendChild(hero); }
     const words = el('div', 'onb-w-words');
     const h = el('h2', 'sheet-h', 'Your week, in blocks.'); h.id = 'sheet-h';
     words.append(h, el('p', 'sheet-line', FEEL ? 'Plan it on Sunday. Move anything as the week happens.' : 'Set it up on Sunday. Move anything as the week happens.'));
