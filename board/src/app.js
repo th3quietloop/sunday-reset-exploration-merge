@@ -417,6 +417,9 @@
     Array.from(box.children).forEach((x) => { if (!x._gone && x._err && x._key === key && x._leave) x._leave(); });
   }
   function toast(text, kind, act, o) {
+    /* (V11 Halloween, C2: while Show me plays a move, the tip's own line says what happened, so the drop's toast and the
+       Undo's stay quiet; an error still speaks. Asked with typeof, since tests run this function on its own) */
+    if (typeof HW !== 'undefined' && HW && kind !== 'error' && showHushed()) return;
     /* (V11-2: the question a meal's refusal asks gets its yes, for the change refused a moment ago) */
     if (FEEL && !act && mealAsk && text === mealAsk.words && Date.now() - mealAsk.at < 4000) { const a = mealAsk; act = { label: 'Move it', fn: () => mealYes(a) }; }
     if (FEEL) { toastFeel(text, kind, act, o); return; }
@@ -18192,6 +18195,8 @@
   /* something on the list happened: tick it, say so, and put away a tip that pointed at it */
   function noteMove(id, quiet) {
     if (!moves || !OB || moves.done[id] || (view.preview && !moves.dev)) return;
+    /* (V11 Halloween, C2: a move Show me plays is the app's, not theirs, so it ticks nothing) */
+    if (HW && moveShow) return;
     moves.done[id] = true;
     saveMoves();
     if (coachFor === id) endCoach();
@@ -18221,6 +18226,7 @@
     const list = movesList(), left = movesLeft();
     kicker(p, 'Getting started', 'check');
     title(p, left ? cap(plural(list.length, 'thing', 'things').replace(/^\d+/, (n) => COUNT_WORDS[+n] || n)) + ' to try' : 'You know your way around');
+    if (HW) { movesLead(p, list, left); return; }
     line(p, (list.length - left) + ' of ' + list.length + ' done. Each one ticks itself when you do it' + (moves.kind === 'phone' ? '.' : ' on the desk.'));
     const ol = el('div', 'moves');
     list.forEach((id) => {
@@ -18236,6 +18242,51 @@
     });
     p.appendChild(ol);
     actions(p, [view.phone || noDesk ? null : button('Take the tour', 'small primary', () => { closeSel(); startTour(0); }), button('Put this away', 'small quiet', () => { moves.hidden = true; saveMoves(); closeSel(); if (view.phone) renderToday(); else { renderRack(); layoutInsets(); } toast('Getting started is in Help whenever you want it.'); })]);
+  }
+  /* V11 Halloween (Stageshow, C3): the list had every move in the same bordered card with the same Show me, so the eye had
+     nowhere to land. The next move leads, bigger, with the panel's one gold button and its line under it; what's done
+     folds into one quiet line that opens to name them; the rest are plain rows, each with a Show me in words */
+  function movesLead(p, list, left) {
+    const next = left ? movesNext() : null, done = list.filter((id) => moves.done[id]);
+    const wrap = el('div', 'hw-moves');
+    if (done.length) {
+      const open = !!view.got.movesDone;
+      const fold = button('', 'hw-move-done', () => { view.got.movesDone = !open; renderSide(); });
+      const t = el('span', 'onb-tick');
+      t.appendChild(icon('check', 7, UI.dark));
+      fold.append(t, el('span', '', done.length + ' done'), icon(open ? 'up' : 'down', 12, UI.soft));
+      fold.setAttribute('aria-expanded', String(open));
+      fold.setAttribute('aria-label', done.length + ' done: ' + (open ? 'hide them' : 'see which'));
+      fold.dataset.fk = 'moves-done';
+      wrap.appendChild(fold);
+      if (open) {
+        const ul = el('ul', 'hw-move-donelist');
+        done.forEach((id) => ul.appendChild(el('li', '', moveSaid(id).name)));
+        wrap.appendChild(ul);
+      }
+    }
+    if (next) {
+      const lead = el('section', 'hw-move-lead');
+      lead.setAttribute('aria-label', 'Next: ' + next.name);
+      lead.append(el('span', 'hw-move-k', 'Next'), el('b', 'hw-move-name', next.name), el('p', 'hw-move-line', next.line));
+      if (next.show) { const go = button('Show me', 'small primary hw-move-go', () => showMove(next.id)); go.dataset.fk = 'move-' + next.id; lead.appendChild(go); }
+      wrap.appendChild(lead);
+    }
+    const rest = list.filter((id) => !moves.done[id] && !(next && id === next.id));
+    if (rest.length) {
+      const ol = el('div', 'hw-move-rest');
+      rest.forEach((id) => {
+        const said = moveSaid(id), row = el('div', 'hw-move-row');
+        row.appendChild(onbWords(said.name, said.line));
+        if (id !== 'build' && !deskOnly(id)) { const b = button('Show me', 'hw-move-show', () => showMove(id)); b.setAttribute('aria-label', 'Show me: ' + said.name); b.dataset.fk = 'move-' + id; row.appendChild(b); }
+        ol.appendChild(row);
+      });
+      wrap.appendChild(ol);
+    }
+    p.appendChild(wrap);
+    if (left) line(p, 'Each one ticks itself when you do it' + (moves.kind === 'phone' ? '.' : ' on the desk.'));
+    /* (the tour waits in a quiet button, so the next move's Show me stays the one gold thing here) */
+    actions(p, [view.phone || noDesk ? null : button('Take the tour', 'small quiet', () => { closeSel(); startTour(0); }), button('Put this away', 'small quiet', () => { moves.hidden = true; saveMoves(); closeSel(); if (view.phone) renderToday(); else { renderRack(); layoutInsets(); } toast('Getting started is in Help whenever you want it.'); })]);
   }
   /* V11 (the Planner walk, 1.2): a move as Getting started says it (the goal the setup heard by its name, the reset with
      when yours is), and the next one to try, for the card the Planner folds the list to; the card folded into its
@@ -18302,6 +18353,21 @@
     if (FEEL && id === 'calendar') { openDrawer('calendars'); return; }
     if (view.phone) { openPhoneDesk(); return; }
     planner();
+    /* V11 Halloween (Stageshow, C2): a move that's a gesture is played once on the real desk (playMove), on a day with
+       open time ahead; a stretch needs a block the person placed, and without one it's the ring as before */
+    if (HW && id === 'place' && !noDesk && !view.list && !phoneDay()) {
+      const on = showDay();
+      setZoom('day', on);
+      if (window.SR_openLibrary) window.SR_openLibrary();
+      setTimeout(() => playMove('place', { date: on }), 700);
+      return;
+    }
+    if (HW && id === 'stretch' && !noDesk && !view.list && !phoneDay() && placedOne()) {
+      const mine = placedOne();
+      setZoom('day', mine.date);
+      setTimeout(() => playMove('stretch', { mine }), 700);
+      return;
+    }
     /* V11: Block library is put away on every visit, so Show me opens it, then rings a block in it */
     if (FEEL && id === 'place') {
       setZoom('day', view.zoom === 'day' ? view.focus : today);
@@ -18337,6 +18403,8 @@
      The tour is four tips in a row, started by the person, never on its own. */
   let coachBox = null, coachFor = null, coachKey = null, coachTick = null;
   function endCoach() {
+    /* (V11 Halloween, C2: a move being shown stops with its tip, and whatever it put on the board is taken back) */
+    if (HW && moveShow) quitShow(moveShow);
     if (!coachBox) return;
     const wasAside = coachAside;
     coachBox.remove(); coachBox = null; coachFor = null; coachTrack = null; coachAside = false;
@@ -18516,6 +18584,327 @@
   function placedOne() {
     for (let k = 0; k < 7; k++) { const d = M.addDays(today, k), x = ((state.dates[d] || {}).adds || []).find((y) => y.src && y.src.type === 'block' && !y.done); if (x) return { date: d, id: x.id, name: x.name }; }
     return null;
+  }
+  /* == V11 Halloween: Show me plays the move ==
+     Stageshow (C2): a ring says "here", not "like this", and no cursor means no stand-in. So for the two moves that are
+     gestures, Show me plays the move once on the real desk with a pointer standing in for the hand: it presses a real
+     piece in Block library (or the right edge of a block they placed), carries it along a shallow arc to open time while
+     the day shows its slot, and lets go, through the desk's own drag, so it lands the way theirs will. The tip says what
+     happened, the pointer takes it back with the bottom bar's Undo, and the board is as it was (the Redo it leaves is
+     put back too). Anything they touch or press stops it and takes back what it placed. Calmer motion and reduced
+     motion show where it lands and the line, with nothing travelling.
+     (var, not let: toast and noteMove ask about it, and they can run before this line has) */
+  var moveShow = null, moveHushTo = 0;
+  const SHOW_ID = 7301;
+  function showHushed() { return !!moveShow || Date.now() < moveHushTo; }
+  /* the first day from today with an hour of open time ahead of now, for a block to land without moving anything */
+  const showFrom = (d) => (d === today ? Math.ceil((nowMin + 10) / 15) * 15 : Math.max(day(d).wake, 9 * 60));
+  function showDay() {
+    for (let k = 0; k < 7; k++) { const d = M.addDays(today, k); if (quietStart(d, 60, showFrom(d)) != null) return d; }
+    return view.zoom === 'day' ? view.focus : today;
+  }
+  /* the travel curve (cubic-bezier 0.45, 0, 0.1, 1), solved for time the way CSS does */
+  function travelEase(k) {
+    const x1 = 0.45, y1 = 0, x2 = 0.1, y2 = 1;
+    const bx = (t) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
+    const by = (t) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
+    let lo = 0, hi = 1, t = k;
+    for (let i = 0; i < 24; i++) { t = (lo + hi) / 2; if (bx(t) < k) lo = t; else hi = t; }
+    return by(t);
+  }
+  /* a place on screen that is the desk itself, not a panel over it */
+  const onDesk = (x, y) => { const u = Number.isFinite(x) && Number.isFinite(y) ? document.elementFromPoint(x, y) : null; return !!u && stage.contains(u); };
+  /* a piece in Block library that's on screen and fits the day in open time, an hour or less first */
+  function showPiece(date) {
+    const items = ((kitSpec() || {}).items || []).filter((it) => it.kind === 'brick' && it.drag && it.drag.kind === 'block' && it.drag.id !== 'opentime');
+    const seen = items.map((it) => ({ it, p: W.pieceScreen ? W.pieceScreen(it.key) : null })).filter((x) => x.p && !x.p.behind && onDesk(x.p.x, x.p.y));
+    const order = seen.filter((x) => x.it.dur <= 60).concat(seen.filter((x) => x.it.dur > 60));
+    for (const x of order) {
+      const len = M.gridDur(x.it.dur), at = quietStart(date, len, showFrom(date));
+      if (at == null) continue;
+      const c = W.slotScreen('day', null, at + len / 2), from = pieceGrab(x.it.key);
+      if (from && c && !c.behind && onDesk(c.x, c.y)) return { key: x.it.key, name: x.it.label, len, at, from };
+    }
+    return null;
+  }
+  /* a pen's events, sent where a hand's would go: the desk's drag code runs as it does for anyone (a pen, so another
+     pointer that comes along is never taken for this one) */
+  function showFire(type, x, y) {
+    const up = type === 'pointerup' || type === 'pointercancel';
+    const ev = new PointerEvent(type, { pointerId: SHOW_ID, pointerType: 'pen', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: up ? 0 : 1, clientX: x, clientY: y, bubbles: true, cancelable: true, composed: true });
+    (type === 'pointerdown' ? stage : window).dispatchEvent(ev);
+  }
+  /* the tip's words and buttons as the showing goes on */
+  function showSay(s, text, acts) {
+    if (!s.box || !s.box.isConnected) return;
+    const card = s.box.querySelector('.coach-card'), p = card && card.querySelector('p'), row = card && card.querySelector('.coach-row');
+    if (p) p.textContent = text;
+    if (row) row.replaceChildren(...acts);
+    say(text);
+    coachPlace();
+  }
+  function playMove(kind, o) {
+    if (noDesk || view.list || view.zoom !== 'day' || inToday()) return;
+    const calm = !feelMoves();
+    const title = kind === 'place' ? 'Put a block on a day' : 'Stretch a block';
+    coach(null, kind === 'place' ? 'Watch: a block goes onto the day.' : 'Watch: ' + o.mine.name + ' gets longer.', { title, move: kind, aside: true, quiet: true });
+    const s = moveShow = { kind, o, calm, box: coachBox, timers: [], raf: 0, pt: null, at: null, top: null, undone: false, redo: redoStack.slice() };
+    showSay(s, s.box.querySelector('.coach-card p').textContent, [button('Stop', 'small quiet', endCoach)]);
+    /* the hand: the setup's demo pointer, on the desk */
+    const pt = s.pt = el('div', 'onb-pointer hw-pointer');
+    pt.setAttribute('aria-hidden', 'true');
+    pt.appendChild(el('i'));
+    document.body.appendChild(pt);
+    /* the desk reframes for the tip beside it; the showing starts once the day stands still on screen (the same point
+       three looks in a row), or after two and a half seconds */
+    const t0 = Date.now();
+    let last = null, still = 0;
+    const go = () => {
+      if (moveShow !== s) return;
+      const c = W.slotScreen('day', null, 720), at = c ? Math.round(c.x) + ',' + Math.round(c.y) : '';
+      still = at && at === last ? still + 1 : 0;
+      last = at;
+      if (still < 3 && Date.now() - t0 < 2500) { s.timers.push(setTimeout(go, 90)); return; }
+      if (kind === 'place') showPlace(s); else showStretch(s);
+    };
+    s.timers.push(setTimeout(go, 200));
+  }
+  /* where a hand presses a piece: its middle, or near it, wherever the desk finds that very piece */
+  function pieceGrab(key) {
+    const c = W.pieceScreen ? W.pieceScreen(key) : null;
+    if (!c || c.behind) return null;
+    for (const [dx, dy] of [[0, 0], [0, -6], [0, 6], [-8, 0], [8, 0], [0, -12]]) {
+      const h = W.pick(c.x + dx, c.y + dy);
+      if (h && h.kind === 'bench' && h.piece && h.piece.key === key && onDesk(c.x + dx, c.y + dy)) return { x: c.x + dx, y: c.y + dy };
+    }
+    return null;
+  }
+  const showLater = (s, ms, fn) => s.timers.push(setTimeout(() => { if (moveShow === s) fn(); }, ms));
+  function showTween(s, ms, frame, then) {
+    const t0 = performance.now();
+    const tick = (now) => {
+      if (moveShow !== s) return;
+      const k = ms > 0 ? Math.min(1, (now - t0) / ms) : 1;
+      frame(k);
+      if (k < 1) s.raf = requestAnimationFrame(tick); else if (then) then();
+    };
+    s.raf = requestAnimationFrame(tick);
+  }
+  /* s.at is where the events go; the pointer is drawn s.off from it (a piece hangs from its middle, where its name is,
+     so the hand that carries it shows at its lower corner, off the words) */
+  function showPointer(s, x, y, o) {
+    s.at = { x, y };
+    const dx = s.off ? s.off.x : 0, dy = s.off ? s.off.y : 0;
+    s.pt.style.transform = 'translate(' + (x + dx).toFixed(1) + 'px, ' + (y + dy).toFixed(1) + 'px) translate(-50%, -50%)';
+    if (o != null) s.pt.style.opacity = String(o);
+  }
+  const showPress = (s, down) => { const tip = s.pt.firstChild; if (tip && tip.animate) tip.animate([{ transform: 'scale(' + (down ? 1 : 0.78) + ')' }, { transform: 'scale(' + (down ? 0.78 : 1) + ')' }], { duration: s.calm ? 0 : 140, fill: 'forwards' }); };
+  /* the pointer comes in beside where it presses, then presses */
+  function showArrive(s, x, y, then) {
+    showPointer(s, x + 10, y + 16, 0);
+    showTween(s, s.calm ? 0 : 200, (k) => showPointer(s, x + 10 * (1 - k), y + 16 * (1 - k), k), () => showLater(s, s.calm ? 0 : 220, then));
+  }
+  /* what the showing did, from the step of undo it pushed: the block it added, by its id */
+  function showAdded(s) {
+    if (s.top == null) return null;
+    const was = addsOf(JSON.parse(s.top)), now = addsOf(state);
+    const id = Object.keys(now).find((k) => !was[k]);
+    return id ? Object.assign({ id }, now[id]) : null;
+  }
+  const showWhen = (date, start) => (date === today ? 'today' : 'on ' + M.DAY_LONG[M.weekday(date)]) + ' at ' + M.clock(start);
+  /* (a piece or a block still arriving on the desk can't be pressed yet: look again for a couple of seconds) */
+  const showRetry = (s, n, fn) => { if (n < 16) { showLater(s, 140, () => fn(s, n + 1)); return true; } return false; };
+  function showPlace(s, n) {
+    const date = s.o.date, pc = showPiece(date);
+    if (!pc) { if (!showRetry(s, n || 0, showPlace)) showRing(s, 'place'); return; }
+    const top0 = undoStack[undoStack.length - 1];
+    const aim = () => { const c = W.slotScreen('day', null, pc.at + pc.len / 2); return c && Number.isFinite(c.x) ? { x: c.x, y: c.y } : s.at; };
+    if (s.calm) {
+      /* calmer motion: the block where it lands, at once, the pointer resting on it, and the line */
+      const add = specAdd({ kind: 'block', id: pc.key.slice(2) });
+      const r = add && commit(() => { const x = M.placeAdd(state, date, Object.assign({}, add, { dur: pc.len }), pc.at); return x && x.ok && !keepPast(x).ok ? { ok: false, reason: 'past' } : x; });
+      if (!(r && r.ok) || undoStack[undoStack.length - 1] === top0) { showRing(s, 'place'); return; }
+      s.top = undoStack[undoStack.length - 1];
+      const t = aim();
+      showPointer(s, t.x + 14, t.y + 34, 1);
+      showLanded(s);
+      return;
+    }
+    let from = pc.from;
+    s.off = { x: 16, y: 20 };
+    showArrive(s, from.x, from.y, () => {
+      /* (pressed where the piece is now, in case the desk moved while the pointer came in) */
+      from = pieceGrab(pc.key) || from;
+      showPointer(s, from.x, from.y);
+      showPress(s, true);
+      showFire('pointerdown', from.x, from.y);
+      /* it lifts out of the rack, then travels on a shallow arc to the open time, the slot showing as it nears */
+      const lift = { x: from.x, y: from.y - 10 };
+      showTween(s, 140, (k) => { showPointer(s, from.x, from.y - 10 * k); showFire('pointermove', s.at.x, s.at.y); }, () => {
+        showTween(s, 1250, (k) => {
+          const e = travelEase(k), t = aim();
+          const x = lift.x + (t.x - lift.x) * e, y = lift.y + (t.y - lift.y) * e - 46 * Math.sin(Math.PI * e);
+          showPointer(s, x, y);
+          showFire('pointermove', x, y);
+        }, () => {
+          /* the last few pixels: settle on the start it's aiming at, as a hand would */
+          let n = 0;
+          const fine = () => {
+            if (moveShow !== s) return;
+            const tg = tdrag && tdrag.target;
+            const a = W.slotScreen('day', null, pc.at), b = W.slotScreen('day', null, pc.at + 60), per = b && a ? (b.x - a.x) / 60 : 0;
+            if (tg && tg.type === 'rail' && tg.start != null && tg.start !== pc.at && per && n < 6) {
+              n++;
+              showPointer(s, s.at.x + (pc.at - tg.start) * per, s.at.y);
+              showFire('pointermove', s.at.x, s.at.y);
+              showLater(s, 60, fine);
+              return;
+            }
+            showLater(s, 140, () => {
+              showPress(s, false);
+              showFire('pointerup', s.at.x, s.at.y);
+              /* (then it steps off the block it put down, so its name reads) */
+              const off = Object.assign({}, s.at);
+              showTween(s, 260, (k) => showPointer(s, off.x + 4 * k, off.y + 16 * k));
+              showLater(s, 60, () => {
+                if (undoStack[undoStack.length - 1] === top0) { showRing(s, 'place'); return; }
+                s.top = undoStack[undoStack.length - 1];
+                showLater(s, (W.fallMs || 0) + 260, () => showLanded(s));
+              });
+            });
+          };
+          showLater(s, 90, fine);
+        });
+      });
+    });
+  }
+  function showStretch(s, n) {
+    const mine = s.o.mine, date = mine.date;
+    const b = day(date).blocks.find((x) => x.add === mine.id);
+    if (!b || !W.LANES || !W.laneOf) { showRing(s, 'stretch'); return; }
+    const end = b.start + b.dur, li = W.laneOf(Math.max(b.start, end - 1)), lane = W.LANES[li];
+    /* half an hour longer, within the lane its end is on, into open time where it's free */
+    const more = Math.min(30, lane.to - end);
+    if (more < 15 || W.laneOf(b.start) !== li) { showRing(s, 'stretch'); return; }
+    /* its right edge as the desk finds it under a pointer */
+    let grab = null;
+    for (let m = 2; m <= 10 && !grab; m += 2) {
+      const c = W.slotScreen('day', null, end - m);
+      for (const dy of [-10, -4, 2]) {
+        const h = c && W.pick(c.x, c.y + dy);
+        if (h && h.kind === 'block' && h.block && h.block.add === mine.id && h.nearR && onDesk(c.x, c.y + dy)) { grab = { x: c.x, y: c.y + dy }; break; }
+      }
+    }
+    const a0 = W.slotScreen('day', null, end), a1 = W.slotScreen('day', null, end + more);
+    if (!grab || !a0 || !a1) { if (!showRetry(s, n || 0, showStretch)) showRing(s, 'stretch'); return; }
+    const dx = a1.x - a0.x, top0 = undoStack[undoStack.length - 1];
+    if (s.calm) {
+      /* calmer motion: the longer block at once, and the line */
+      const r = commit(() => M.resizeBlock(state, sourceDate(b, date), sourceKey(b), M.gridDur(b.dur + more)));
+      if (!(r && r.ok !== false) || undoStack[undoStack.length - 1] === top0) { showRing(s, 'stretch'); return; }
+      s.top = undoStack[undoStack.length - 1];
+      showPointer(s, grab.x + dx, grab.y, 1);
+      showLanded(s);
+      return;
+    }
+    showArrive(s, grab.x, grab.y, () => {
+      showPress(s, true);
+      showFire('pointerdown', grab.x, grab.y);
+      /* a stretch follows its edge: straight along the lane, no arc */
+      showTween(s, 1000, (k) => {
+        const x = grab.x + dx * travelEase(k);
+        showPointer(s, x, grab.y);
+        showFire('pointermove', x, grab.y);
+      }, () => showLater(s, 160, () => {
+        showPress(s, false);
+        showFire('pointerup', s.at.x, s.at.y);
+        const off = Object.assign({}, s.at);
+        showTween(s, 260, (k) => showPointer(s, off.x + 10 * k, off.y + 34 * k));
+        showLater(s, 80, () => {
+          if (undoStack[undoStack.length - 1] === top0) { showRing(s, 'stretch'); return; }
+          s.top = undoStack[undoStack.length - 1];
+          showLater(s, 260, () => showLanded(s));
+        });
+      }));
+    });
+  }
+  /* it's on the board: say so, hold, then take it back with Undo */
+  function showLanded(s) {
+    let words;
+    if (s.kind === 'place') {
+      const a = showAdded(s);
+      words = a ? 'Shown ' + showWhen(a.date, a.start) + '. Undo takes it back.' : 'Shown on the day. Undo takes it back.';
+    } else {
+      const f = M.findAdd(state, s.o.mine.id);
+      words = f ? s.o.mine.name + ' now ends at ' + M.clock(f.add.start + f.add.dur) + '. Undo takes it back.' : 'Shown. Undo takes it back.';
+    }
+    showSay(s, words, [button('Stop', 'small quiet', endCoach)]);
+    showLater(s, s.calm ? 2400 : 1500, () => {
+      const pill = document.querySelector('.c-undo');
+      const shown = pill && !pill.hidden && pill.offsetParent !== null;
+      if (s.calm || !shown) { showBack(s, null); return; }
+      /* the pointer goes to Undo, off its word, and presses it: the reset has a cause you can see */
+      const r = pill.getBoundingClientRect(), to = { x: r.left + r.width * 0.86, y: r.top + r.height * 0.7 };
+      const from = { x: s.at.x + (s.off ? s.off.x : 0), y: s.at.y + (s.off ? s.off.y : 0) };
+      s.off = null;
+      showTween(s, 820, (k) => { const e = travelEase(k); showPointer(s, from.x + (to.x - from.x) * e, from.y + (to.y - from.y) * e - 30 * Math.sin(Math.PI * e)); }, () => showLater(s, 120, () => {
+        showPress(s, true);
+        if (pill.animate) pill.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(1px)' }, { transform: 'translateY(0)' }], { duration: 180 });
+        showLater(s, 140, () => { showPress(s, false); showBack(s, pill); });
+      }));
+    });
+  }
+  /* the step of undo the showing pushed is taken back (by the bottom bar's Undo when it's there), and the Redo it would
+     leave is put back as it was */
+  function showUndo(s, pill) {
+    if (s.undone || s.top == null) return;
+    s.undone = true;
+    if (undoStack[undoStack.length - 1] !== s.top) return;
+    if (pill) pill.click(); else undo('', '');
+    redoStack = s.redo;
+    pruneSaid();
+    if (window.SR_undoChanged) window.SR_undoChanged();
+  }
+  function showBack(s, pill) {
+    showUndo(s, pill);
+    showDone(s);
+    showTurn(s, 'Back as it was. ');
+  }
+  /* their turn: the tip stays, with the move in words, Show me again, and Got it */
+  function showTurn(s, lead) {
+    const again = button('Show me again', 'small quiet', () => playMove(s.kind, s.kind === 'place' ? { date: showDay() } : { mine: placedOne() || s.o.mine }));
+    const ok = button('Got it', 'small primary', endCoach);
+    showSay(s, lead + 'Your turn: ' + (s.kind === 'place' ? 'drag one onto the day.' : 'drag the right edge of ' + s.o.mine.name + '.'), [again, ok]);
+    if (s.box && s.box.isConnected) ok.focus({ preventScroll: true });
+  }
+  /* the showing's end: the pointer leaves, and the toasts stay quiet a moment longer for a landing's late one */
+  function showDone(s) {
+    s.timers.forEach(clearTimeout); cancelAnimationFrame(s.raf);
+    const pt = s.pt;
+    if (pt) { if (!s.calm && pt.animate) pt.animate([{ opacity: pt.style.opacity || 1 }, { opacity: 0 }], { duration: 180, fill: 'forwards' }).onfinish = () => pt.remove(); else pt.remove(); }
+    if (moveShow === s) moveShow = null;
+    moveHushTo = Date.now() + 900;
+  }
+  /* no way to show it here (no piece in view, no open time, a drop that didn't take): the ring, as before */
+  function showRing(s, kind) {
+    showDone(s);
+    if (kind === 'place') coach(null, 'Drag one onto the day. It slides in where it fits, and locked blocks never move.', { title: 'Put a block on a day', move: kind, track: () => pieceRect() });
+    else coach(null, s.o && s.o.mine ? 'Drag the right edge of ' + s.o.mine.name + ' to make it longer. Everything after it makes room.' : 'Point at a block you placed and drag its right edge. A routine like Work slides instead of stretching, and locked blocks stay put.', { title: 'Stretch a block', move: kind });
+  }
+  /* stopped part way (a touch, a key, Stop, Escape): what's in hand goes home, what it placed is taken back */
+  function quitShow(s) {
+    if (!s || moveShow !== s) return;
+    s.timers.forEach(clearTimeout); cancelAnimationFrame(s.raf);
+    const at = s.at || { x: 0, y: 0 };
+    if ((tdrag && tdrag.id === SHOW_ID) || (bdrag && bdrag.id === SHOW_ID)) showFire('pointercancel', at.x, at.y);
+    showUndo(s, null);
+    showDone(s);
+  }
+  if (HW) {
+    /* (a touch or a key stops it and leaves the tip at their turn; the tip's own buttons and Escape do their own thing) */
+    const stopHere = (s) => { quitShow(s); showTurn(s, ''); };
+    window.addEventListener('pointerdown', (e) => { if (moveShow && e.isTrusted && !(e.target && e.target.closest && e.target.closest('.coach-card'))) stopHere(moveShow); }, true);
+    window.addEventListener('keydown', (e) => { if (moveShow && e.isTrusted && e.key !== 'Escape' && e.key !== 'Tab') stopHere(moveShow); }, true);
   }
   /* V11: a block worth dragging in what the desk shows: one placed by hand first (it moves freely), then a routine
      that's yours to move, today's or the next day's first, never a locked one, sleep, or free time */

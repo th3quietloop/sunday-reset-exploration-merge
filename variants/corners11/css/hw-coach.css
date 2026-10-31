@@ -1,0 +1,37 @@
+/* V11 Halloween (Stageshow, C2 and C3): Getting started and Show me. Every rule is scoped to the Halloween page, so V11-2,
+   built from the same source, looks as it did. */
+
+/* C2: the hand Show me plays a move with is the setup's demo pointer, standing on the desk over the tip's dim (the
+   tip has none while a move plays, so the whole desk is in view) */
+.v-corners11-halloween .hw-pointer { position: fixed; left: 0; top: 0; z-index: 112; opacity: 0; will-change: transform; }
+
+/* C3: the next move leads, the rest are plain rows, and what's done folds into one line */
+.v-corners11-halloween .hw-moves { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s1); }
+
+.v-corners11-halloween .hw-move-done { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 4px 10px 4px 4px; border: 0; border-radius: 999px; background: transparent; color: var(--soft); font: 700 var(--t-small) var(--font); cursor: pointer; }
+.v-corners11-halloween .hw-move-done:hover { background: var(--sf-hover); color: #FFFFFF; }
+.v-corners11-halloween .hw-move-done:active { transform: translateY(1px); }
+.v-corners11-halloween .hw-move-done .onb-tick { width: 22px; height: 22px; background: var(--gold); box-shadow: none; }
+.v-corners11-halloween .hw-move-done .onb-tick canvas { opacity: 1; }
+.v-corners11-halloween .hw-move-done canvas:last-child { width: 12px; height: 12px; }
+.v-corners11-halloween .hw-move-donelist { margin: calc(var(--s2) * -1) 0 0; padding: 0 0 0 38px; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.v-corners11-halloween .hw-move-donelist li { font: 600 var(--t-small)/1.4 var(--font); color: var(--soft); }
+
+.v-corners11-halloween .hw-move-lead { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: var(--s4) var(--s4) 14px; border-radius: 16px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.v-corners11-halloween .hw-move-k { font: 800 var(--t-label) var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
+.v-corners11-halloween .hw-move-name { font: 800 var(--t-name)/1.25 var(--name); color: #FFFFFF; }
+.v-corners11-halloween .hw-move-line { margin: 0; font: 500 var(--t-body)/1.5 var(--font); color: var(--soft); }
+.v-corners11-halloween .hw-move-go { margin-top: 6px; min-height: 40px; padding: 9px 18px; font-size: var(--t-input); }
+
+.v-corners11-halloween .hw-move-rest { display: flex; flex-direction: column; }
+.v-corners11-halloween .hw-move-row { display: flex; align-items: center; gap: var(--s3); padding: 8px 0 8px var(--s1); }
+.v-corners11-halloween .hw-move-row .onb-words b { font-size: var(--t-body); }
+.v-corners11-halloween .hw-move-row .onb-words small { color: var(--muted); }
+/* a Show me in words: the row's way in, quieter than the lead's gold */
+.v-corners11-halloween .hw-move-show { flex: none; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 10px; background: transparent; color: #FFFFFF; font: 700 var(--t-small) var(--font); text-decoration: underline; text-decoration-color: rgba(255, 255, 255, 0.4); text-underline-offset: 3px; cursor: pointer; }
+.v-corners11-halloween .hw-move-show:hover { background: var(--sf-hover); text-decoration-color: #FFFFFF; }
+.v-corners11-halloween .hw-move-show:active { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .v-corners11-halloween .hw-move-done:active, .v-corners11-halloween .hw-move-show:active { transform: none; }
+}
