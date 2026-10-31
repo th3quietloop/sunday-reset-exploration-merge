@@ -15121,13 +15121,27 @@
       const lk = W.look(b);
       if (!b.free) { x.style.background = lk.base; x.style.color = lk.ink; }
       const mine = o.mine && b.add === o.mine;
-      if (!o.thin && (w > 0.06 || mine)) {
+      /* (V11 Halloween, T1: a tall day's lane is a few hours long, so a name stays inside its block, on two lines when it
+         needs them, and the time prints under it from an hour and a half) */
+      if (o.tall && (w > 0.06 || mine)) {
+        x.appendChild(el('b', '', b.label || b.name));
+        if (b.icon) { x.dataset.ic = b.icon; x.dataset.ink = b.free ? '#3F2A12' : lk.ink; }
+        if (e - s >= 90 && !(o.locks && b.fixed && !b.free)) x.appendChild(el('small', '', M.span(b.start, b.start + b.dur)));
+      } else if (!o.thin && (w > 0.06 || mine)) {
         x.appendChild(el('b', mine && w <= 0.13 ? 'onb-tag' : '', b.label || b.name));
         if (w > 0.13) x.appendChild(el('small', '', M.span(b.start, b.start + b.dur)));
       }
+      /* (V11 Halloween, T1: on a tall day there's no room over a lane, so the lock and its word sit inside the block,
+         the word where it fits) */
+      if (o.tall && o.locks && b.fixed && !b.sleep && !b.free) {
+        const tag = el('span', 'onb-lockt in');
+        tag.appendChild(icon('lock', 7, UI.dark));
+        if (e - s >= 50) tag.appendChild(document.createTextNode('Locked'));
+        x.appendChild(tag);
+      }
       /* Kim's test (Oct 20): on a board to try, a locked block wears its lock where it can be read, and a Locked tag over
          it (a dot in its corner went unseen) */
-      if (o.locks && b.fixed && !b.sleep && !b.free) {
+      else if (o.locks && b.fixed && !b.sleep && !b.free) {
         x.classList.add('lockt');
         const tag = el('span', 'onb-lockt');
         tag.append(icon('lock', 7, UI.dark), document.createTextNode('Locked'));
@@ -15145,6 +15159,90 @@
     /* ticks stay inside the lane, so the first and last hour never hang off its ends */
     for (let m = Math.ceil((lo + 30) / 60) * 60; m <= hi - 30; m += (every || 3) * 60) { const t = el('span', '', M.clock(m % 1440)); t.style.left = (100 * (m - lo)) / (hi - lo) + '%'; r.appendChild(t); }
     return r;
+  }
+  /* V11 Halloween (Stageshow, T1): a narrow card (a phone) draws a day tall, the shape the phone's desk uses, so the
+     setup practices on the board people will have: the hours split into at most four stacked lanes of whole hours
+     from the hour before waking, all at one scale, so the lanes read as morning, afternoon, evening and night. A
+     shorter last lane is drawn shorter, never stretched. */
+  const onbNarrow = () => { const s = $('sheet'), w = s && s.clientWidth ? s.clientWidth : window.innerWidth; return w < 560; };
+  function onbTallSpans(lo, hi) {
+    const L = Math.max(240, Math.ceil((hi - lo) / 4 / 60) * 60), spans = [];
+    for (let s = lo; s < hi; s += L) spans.push([s, Math.min(hi, s + L)]);
+    return { lo, hi, L, spans };
+  }
+  /* (a name too long for its block on a tall day gives way to the block's mark, the way the board's narrow blocks do;
+     the block's title still says it) */
+  function onbFitTall(box) {
+    box.querySelectorAll('.onb-stack .onb-b > b').forEach((n) => {
+      const x = n.parentNode;
+      if (!x.dataset.ic || n.scrollWidth <= n.clientWidth + 1) return;
+      n.replaceWith(icon(x.dataset.ic, 9, x.dataset.ink));
+      x.classList.add('marked');
+    });
+  }
+  /* each lane is the flat lane (onbLane) for its hours, with its own hours under it, the first one at its left edge;
+     a block that crosses from one lane to the next shows in both. rows: each lane's hours and its element */
+  function onbTallDay(st, date, t, opts) {
+    const box = el('div', 'onb-stack'), rows = [];
+    t.spans.forEach(([a, b]) => {
+      const row = el('div', 'onb-tlane');
+      row.style.width = (100 * (b - a)) / t.L + '%';
+      const ln = onbLane(st, date, a, b, Object.assign({ tall: true }, opts));
+      const ticks = el('div', 'onb-ticks');
+      ticks.setAttribute('aria-hidden', 'true');
+      for (let m = Math.ceil(a / 60) * 60; m <= b - 30; m += 60) { const s = el('span', m === a ? 'first' : '', M.clock(m % 1440)); s.style.left = (100 * (m - a)) / (b - a) + '%'; ticks.appendChild(s); }
+      row.append(ln, ticks);
+      box.appendChild(row);
+      rows.push({ lo: a, hi: b, el: ln });
+    });
+    return { box, rows };
+  }
+  /* V11 Halloween (Stageshow, T2): the open time on a lane printed where it is, the way the board prints "4 h open":
+     each gap of 45 minutes or more between blocks, cut at the lane's ends, and only where its words fit (then the
+     hours alone, then nothing). The rows have to be on the page, to be measured. */
+  function onbOpenMarks(st, date, rows) {
+    const gaps = M.gaps(M.resolveWindow(st, date));
+    rows.forEach((r) => {
+      const w = r.el.getBoundingClientRect().width;
+      gaps.forEach((g) => {
+        const a = Math.max(g[0], r.lo), b = Math.min(g[1], r.hi);
+        if (b - a < 45) return;
+        const n = M.hours(b - a).replace(/ h$/, ''), m = el('span', 'onb-open');
+        m.setAttribute('aria-hidden', 'true');
+        m.dataset.a = a; m.dataset.b = b; m.dataset.n = n;
+        m.style.left = (100 * ((a + b) / 2 - r.lo)) / (r.hi - r.lo) + '%';
+        m.append(el('span', 'onb-num', n), document.createTextNode(' h open'));
+        r.el.appendChild(m);
+        const room = (w * (b - a)) / (r.hi - r.lo) - 12;
+        if (m.offsetWidth > room) { m.lastChild.textContent = ' h'; if (m.offsetWidth > room) m.remove(); }
+      });
+    });
+  }
+  /* when a block lands or stretches, each open number rolls from what the gap it came from said: the digits that
+     change slide (the old one up and out, the new one up and in, 300 ms, the last digit first) and the ones that
+     stay sit still. was: the marks before. Calmer motion prints the new number. */
+  function onbRollOpen(box, was) {
+    if (!was || !was.length || onbCalm()) return;
+    box.querySelectorAll('.onb-open').forEach((m) => {
+      const a = +m.dataset.a, b = +m.dataset.b, n = m.dataset.n;
+      let from = null, most = 0;
+      was.forEach((o) => { const x = Math.min(b, o.b) - Math.max(a, o.a); if (x > most) { most = x; from = o; } });
+      if (!from || from.n === n) return;
+      const len = Math.max(n.length, from.n.length), nw = n.padStart(len), od = from.n.padStart(len), num = m.querySelector('.onb-num');
+      const cells = [];
+      num.replaceChildren();
+      for (let i = 0; i < len; i++) {
+        const nc = nw[i].trim(), oc = od[i].trim(), cell = el('span', 'onb-dg');
+        if (nc === oc) cell.textContent = nc;
+        else { const o = el('i', 'o', oc), nn = el('i', 'n', nc); cell.append(nn, o); cells.push({ o, nn }); }
+        num.appendChild(cell);
+      }
+      cells.reverse().forEach(({ o, nn }, k) => {
+        const opt = { duration: 300, delay: k * 60, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'both' };
+        o.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-115%)' }], opt).onfinish = () => o.remove();
+        nn.animate([{ transform: 'translateY(115%)' }, { transform: 'translateY(0)' }], opt);
+      });
+    });
   }
   /* the week as seven thin lanes: the welcome's picture, and the week in the zoom out. key: the hours
      under it and what each color is, so a row reads as a day from morning to night */
@@ -16873,8 +16971,16 @@
          a stretch moves a quarter hour at a step you can see) */
       const fullLo = Math.max(win.start, Math.floor((day0.wake - 30) / 60) * 60), fullHi = Math.min(win.end, Math.ceil((day0.bed + 30) / 60) * 60);
       let lo = fullLo, hi = fullHi;
+      /* V11 Halloween (Stageshow, T1): on a narrow card tomorrow is a tall day of stacked lanes (onbTallDay), with the
+         blocks to try under it; it shows the whole day the whole time, since its names print without the zoom.
+         rows: each lane's hours and element (one lane, the strip, everywhere else). rollNext: the open numbers roll
+         on the next drawing (T2) */
+      const tall = HW && onbNarrow(), tallT = tall ? onbTallSpans(fullLo, fullHi) : null;
+      let rows = [], rollNext = false;
+      if (tall) { board.classList.add('tall'); tray.classList.add('tall'); }
       const frame = () => {
         lo = fullLo; hi = fullHi;
+        if (tall) { lo = tallT.lo; return; }
         if (!FEEL || phase === 'place' || !a.placed || fullHi - fullLo <= 420) return;
         const span = 360, mid = a.placed.start + Math.min(a.placed.dur, 180) / 2;
         lo = Math.max(fullLo, Math.min(fullHi - span, Math.floor((mid - span / 2) / 60) * 60)); hi = Math.min(fullHi, lo + span);
@@ -16888,8 +16994,16 @@
       if (a.placed && a.placed.date !== date) { a.placed = null; saveDraft(); }
       let phase = !a.placed ? 'place' : a.placed.stretched ? 'done' : 'stretch';
       let lane = null, mineId = null, hintT = null;
-      const toMin = (x) => { const r = lane.getBoundingClientRect(); return lo + ((x - r.left) / r.width) * (hi - lo); };
-      const near = (x, y) => { const r = lane.getBoundingClientRect(); return x >= r.left - 12 && x <= r.right + 12 && y >= r.top - 48 && y <= r.bottom + 48; };
+      const toMin = (x, y) => {
+        /* (V11 Halloween, T1: on a tall day, the minute under the pointer is on the lane nearest it) */
+        if (tall) { const row = rowAt(y), r = row.el.getBoundingClientRect(); return row.lo + ((x - r.left) / r.width) * (row.hi - row.lo); }
+        const r = lane.getBoundingClientRect(); return lo + ((x - r.left) / r.width) * (hi - lo);
+      };
+      const rowAt = (y) => { let best = rows[0], bd = Infinity; if (y != null) rows.forEach((r) => { const q = r.el.getBoundingClientRect(), dd = Math.abs(y - (q.top + q.height / 2)); if (dd < bd) { bd = dd; best = r; } }); return best; };
+      /* (the strip reaches 48 px over and under it; the tall day only a little, since its blocks to try sit under it) */
+      const near = (x, y) => { const r = lane.getBoundingClientRect(), v = tall ? 14 : 48; return x >= r.left - 12 && x <= r.right + 12 && y >= r.top - v && y <= r.bottom + v; };
+      /* how wide the last piece of the placed block is, in its lane, as a share of that lane */
+      const segPct = (row, start, dur) => Math.max(0, (100 * (Math.min(start + dur, row.hi) - Math.max(start, row.lo))) / (row.hi - row.lo));
       /* Kim's test (Oct 20): one block named, one way to do it; what a lock means comes on a second line once something
          is on the day, named for the locked block that's there (a pick up, work) */
       const first = pieces.find((p) => p.id === 'walk') || pieces[0];
@@ -16906,9 +17020,38 @@
       };
       const line2 = el('p', 'sheet-line onb-say2');
       const ghost = el('div', 'onb-ghost');
+      /* (V11 Halloween, T1: on a tall day a spot that crosses into the next lane shows in both: the ghost in the lane it
+         starts in, and a copy in each lane after, which wears what the ghost wears) */
+      const ghostMore = [];
+      if (tall) new MutationObserver(() => ghostMore.forEach((g) => { g.className = ghost.className + ' more'; g.style.setProperty('--fill', ghost.style.getPropertyValue('--fill')); })).observe(ghost, { attributes: true, attributeFilter: ['class', 'style'] });
+      /* (V11 Halloween, T2: an open number under the spot steps out of the way while the spot is there) */
+      const clearOpen = () => {
+        if (!HW || !lane) return;
+        const spots = ghost.isConnected ? [ghost, ...ghostMore].map((g) => g.getBoundingClientRect()) : [];
+        lane.querySelectorAll('.onb-open').forEach((m) => { const r = m.getBoundingClientRect(); m.classList.toggle('under', spots.some((q) => q.left < r.right && r.left < q.right && q.top < r.bottom && r.top < q.bottom)); });
+      };
       const ghostAt = (start, dur, ok) => {
-        if (start == null) { ghost.remove(); return; }
+        ghostMore.splice(0).forEach((g) => g.remove());
+        if (start == null) { ghost.remove(); clearOpen(); return; }
+        ghostAt2(start, dur, ok);
+        clearOpen();
+      };
+      const ghostAt2 = (start, dur, ok) => {
         ghost.className = 'onb-ghost' + (ok ? '' : ' no');
+        if (tall) {
+          let first = true;
+          rows.forEach((r) => {
+            const s = Math.max(start, r.lo), e = Math.min(start + dur, r.hi);
+            if (e <= s) return;
+            const g = first ? ghost : el('div', ghost.className + ' more');
+            if (!first) { ghostMore.push(g); g.style.setProperty('--fill', ghost.style.getPropertyValue('--fill')); }
+            first = false;
+            g.style.left = (100 * (s - r.lo)) / (r.hi - r.lo) + '%';
+            g.style.width = (100 * (e - s)) / (r.hi - r.lo) + '%';
+            if (g.parentNode !== r.el) r.el.appendChild(g);
+          });
+          return;
+        }
         ghost.style.left = (100 * (start - lo)) / (hi - lo) + '%';
         ghost.style.width = (100 * dur) / (hi - lo) + '%';
         if (ghost.parentNode !== lane) lane.appendChild(ghost);
@@ -16918,16 +17061,31 @@
         const w = onbWeek(a);
         mineId = w.add ? w.add.id : null;
         frame();
+        /* (V11 Halloween, T2: what the open time said before, for the numbers to roll from) */
+        const was = HW && rollNext ? [...board.querySelectorAll('.onb-open')].map((m) => ({ a: +m.dataset.a, b: +m.dataset.b, n: m.dataset.n })) : null;
+        rollNext = false;
         board.replaceChildren();
-        lane = onbLane(w.st, date, lo, hi, { mine: mineId, locks: true });
-        const zoomed = lo !== fullLo || hi !== fullHi;
-        board.classList.toggle('zoomed', zoomed);
-        board.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(date)] + (zoomed ? ', ' + M.span(lo, hi) : '')), lane, onbTicks(lo, hi, zoomed ? 1 : 3));
+        if (tall) {
+          const t = onbTallDay(w.st, date, tallT, { mine: mineId, locks: true });
+          lane = t.box; rows = t.rows;
+          board.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(date)]), lane);
+        } else {
+          lane = onbLane(w.st, date, lo, hi, { mine: mineId, locks: true });
+          const zoomed = lo !== fullLo || hi !== fullHi;
+          board.classList.toggle('zoomed', zoomed);
+          board.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(date)] + (zoomed ? ', ' + M.span(lo, hi) : '')), lane, onbTicks(lo, hi, zoomed ? 1 : 3));
+          rows = [{ lo, hi, el: lane }];
+        }
+        if (HW) {
+          const drawn = lane, paint = () => { if (drawn !== lane || !lane.isConnected) return; if (tall) onbFitTall(lane); onbOpenMarks(w.st, date, rows); onbRollOpen(lane, was); };
+          if (lane.isConnected && lane.getBoundingClientRect().width) paint(); else requestAnimationFrame(paint);
+        }
         /* (V11, lift and place: the tray keeps its height once a block is placed, so the page doesn't jump) */
-        if (FEEL && phase !== 'place' && tray.offsetHeight && !tray.style.minHeight) tray.style.minHeight = tray.offsetHeight + 'px';
+        /* (V11 Halloween, T1: a tall day lets the emptied tray go, so what's under it stays on the phone's screen) */
+        if (FEEL && !tall && phase !== 'place' && tray.offsetHeight && !tray.style.minHeight) tray.style.minHeight = tray.offsetHeight + 'px';
         if (FEEL && phase === 'place') tray.style.minHeight = '';
         tray.replaceChildren();
-        tray.hidden = FEEL ? false : phase !== 'place';
+        tray.hidden = FEEL ? tall && phase !== 'place' : phase !== 'place';
         if (phase === 'place') pieces.forEach((p, k) => tray.appendChild(pieceChip(p, k)));
         if (phase !== 'place' && mineId) {
           const mine = [...lane.querySelectorAll('[data-add="' + mineId + '"]')].pop();
@@ -17020,7 +17178,7 @@
           if (!d.moved && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) < 5) return;
           if (!d.moved) {
             d.moved = true; if (!FEEL) chip.dataset.dragged = '1'; Snd.pick();
-            d.float = chip.cloneNode(true); d.float.className = 'onb-piece onb-float'; d.float.removeAttribute('data-first');
+            d.float = chip.cloneNode(true); d.float.className = 'onb-piece onb-float' + (tall ? ' tall' : ''); d.float.removeAttribute('data-first');
             if (FEEL) { Object.assign(d.float.style, { width: cr.width + 'px', height: cr.height + 'px', transformOrigin: gx + 'px ' + gy + 'px', rotate: '-2deg', scale: '1' }); d.float.classList.add('onb-feel'); }
             document.body.appendChild(d.float);
             chip.classList.add('lifted');
@@ -17030,14 +17188,14 @@
           d.float.style.transform = FEEL ? 'translate(' + (ev.clientX - gx) + 'px, ' + (ev.clientY - gy) + 'px)' : 'translate(' + (ev.clientX - 34) + 'px, ' + (ev.clientY - 22) + 'px)';
           if (near(ev.clientX, ev.clientY)) {
             /* (where it was grabbed along it is where it goes, as on the board) */
-            const at = FEEL ? toMin(ev.clientX) - (gx / Math.max(1, cr.width)) * p.dur : toMin(ev.clientX) - p.dur / 2;
+            const at = FEEL ? toMin(ev.clientX, ev.clientY) - (gx / Math.max(1, cr.width)) * p.dur : toMin(ev.clientX) - p.dur / 2;
             const start = M.clamp(Math.round(at / 15) * 15, lo, hi - p.dur);
             const fit = M.canPlace(base, date, p.dur, start);
             if (!d.spot || d.spot.start !== start) Snd.detent(fit.ok);
             d.spot = { start, ok: fit.ok, fit };
             ghostAt(start, p.dur, fit.ok);
             /* (V11: nearing the day, it shrinks toward the slot's size, 140 ms) */
-            if (FEEL && feelMoves()) { const lw = lane.getBoundingClientRect().width * p.dur / (hi - lo); d.float.style.scale = String(Math.max(0.45, Math.min(1.06, lw / Math.max(1, cr.width)))); }
+            if (FEEL && feelMoves()) { const lw = tall ? rows[0].el.getBoundingClientRect().width * p.dur / (rows[0].hi - rows[0].lo) : lane.getBoundingClientRect().width * p.dur / (hi - lo); d.float.style.scale = String(Math.max(0.45, Math.min(1.06, lw / Math.max(1, cr.width)))); }
           } else { d.spot = null; ghostAt(null); if (FEEL && feelMoves()) d.float.style.scale = '1.06'; }
         };
         const up = (ev) => {
@@ -17096,6 +17254,7 @@
         const moved = before.filter((b) => { const x = after.find((y) => y.key === b.key); return x && x.start !== b.start; }).map((b) => (b.label || b.name) + ' moves to ' + M.clock(after.find((y) => y.key === b.key).start));
         phase = 'stretch';
         saveDraft();
+        rollNext = true;
         draw();
         /* (V11, Oct 15: a block inside work that's yours to plan cuts it, and the line says so instead of Nothing else moved) */
         const room = FEEL && !moved.length ? M.calendarDay(base, date).blocks.find((x) => x.soft && !x.free && x.cat === 'work' && x.start < spot.start + p.dur && spot.start < x.start + x.dur) : null;
@@ -17122,6 +17281,7 @@
         a.placed.dur = dur; a.placed.stretched = true;
         phase = 'done';
         saveDraft();
+        rollNext = true;
         draw();
         line.textContent = words.done;
         say(a.placed.add.name + ' is ' + M.dur(dur) + ' now, ' + M.span(a.placed.start, a.placed.start + dur) + '.');
@@ -17133,14 +17293,17 @@
         e.preventDefault(); e.stopPropagation();
         stopDemo(); stopHint();
         const d = onbDrag = { float: null, dur: a.placed.dur, w: onbWeek(a) };
-        const pid = e.pointerId;
+        const pid = e.pointerId, myRow = tall ? rows.find((r) => r.el === mine.parentNode) : null;
         try { grip.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
         Snd.pick();
         const move = (ev) => {
           if (FEEL && ev.pointerId !== pid) return;
-          const want = Math.max(15, Math.round((toMin(ev.clientX) - a.placed.start) / 15) * 15);
+          const want = Math.max(15, Math.round((toMin(ev.clientX, ev.clientY) - a.placed.start) / 15) * 15);
           const dur = fitDur(want, d.w);
           if (dur !== d.dur) { Snd.detent(true); d.dur = dur; }
+          /* (V11 Halloween, T1: on a tall day the block's last piece grows in its lane, and the length it's being given
+             shows as the spot, across lanes when it goes on into the next) */
+          if (tall) { mine.style.width = segPct(myRow, a.placed.start, dur) + '%'; ghostAt(a.placed.start, dur, true); ghost.classList.add('grow'); return; }
           mine.style.width = (100 * Math.min(dur, hi - a.placed.start)) / (hi - lo) + '%';
         };
         const up = (ev) => {
@@ -17148,7 +17311,8 @@
           grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
           onbDrag = null;
           /* V11: a touch the browser took back leaves the length as it was */
-          if (FEEL && ev && ev.type === 'pointercancel') { mine.style.width = (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo) + '%'; hint(); return; }
+          if (tall) ghostAt(null);
+          if (FEEL && ev && ev.type === 'pointercancel') { mine.style.width = tall ? segPct(myRow, a.placed.start, a.placed.dur) + '%' : (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo) + '%'; hint(); return; }
           if (d.dur !== a.placed.dur) stretchTo(d.dur); else hint();
         };
         grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
@@ -17201,6 +17365,16 @@
         ghost.classList.remove('demo', 'filled');
         ghost.style.removeProperty('--fill');
         ghostAt(null);
+        /* (V11 Halloween, T2: a showing stopped partway puts the open numbers back as the day has them) */
+        if (d.open && lane && lane.isConnected) { lane.querySelectorAll('.onb-open').forEach((m) => m.remove()); onbOpenMarks(onbWeek(a).st, date, rows); }
+      }
+      /* V11 Halloween (Stageshow, T2): the open numbers printed again for a day (st), rolling from what they said */
+      function repaintOpen(st) {
+        if (!lane || !lane.isConnected) return;
+        const was = [...lane.querySelectorAll('.onb-open')].map((m) => ({ a: +m.dataset.a, b: +m.dataset.b, n: m.dataset.n }));
+        lane.querySelectorAll('.onb-open').forEach((m) => m.remove());
+        onbOpenMarks(st, date, rows);
+        onbRollOpen(lane, was);
       }
       /* one showing of the move for this phase: place carries a block over, stretch pulls an edge */
       function playDemo() {
@@ -17228,6 +17402,22 @@
           hint();
           say('Your turn.');
         });
+        /* V11 Halloween (Stageshow, T3): what a showing takes back has a cause you can see. An Undo comes into the help
+           row, ahead of its words so they can change without moving it; the pointer goes to it and presses it, the line
+           says Shown, then put back., and then the block goes back (back). It's only a picture of the button, never one
+           to press */
+        const undo = (from, back) => {
+          const u = el('span', 'onb-undo-demo');
+          u.setAttribute('aria-hidden', 'true');
+          u.append(icon('undo', 8, UI.ink), document.createTextNode('Undo'));
+          helpRow.prepend(u); d.nodes.push(u);
+          const to = rel(u.getBoundingClientRect());
+          move(pt, from, { x: to.x, y: to.y }, 460);
+          at(520, () => { press(true); u.classList.add('down'); });
+          at(660, () => { press(false); u.classList.remove('down'); const t = helpRow.querySelector('.onb-help-t'); if (t) t.textContent = 'Shown, then put back.'; back(); });
+        };
+        /* (V11 Halloween, T2: in a showing the open numbers roll too, to what the day would say, and back) */
+        const openAs = (placed) => { if (!HW) return; d.open = true; repaintOpen(onbWeek(a, placed).st); };
         if (phase === 'place') {
           const chip = tray.querySelector('.onb-piece'), p = pieces[0], s = p && roomyStart(p.dur);
           if (!chip || s == null) { demo = null; hint(); return; }
@@ -17239,7 +17429,7 @@
           if (!calm) ghost.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 1220, fill: 'backwards' });
           const cr = rel(chip.getBoundingClientRect()), gr = rel(ghost.getBoundingClientRect());
           const fl = chip.cloneNode(true);
-          fl.className = 'onb-piece onb-demo-piece'; fl.removeAttribute('data-first'); fl.setAttribute('aria-hidden', 'true'); fl.tabIndex = -1;
+          fl.className = 'onb-piece onb-demo-piece' + (tall ? ' tall' : ''); fl.removeAttribute('data-first'); fl.setAttribute('aria-hidden', 'true'); fl.tabIndex = -1;
           fl.style.width = cr.w + 'px';
           body.append(fl, pt);
           d.nodes.push(fl, pt); d.chip = chip;
@@ -17262,7 +17452,20 @@
           at(1640, () => {
             move(fl, land, land, 200, 'ease-in', 1.02, 0.5, -1, 0); fade(fl, 1, 0, 200);
             ghost.classList.add('filled'); press(false);
+            openAs({ date, start: s, dur: p.dur, add: { name: p.name, cat: p.cat, icon: p.icon, dur: p.dur, src: { type: 'block', id: p.id } } });
           });
+          if (HW) {
+            /* (V11 Halloween, T3: Undo is pressed, then it goes back to the tray) */
+            at(1900, () => undo({ x: land.x + off2.x, y: land.y + off2.y }, () => {
+              ghost.classList.remove('filled');
+              fade(fl, 0, 1, 160); move(fl, land, cr, 700, null, 0.6, 1, 0, 0);
+              ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'forwards' });
+              openAs(null);
+              at(720, () => { fade(fl, 1, 0, 140); fade(pt, 1, 0, 180); chip.classList.remove('lifted'); });
+              end(960);
+            }));
+            return;
+          }
           /* it goes back to the tray: this one was only a showing */
           at(2600, () => {
             ghost.classList.remove('filled');
@@ -17275,11 +17478,14 @@
         } else {
           /* the block itself grows under the pointer, the way it will under theirs, then goes back */
           const mine = mineId && [...lane.querySelectorAll('[data-add="' + mineId + '"]')].pop(), grip = mine && mine.querySelector('.onb-grip');
-          const longer = fitDur(a.placed.dur + 60, onbWeek(a));
+          let longer = fitDur(a.placed.dur + 60, onbWeek(a));
+          /* (V11 Halloween, T1: on a tall day the showing stays in the block's own lane when there's room in it) */
+          const row = tall && mine ? rows.find((r) => r.el === mine.parentNode) : null;
+          if (row && row.hi - a.placed.start > a.placed.dur) longer = Math.min(longer, row.hi - a.placed.start);
           if (!grip || longer <= a.placed.dur) { demo = null; hint(); return; }
-          const L = lane.getBoundingClientRect(), perMin = L.width / (hi - lo);
+          const L = row ? row.el.getBoundingClientRect() : lane.getBoundingClientRect(), perMin = row ? L.width / (row.hi - row.lo) : L.width / (hi - lo);
           const gr = rel(grip.getBoundingClientRect()), dx = (longer - a.placed.dur) * perMin;
-          const w0 = (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo), w1 = (100 * Math.min(longer, hi - a.placed.start)) / (hi - lo);
+          const w0 = row ? segPct(row, a.placed.start, a.placed.dur) : (100 * Math.min(a.placed.dur, hi - a.placed.start)) / (hi - lo), w1 = row ? segPct(row, a.placed.start, longer) : (100 * Math.min(longer, hi - a.placed.start)) / (hi - lo);
           body.appendChild(pt);
           d.nodes.push(pt);
           d.grow = mine;
@@ -17294,7 +17500,13 @@
             return;
           }
           at(340, () => press(true));
-          at(500, () => { move(pt, g0, g1, 1000); grow(w0, w1, 1000); });
+          at(500, () => { move(pt, g0, g1, 1000); grow(w0, w1, 1000); openAs(Object.assign({}, a.placed, { dur: longer })); });
+          if (HW) {
+            /* (V11 Halloween, T3: let go at the new length, then Undo is pressed and it goes back) */
+            at(2300, () => press(false));
+            at(2420, () => undo(g1, () => { grow(w1, w0, 400); openAs(undefined); at(560, () => fade(pt, 1, 0, 180)); end(760); }));
+            return;
+          }
           at(2300, () => { press(false); move(pt, g1, g0, 560); grow(w1, w0, 560); });
           at(2960, () => fade(pt, 1, 0, 180));
           end(3200);
@@ -17350,9 +17562,19 @@
         const m = marked();
         if (z === 'day') {
           const d0 = M.resolveDay(st, tomorrow), win = M.visibleHours(st), lo = Math.max(win.start, Math.floor((d0.wake - 30) / 60) * 60), hi = Math.min(win.end, Math.ceil((d0.bed + 30) / 60) * 60), w0 = onbWeek(a);
-          box.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(tomorrow)]), onbLane(st, tomorrow, lo, hi, { mine: w0.add ? w0.add.id : null }), onbTicks(lo, hi, 3));
+          /* V11 Halloween (Stageshow, T4): on a narrow card the day is the tall day from Try it, with its open hours, so the
+             picture takes the room the step keeps for the year instead of leaving a band of nothing under a strip */
+          if (HW && onbNarrow()) {
+            const t = onbTallDay(st, tomorrow, onbTallSpans(lo, hi), { mine: w0.add ? w0.add.id : null });
+            box.classList.add('tall');
+            box.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(tomorrow)]), t.box);
+            requestAnimationFrame(() => { if (t.box.isConnected) { onbFitTall(t.box); onbOpenMarks(st, tomorrow, t.rows); } });
+          } else box.append(el('div', 'onb-board-h', 'Tomorrow, ' + M.DAY_LONG[M.weekday(tomorrow)]), onbLane(st, tomorrow, lo, hi, { mine: w0.add ? w0.add.id : null }), onbTicks(lo, hi, 3));
         } else if (z === 'week') {
-          box.append(el('div', 'onb-board-h', 'This week'), onbWeekRows(st, M.weekStart(today)));
+          /* (V11 Halloween, T4: and the week's rows grow to the same room, with its hours and colors under them) */
+          const narrow = HW && onbNarrow();
+          if (narrow) box.classList.add('tall');
+          box.append(el('div', 'onb-board-h', 'This week'), onbWeekRows(st, M.weekStart(today), narrow));
         } else if (z === 'month') {
           const ref = m ? m.date : today, ms = M.monthStart(ref), first = M.weekStart(ms);
           box.appendChild(el('div', 'onb-board-h', M.MONTH_LONG[+ms.slice(5, 7) - 1] + ' ' + ms.slice(0, 4)));
