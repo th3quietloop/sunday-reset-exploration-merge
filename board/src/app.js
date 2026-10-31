@@ -15214,10 +15214,11 @@
         m.setAttribute('aria-hidden', 'true');
         m.dataset.a = a; m.dataset.b = b; m.dataset.n = n;
         m.style.left = (100 * ((a + b) / 2 - r.lo)) / (r.hi - r.lo) + '%';
-        m.append(el('span', 'onb-num', n), document.createTextNode(' h open'));
+        /* (a no break space: a plain one after the number's own box collapsed, and it read 3h open) */
+        m.append(el('span', 'onb-num', n), document.createTextNode('\u00a0h open'));
         r.el.appendChild(m);
         const room = (w * (b - a)) / (r.hi - r.lo) - 12;
-        if (m.offsetWidth > room) { m.lastChild.textContent = ' h'; if (m.offsetWidth > room) m.remove(); }
+        if (m.offsetWidth > room) { m.lastChild.textContent = '\u00a0h'; if (m.offsetWidth > room) m.remove(); }
       });
     });
   }
@@ -17517,7 +17518,7 @@
       const say1 = (t) => el('span', 'onb-help-t', t);
       const again = () => button('Show me again', 'small quiet', () => playDemo());
       const doIt = () => (phase === 'place'
-        ? button('Do it for me', 'small', () => { const p = pieces[0], s = roomyStart(p.dur); if (s != null) drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) }); })
+        ? button('Do it for me', 'small', () => { const p = HW && first ? first : pieces[0], s = roomyStart(p.dur); if (s != null) drop(p, { start: s, ok: true, fit: M.canPlace(base, date, p.dur, s) }); })
         : button('Do it for me', 'small', () => stretchTo(a.placed.dur + 30)));
       const off = () => button('Take it off', 'small quiet', takeOff);
       /* the row at rest: their turn, once they've been shown; Take it off once something is placed */
@@ -17533,7 +17534,7 @@
         hintT = onbLater(() => {
           if (onbDrag || demo) return;
           if (phase === 'place') {
-            const p = pieces[0], s = roomyStart(p.dur);
+            const p = HW && first ? first : pieces[0], s = roomyStart(p.dur);
             if (s == null) return;
             if (!onbCalm()) { ghostAt(s, p.dur, true); ghost.classList.add('show'); onbLater(() => { if (!onbDrag && !demo) ghostAt(null); }, 2400); }
             helpRow.replaceChildren(say1('Like this: ' + p.name + ' at ' + M.clock(s) + '.'), again(), doIt());
@@ -17609,7 +17610,9 @@
         /* (V11 Halloween, T2: in a showing the open numbers roll too, to what the day would say, and back) */
         const openAs = (placed) => { if (!HW) return; d.open = true; repaintOpen(onbWeek(a, placed).st); };
         if (phase === 'place') {
-          const chip = tray.querySelector('.onb-piece'), p = pieces[0], s = p && roomyStart(p.dur);
+          /* V11 Halloween: the showing carries the block the line names (Drag Walk...), not whichever is first in the tray */
+          const lead = HW && first ? first : pieces[0];
+          const chip = tray.querySelectorAll('.onb-piece')[Math.max(0, pieces.indexOf(lead))] || tray.querySelector('.onb-piece'), p = lead, s = p && roomyStart(p.dur);
           if (!chip || s == null) { demo = null; hint(); return; }
           const lk = W.look(p);
           ghostAt(s, p.dur, true);
