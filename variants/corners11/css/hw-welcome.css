@@ -4,7 +4,7 @@
    the other days are quiet bars. */
 .v-corners11-halloween .hw-hero { position: relative; overflow: hidden; padding: 18px 0 18px 18px; border-radius: 16px; box-shadow: none;
   background: repeating-linear-gradient(180deg, rgba(60, 32, 10, 0.12) 0 1px, transparent 1px 58px), linear-gradient(90deg, #A9763F, #B88650 45%, #A87442); }
-.v-corners11-halloween .hw-board { position: relative; width: 138%; padding: 12px 0 12px 12px; border-radius: 14px; display: flex; flex-direction: column; gap: 7px;
+.v-corners11-halloween .hw-board { position: relative; will-change: transform; width: 138%; padding: 12px 0 12px 12px; border-radius: 14px; display: flex; flex-direction: column; gap: 7px;
   background: linear-gradient(#EAD5A9, #DCC08C); box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), inset 0 -3px 0 rgba(80, 50, 20, 0.2), 0 14px 26px rgba(40, 20, 5, 0.38); }
 .v-corners11-halloween .hw-ruler, .v-corners11-halloween .hw-row { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 8px; }
 .v-corners11-halloween .hw-ticks { position: relative; height: 14px; }
@@ -20,14 +20,14 @@
 .v-corners11-halloween .hw-b b { font: 700 12px/1.1 var(--name); white-space: nowrap; overflow: hidden; }
 /* on Saturday a name may take two lines, the way a narrow brick on the desk wraps its name */
 .v-corners11-halloween .hw-row.focus .hw-b b { white-space: normal; max-height: 2.3em; line-height: 1.12; }
-.v-corners11-halloween .hw-word { margin-left: 0.3em; }
+.v-corners11-halloween .hw-phrase { display: inline; white-space: pre; }
 .v-corners11-halloween .hw-b.free b { color: #5A3E1E; }
 /* the open hours, printed in the gap; they slide to the middle of what's left once the block is in */
 .v-corners11-halloween .hw-open { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font: 700 12px var(--font); color: #6B4A22; white-space: nowrap; pointer-events: none;
   transition: left 0.3s cubic-bezier(0.45, 0, 0.1, 1), width 0.3s cubic-bezier(0.45, 0, 0.1, 1), opacity 0.2s; }
 .v-corners11-halloween .hw-open.gone { opacity: 0; }
 .v-corners11-halloween .hw-roll { display: inline-flex; font-variant-numeric: tabular-nums; }
-.v-corners11-halloween .hw-ch { position: relative; display: inline-block; overflow: hidden; height: 1.25em; line-height: 1.25em; vertical-align: bottom; }
+.v-corners11-halloween .hw-ch { position: relative; display: inline-block; height: 1.25em; line-height: 1.25em; vertical-align: bottom; }
 .v-corners11-halloween .hw-ch i { display: block; font-style: normal; }
 .v-corners11-halloween .hw-ch i.hw-in { position: absolute; left: 0; top: 0; }
 /* the slot opens where the block will land and never moves; the brick takes over at the same place and size */
@@ -35,12 +35,12 @@
 .v-corners11-halloween .hw-slot.in { opacity: 1; }
 .v-corners11-halloween .hw-mine { visibility: hidden; z-index: 2; }
 .v-corners11-halloween .hw-mine.in { visibility: visible; }
-.v-corners11-halloween .hw-piece { position: absolute; left: 0; top: 0; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 0 7px; border-radius: 6px; overflow: hidden; transform: translateX(-9999px); will-change: transform;
+.v-corners11-halloween .hw-piece { position: absolute; left: 0; top: 0; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 0 7px; border-radius: 6px; overflow: hidden; visibility: hidden; will-change: transform;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.2), 0 12px 18px rgba(60, 35, 10, 0.32); }
-.v-corners11-halloween .hw-piece b { font: 700 13px/1.12 var(--name); white-space: normal; }
+.v-corners11-halloween .hw-piece b { font: 700 12px/1.12 var(--name); white-space: normal; }
 .v-corners11-halloween .hw-piece small { font: 700 11px/1 var(--font); white-space: nowrap; }
 .v-corners11-halloween .hw-piece canvas { width: 14px; height: 14px; flex: none; }
-.v-corners11-halloween .hw-pointer { transform: translateX(-9999px); }
+.v-corners11-halloween .hw-pointer { visibility: hidden; }
 /* what the block bought, said once, arriving whole from just above */
 .v-corners11-halloween .hw-tag { position: absolute; bottom: calc(100% + 5px); z-index: 4; transform: translate(-50%, -4px); padding: 4px 10px; border-radius: 999px; background: #221E1A; color: #FFFFFF;
   font: 700 12px/1.2 var(--font); white-space: nowrap; opacity: 0; transition: opacity 0.2s, transform 0.26s cubic-bezier(0.25, 0.8, 0.25, 1); pointer-events: none; }
@@ -55,7 +55,7 @@
   .v-corners11-halloween .hw-row { align-items: stretch; }
   .v-corners11-halloween .hw-row .hw-day { align-self: center; }
   .v-corners11-halloween .hw-lane, .v-corners11-halloween .hw-row.focus .hw-lane { height: auto; min-height: 22px; }
-  .v-corners11-halloween .hw-row.focus .hw-b b { font-size: 13px; }
+  .v-corners11-halloween .hw-row.focus .hw-b b, .v-corners11-halloween .hw-piece b { font-size: 13px; }
 }
 /* a phone: the stage runs edge to edge and grows with the room the screen has, so there's no empty band above the button */
 @media (max-width: 600px) {

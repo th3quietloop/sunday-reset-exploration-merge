@@ -15626,6 +15626,8 @@
   function hwHero(st, from) {
     const stage = el('div', 'onb-hero hw-hero');
     stage.setAttribute('aria-hidden', 'true');
+    /* ?stage marks it the way Stageshow's filming checks look for one (scripts/film.mjs, jumps.mjs, layout.mjs) */
+    if (/[?&]stage\b/.test(location.search)) stage.classList.add('ss-stage');
     const days = M.range(from, 7), focus = days[6], h = M.visibleHours(st), span = h.end - h.start;
     const board = el('div', 'hw-board');
     const pct = (m) => (100 * (m - h.start)) / span + '%';
@@ -15663,7 +15665,10 @@
            words center in what's left once the block is in */
         openLabel = el('span', 'hw-open');
         openLabel.style.left = pct(gap[0]); openLabel.style.width = (100 * (gap[1] - gap[0])) / span + '%';
-        openLabel.append(hwRoll(hrs(gap[1] - gap[0])), el('span', 'hw-word', 'open'));
+        /* one phrase, so the roll and its word read as one line of print, a word space apart */
+        const phrase = el('span', 'hw-phrase');
+        phrase.append(hwRoll(hrs(gap[1] - gap[0])), document.createTextNode(' open'));
+        openLabel.appendChild(phrase);
         lane.appendChild(openLabel);
         slot = el('div', 'hw-slot');
         slot.style.left = pct(at); slot.style.width = (100 * len) / span + '%';
@@ -15698,12 +15703,13 @@
       /* what's left of the stretch after the block: its words move to the middle of the new gap */
       if (after >= 60) { openLabel.style.left = pct(at + len); openLabel.style.width = (100 * after) / span + '%'; }
       else openLabel.classList.add('gone');
-      hwRollTo(openLabel.firstChild, hrs(after), true);
+      hwRollTo(openLabel.querySelector('.hw-roll'), hrs(after), true);
     };
     if (onbCalm()) { settle(); requestAnimationFrame(() => requestAnimationFrame(fitNames)); return stage; }
     const piece = el('div', 'hw-piece');
     piece.style.background = lk.base; piece.style.color = lk.ink;
-    piece.append(icon('sun', 8, lk.ink), el('b', '', 'Bike ride'));
+    /* the brick it will be, word for word, so the swap on landing changes nothing */
+    piece.appendChild(el('b', '', 'Bike ride'));
     const pt = el('div', 'onb-pointer hw-pointer'); const tip = el('i'); pt.appendChild(tip);
     stage.append(piece, pt);
     /* the showing: it waits until the card is on screen and has been still for a beat (the opening frame is a finished
@@ -15725,7 +15731,6 @@
       if (!S.width || !T.width) { settle(); return; }
       /* in hand it's the brick it will be, at its true size, so the hand off on landing changes nothing */
       piece.style.width = T.width + 'px'; piece.style.height = T.height + 'px';
-      if (piece.scrollWidth > T.width + 1) piece.querySelectorAll('small, canvas').forEach((n) => n.remove());
       const P = piece.getBoundingClientRect();
       /* it lands where the brick will be; the hand holds its far end, off its name, so the words stay readable */
       const land = { x: T.left - S.left + T.width / 2 - P.width / 2, y: T.top - S.top + T.height / 2 - P.height / 2 };
@@ -15735,6 +15740,9 @@
       /* travel on the skill's travel curve, along a shallow arc: the middle of the trip rides a little higher */
       const mid = { x: (start.x + land.x) / 2, y: Math.min(start.y, land.y) - 26 };
       const travel = 'cubic-bezier(0.45, 0, 0.1, 1)';
+      /* it shows only once it stands at its start, past the stage's edge, so it never hops from where it was parked */
+      piece.style.transform = pose(start, 1.06, -2); pt.style.transform = 'translate(' + (start.x + grip.x - 17) + 'px, ' + (start.y + grip.y - 17) + 'px)';
+      piece.style.visibility = 'visible'; pt.style.visibility = 'visible';
       piece.animate([{ transform: pose(start, 1.06, -2) }, { transform: pose(mid, 1.06, -2.5), offset: 0.55 }, { transform: pose(land, 1.06, -1) }], { duration: 1300, delay: 500, easing: travel, fill: 'both' });
       const ptAt = (p) => 'translate(' + (p.x + grip.x - 17) + 'px, ' + (p.y + grip.y - 17) + 'px)';
       pt.animate([{ transform: ptAt(start) }, { transform: ptAt(mid), offset: 0.55 }, { transform: ptAt(land) }], { duration: 1300, delay: 500, easing: travel, fill: 'both' });
@@ -15746,11 +15754,15 @@
         piece.animate([{ transform: pose(land, 1.06, -1), boxShadow: '0 12px 18px rgba(60, 35, 10, 0.32)' }, { transform: pose(land, 1, 0), boxShadow: '0 2px 3px rgba(60, 35, 10, 0.25)' }], { duration: 180, easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)', fill: 'forwards' });
       }, 1820);
       /* the brick takes over at the same place and size, the hours roll, and the tag says what it bought */
-      onbLater(() => { landed.classList.add('in'); piece.remove(); slot.classList.remove('in'); }, 2010);
+      onbLater(() => {
+        landed.classList.add('in'); slot.classList.remove('in');
+        landed.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 90 });
+        piece.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, fill: 'forwards' }).finished.then(() => piece.remove()).catch(() => piece.remove());
+      }, 2010);
       onbLater(() => {
         if (after >= 60) { openLabel.style.left = pct(at + len); openLabel.style.width = (100 * after) / span + '%'; }
         else openLabel.classList.add('gone');
-        hwRollTo(openLabel.firstChild, hrs(after));
+        hwRollTo(openLabel.querySelector('.hw-roll'), hrs(after));
       }, 2260);
       onbLater(() => tag.classList.add('in'), 2700);
       /* the hand moves off the block onto open wood, then goes */
@@ -15784,8 +15796,9 @@
       const out = s.firstChild, inn = el('i', 'hw-in', is);
       s.appendChild(inn);
       const delay = n++ * 70;
-      out.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-100%)', opacity: 0 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'forwards' });
-      inn.animate([{ transform: 'translateY(100%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'both' }).finished.then(() => { if (out.isConnected) out.remove(); inn.classList.remove('hw-in'); }).catch(() => {});
+      /* nothing clips the digits: the old one is gone by the time the new one is near, so they never overlap as print */
+      out.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-45%)', opacity: 0, offset: 0.45 }, { transform: 'translateY(-100%)', opacity: 0 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'forwards' });
+      inn.animate([{ transform: 'translateY(100%)', opacity: 0 }, { transform: 'translateY(45%)', opacity: 0, offset: 0.55 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 300, delay, easing: 'cubic-bezier(0.45, 0, 0.1, 1)', fill: 'both' }).finished.then(() => { if (out.isConnected) out.remove(); inn.classList.remove('hw-in'); }).catch(() => {});
     }
     kids.forEach((s) => { if (!s.textContent && s.isConnected && !s.querySelector('.hw-in')) s.remove(); });
   }
