@@ -1,0 +1,246 @@
+/* == V11, the Planner walk (Oct 15, docs/walk/planner.md) ==
+   What Russell and Kim needed on a Sunday afternoon, and what a new person needed the first time in the Planner:
+   an Undo that stays, arrows that stay put, a Duo that fits, a hand-off that stays on the board, and the rest of
+   the walk's list, screen by screen. Every color here is a token from polish.css or contrast.css, every size is
+   on the HUD's scale (12, 13, 14, 16, 19, 22, 26, 30), and a target a finger uses is 44 px on a touch screen. */
+
+/* == 15.1 Undo and Redo in the bottom bar ==
+   Quiet pills like their neighbors. Beside Undo, where there's room, the change it takes back in a quieter grey
+   (13 px, #CDCDCD on the bar's near black, about 11 to 1); narrower, the words live in its name and its tip */
+.c-br .c-undo-what { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--tx-2); }
+.c-br .c-undo-what[hidden] { display: none; }
+@media (max-width: 1279px) { .c-br .c-undo-what { display: none !important; } }
+.c-br .c-redo { margin-right: 9px; position: relative; }
+.c-br .c-redo::after, .c-br .c-undo:not(:has(+ .c-redo:not([hidden])))::after { content: ""; position: absolute; right: -6px; top: 10px; bottom: 10px; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; }
+.c-br .c-undo:not(:has(+ .c-redo:not([hidden]))) { margin-right: 9px; }
+
+/* == 2.1 The date card: arrows that never move ==
+   The words between the arrows keep one width for each zoom (variant.js measures the longest it can say), centered,
+   with a long line ending in an ellipsis instead of pushing Later along. Today is a chip of its own outside the card,
+   left of it on a wide window and under it on a narrow one. In the day view the kind of day takes the card's width
+   and never sets it (a long kind's name ends in an ellipsis), so the seven days hold the card, and its arrows, still */
+.c-tc.c-fixedwhen .k-when { flex: none; align-items: center; text-align: center; }
+.c-tc.c-fixedwhen .k-title, .c-tc.c-fixedwhen .k-sub { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.k-chip.c-todaychip { top: 0; right: calc(100% + 10px); left: auto; bottom: auto; transform: none; z-index: 31; }
+.c-todaychip .k-back { margin-left: 0; }
+@media (max-width: 759px) { .k-chip.c-todaychip { right: 0; top: calc(100% + 8px); } }
+.c-tc.c-dayview .c-kinds { width: 0; min-width: 100%; }
+.c-tc.c-dayview #kinds { max-width: 100%; min-width: 0; }
+.c-tc.c-dayview .kinds-pick { min-width: 0; max-width: 100%; }
+.c-tc.c-dayview .kinds-pick > span:not(.chev) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* (where the card starts at the window's left edge, the open Duo's left page, Today stands right of it) */
+@media (min-width: 760px) { .k-chip.c-todaychip.c-right { right: auto; left: calc(100% + 10px); } }
+
+/* == 2.2 A finger's targets: 44 px on a touch screen (the iPad, the open Duo) ==
+   The date card's arrows and its words, Today, the zoom switch and List, the bottom bar, the reset's chip, the kind of
+   day, and the stack strip were 38 tall; under a finger they're 44, and the chips around them grow with them */
+@media (pointer: coarse) {
+  .k-arrow { width: 44px; height: 44px; }
+  .c-tc .k-when { min-height: 44px; justify-content: center; }
+  .c-tc .k-back, .c-tr .k-seg button, .k .c-listbtn, .c-br .k-pill, .k .c-rchip, .c-kinds .kinds-pick, .k .c-stack, .c-spreadbar button { height: 44px; min-height: 44px; }
+  .k .c-stackx { width: 44px; }
+  .c-tc .kinds-allbtn { width: 44px; height: 44px; }
+  .c-nowsplit button:first-of-type::after, .k .c-listbtn::before { top: 12px; bottom: 12px; }
+}
+
+/* == 2.3 A gold dot on a day that needs a look ==
+   An overlap or a dinner still open: a small gold dot in the day's top corner, the color of an open question (on the
+   white of the day you're on, a deeper gold that still reads, 4.9 to 1). The day says why in its name and its tip */
+.c-days .daypill .dlook { position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--k-gold); pointer-events: none; }
+.c-days .daypill.on .dlook { background: #8C6A1E; }
+
+/* == 3.2 The kinds of day's list fits the window (variant.js sets its height to the room under the card) ==
+   Each row keeps its height and the list scrolls: a flex list held to the room would squeeze its rows shorter than their
+   words, and on the open Duo "Your usual" spilled off its white plate onto the dark list (the contrast gate) */
+.kinds-row { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.kinds-row > .kind, .kinds-row > .kind-wrap { flex-shrink: 0; }
+
+/* == 12 Quick add ==
+   12.1: on a phone (the iPhone, the folded Duo) its buttons stack: the gold one across the sheet, the quiet one under
+   it, then Adjust, so none is cut or off the screen. 12.3: the kind of time, one row of chips under the preview */
+@media (max-width: 600px) {
+  .quick-acts { flex-direction: column; align-items: stretch; }
+  .quick-acts > button { width: 100%; min-height: 44px; justify-content: center; white-space: normal; text-align: center; }
+}
+/* V11-2 (Grok's audit): a full day's ways on. The first way across the panel in gold, the others and Adjust in a row
+   under it, so a long way on never pushes Adjust off the panel; any row of buttons wraps before it spills */
+@media (min-width: 601px) {
+  .quick-acts { flex-wrap: wrap; }
+  .quick-acts.ways > .go { flex: 1 0 100%; }
+}
+.quick .quick-kinds { margin: -2px 0 0; gap: 6px; }
+.quick .quick-kinds .chip-btn { min-height: 34px; font-size: 13px; }
+@media (pointer: coarse) { .quick .quick-kinds .chip-btn { min-height: 44px; } }
+/* (on a phone the kinds of time are one row that scrolls sideways, so the sheet keeps its buttons in view) */
+@media (max-width: 600px) { .quick .quick-kinds { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-left: -2px; margin-right: -2px; padding: 2px; } .quick .quick-kinds::-webkit-scrollbar { display: none; } .quick .quick-kinds .chip-btn { flex: none; } }
+
+/* == 4.3 Done on the kinds of day is a quiet button: white fill means picked everywhere, and Done is an action == */
+.k .c-spreaddone { background: var(--sf-hover); color: var(--tx); }
+.k .c-spreaddone:hover { background: var(--sf-press); }
+
+/* == 3.3 Saving a kind: its blocks as rows with a check, and a Save button the width of the panel, 44 tall == */
+.side .c-kindrows .list-row { gap: 10px; }
+.side .c-kindrows .list-row small { margin-left: auto; color: var(--tx-2); font-size: 13px; white-space: nowrap; }
+.side .go.c-savekind { width: 100%; min-height: 44px; justify-content: center; }
+
+/* == 9.1 A picked pill keeps its white under the pointer ==
+   polish.css's hover rule loads after the picked rule with the same weight, so pointing at Home (picked) swapped its
+   white for the dark hover and its dark words vanished. Picked stays white, a shade greyer while pointed at */
+.k .c-stack.on, .k .c-stack.on:hover { background: var(--cream); color: var(--sf-ink); }
+.k .c-stack.on:hover, .k-pill[aria-pressed="true"]:hover { background: #E9E9EA; color: var(--sf-ink); }
+.k-seg.c-slide button[aria-pressed="true"]:hover { background: transparent; color: var(--sf-ink); }
+
+/* == 9.3 Words on the bar at the open Duo's width ==
+   Between a phone and a laptop (760 to 1000 wide) Add, To-dos, and Block library keep their words; This week's plan
+   steps into your menu there (its Plan heading has it), and Undo and Redo show their marks, named for a screen reader */
+@media (min-width: 760px) and (max-width: 1000px) {
+  body:not(.c-docked) .c-br .c-add > span, body:not(.c-docked) .c-br .c-todos > span:not(.k-count), body:not(.c-docked) .c-br .c-lib > span { display: inline; position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  body:not(.c-docked) .c-br .k-pill { padding: 0 12px; }
+  .k .c-rchip.plan { display: none !important; }
+}
+@media (max-width: 1179px) {
+  .c-br .c-undo > span, .c-br .c-redo > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .c-br .c-undo, .c-br .c-redo { padding: 0 12px; }
+}
+
+/* == 9.4 This week's plan reads like the pills beside it, not an underlined link == */
+.k .c-rchip.plan b { text-decoration: none; font-weight: 600; }
+
+/* == 9.2 An empty stack says so in its strip, with a way to add one, instead of an empty bench == */
+.k .c-stacksay { display: inline-flex; align-items: center; height: 38px; padding: 0 12px 0 14px; font-size: 14px; color: var(--tx-2); white-space: nowrap; }
+@media (pointer: coarse) { .k .c-stacksay { height: 44px; } }
+
+/* == 5.1 A way back to fit, in the Planner too ==
+   Zoomed in by a pinch or Ctrl and scroll, the Fit chip shows under the zoom switch, as it does in the reset (a tap on
+   the zoom you're on fits the desk as well, variant.js). Not in Now, whose day is always fitted, nor on a phone's day */
+body.c-deskzoomed:not(.k-today):not(.phone-desk):not(.phone):not(.c-detail):not(.c-sheet-aside) .k.c-fitchip { display: inline-flex; }
+@media (max-width: 759px) { body.c-deskzoomed:not(.c-resetting) .k.c-fitchip { top: 126px; } }
+
+/* == 13 Make a block ==
+   13.3: the usual lengths as tiles, with the stepper beside them for any other. 13.1: in the side panel, Add to Block
+   library stays at the panel's foot (the place panel's sticky foot). 13.2: its toast offers Put it on Thursday before
+   its Undo, two buttons of the same kind */
+.c-lenpick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.c-lenpick > .chips { flex: 0 1 auto; }
+.side .c-blockfoot .go.wide { width: 100%; min-height: 44px; justify-content: center; }
+.toast .toast-also + .toast-act { margin-left: 6px; }
+@media (pointer: coarse) { .toast-act { min-height: 44px; } }
+
+/* == 16 Find a free day and a free evening, under the month's name in Month and Year == */
+.c-tc.c-freeview { flex-direction: column; align-items: stretch; gap: 6px; padding: 6px 8px 8px; }
+.c-freerow { display: flex; gap: 6px; justify-content: center; }
+.c-freerow[hidden] { display: none; }
+.k .c-free { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--tx); background: var(--sf-raised); white-space: nowrap; }
+.k .c-free:hover { background: var(--sf-hover); }
+.k .c-free canvas { width: 14px !important; height: 14px !important; }
+@media (pointer: coarse) { .k .c-free { height: 44px; } }
+@media (max-width: 759px) { .k .c-free { font-size: 13px; padding: 0 10px; } }
+
+/* == 11.3 The place panel on a short phone (the folded Duo, 386 by 580) ==
+   The board keeps the top half (the sheet stops at 52 percent, sheet.css) and shows where the block lands; the panel
+   leaves out its day strip there, so the days and the steppers sit above Add without scrolling */
+@media (max-width: 600px) and (max-height: 700px) {
+  body.phone-desk #side .field:has(> .daystrip), body.phone #side .field:has(> .daystrip) { display: none; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero, body.phone #side:has(.daystrip) .bprev.hero { padding: 8px 14px; gap: 12px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero > canvas, body.phone #side:has(.daystrip) .bprev.hero > canvas { width: 24px; height: 24px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero .bprev-name, body.phone #side:has(.daystrip) .bprev.hero .bprev-name { font-size: 19px; }
+  body.phone-desk #side:has(.daystrip) .bprev.hero .bprev-time, body.phone #side:has(.daystrip) .bprev.hero .bprev-time { font-size: 13px; }
+}
+
+/* == 19.2 The desk page on a tablet: a sheet along the bottom, the board framed above it ==
+   (app.js sets body.drawer-sheet for The desk page on a window narrower than 1180 and taller than 700) */
+body.drawer-sheet .drawer { top: auto !important; bottom: 16px; left: 16px; right: 16px; width: auto !important; max-width: none; height: min(54%, 640px); }
+body.drawer-sheet .scrim { background: transparent !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+body.drawer-sheet .c-tl, body.drawer-sheet .c-tc, body.drawer-sheet .c-tr, body.drawer-sheet .c-bl, body.drawer-sheet .c-br,
+body.drawer-sheet .c-stackbar, body.drawer-sheet .c-steps, body.drawer-sheet .c-peek, body.drawer-sheet #side, body.drawer-sheet #btools, body.drawer-sheet #chip { visibility: hidden; }
+
+/* == 20.3 A picked block's tools on a phone's day: one row, the length as one stepper (app.js drawTools) == */
+#btools .tool-len { display: inline-flex; align-items: center; gap: 2px; }
+#btools .tool-len .tool-step { min-width: 44px; justify-content: center; padding-left: 0; padding-right: 0; }
+#btools .tool-len .tool-lenv { min-width: 56px; text-align: center; font-size: 14px; font-weight: 600; color: var(--tx); white-space: nowrap; }
+
+/* == 1.2: Getting started folded to its next thing, a card over the bottom bar on the right (variant.js sets its
+   bottom from the bar's height) == */
+.k-chip.c-gsfold { right: 16px; bottom: 74px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 320px; max-width: calc(100vw - 32px); padding: 10px 12px 12px 14px; border-radius: 18px; }
+.k-chip.c-gsfold[hidden] { display: none !important; }
+.c-gsfhead { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.c-gsfname, .c-gsfn { font-size: 13px; font-weight: 600; color: var(--tx-2, #CDCDCD); }
+.c-gsfn { font-variant-numeric: tabular-nums; }
+.k .c-gsfx { position: relative; display: grid; place-items: center; width: 36px; height: 36px; margin: -6px -4px -6px auto; padding: 0; border-radius: 50%; background: rgba(255, 240, 220, 0.1); cursor: pointer; }
+.k .c-gsfx::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+.k .c-gsfx:hover { background: rgba(255, 240, 220, 0.18); }
+.k .c-gsfx:active { transform: translateY(1px); }
+.c-gsfx canvas { width: 14px; height: 14px; }
+.c-gsfnext { margin: 0; font-family: 'Gabarito', var(--k-font); font-size: 16px; font-weight: 700; line-height: 1.3; color: var(--cream, #F6EEE2); }
+.c-gsfacts { display: flex; gap: 6px; }
+.c-gsfacts .k-pill { height: 44px; padding: 0 14px; border-radius: 12px; background: rgba(255, 240, 220, 0.1); }
+.c-gsfacts .k-pill:hover { background: rgba(255, 240, 220, 0.18); }
+.c-gsfacts .k-pill[hidden] { display: none; }
+body.c-away .c-gsfold { opacity: 0; pointer-events: none; }
+body.c-resetting .c-gsfold, body.onb-landing .c-gsfold { display: none !important; }
+
+/* == The side panel's corner (Oct 20, from Russell's to-do panel, where More sat over the x) ==
+   On the desk a panel's corner buttons, More and the x, stand in one row at its top right: both round, 36 px to the eye
+   and 44 px to a finger (a ring of hit area around each), 8 px apart, centered on the first line of the panel's title.
+   app.js cornerAt finds the title, sets --corner-y, and gives only the title room on its right (.c-cornered), so it
+   wraps before it runs under them and nothing else in the panel gives up width. One rule for every panel, in place of
+   each panel's own; the phone's header keeps Done (sheet.css).
+   They stay while the panel scrolls, so closing is one tap however far down you are, as the phone's sheet keeps Done
+   at its top (the same day, after Russell's round), and so do the title and the line under it (the panel's top,
+   below). For that the panel is a column on the desk: each button sticks where cornerAt puts it, 18 and 62 px from the
+   panel's right edge (--side-pr is the panel's own padding), and gives its height back in its margins, so the panel's
+   words start where they always did. A sticky top counts from inside the panel's padding, so theirs is --corner-mt,
+   the place less the padding, and the x's old right: 12px goes (sticky, it would hold the x 12 px inside the padding).
+   Both are solid, so whatever passes under them never shows through */
+body.feel:not(.phone):not(.phone-desk) #side { display: flex; flex-direction: column; }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore {
+  position: sticky; z-index: 4; float: none; flex: none; align-self: flex-end; top: var(--corner-mt, 0px); right: auto; left: auto;
+  width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0;
+  margin: var(--corner-mt, 0px) 0 calc(-36px - var(--corner-mt, 0px)) 0;
+}
+body.feel:not(.phone):not(.phone-desk) #side > .side-x { margin-right: calc(18px - var(--side-pr, 20px)); border-radius: 50%; background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x:hover { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore { margin-right: calc(62px - var(--side-pr, 20px)); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x canvas,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-dot canvas { width: 16px; height: 16px; }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn { position: relative; width: 36px; height: 36px; border-radius: 50%; }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-dot { width: 36px; height: 36px; background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn:hover .c-smore-dot,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn[aria-expanded="true"] .c-smore-dot { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }
+body.feel:not(.phone):not(.phone-desk) #side > .side-x::after,
+body.feel:not(.phone):not(.phone-desk) #side > .c-smore .c-smore-btn::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+/* (the title's room: the x reaches 32 px into the panel's words, and More and the gap 44 more, then 8 to the words) */
+body.feel:not(.phone):not(.phone-desk) #side .c-cornered { padding-right: 40px; }
+body.feel:not(.phone):not(.phone-desk) #side:has(> .c-smore:not(:empty)) .c-cornered { padding-right: 84px; }
+/* (the title and the kicker keep no room of their own for the x now, and the header row, Back and a flow's marks, takes
+   the panel's whole width unless it's what the corner sits beside) */
+body.feel:not(.phone):not(.phone-desk) #side .side-title:not(.c-cornered), body.feel:not(.phone):not(.phone-desk) #side .side-kicker:not(.c-cornered) { padding-right: 0; }
+body.feel:not(.phone):not(.phone-desk) #side.side .c-shead:has(.c-sback:not(:empty)):not(.c-cornered),
+body.feel:not(.phone):not(.phone-desk) #side.side .c-shead:has(.c-sgap:not(:empty)):not(.c-cornered) { margin-right: 0; }
+
+/* == The panel's top (Oct 20): the title and the line under it stay while the rest scrolls ==
+   cornerAt makes the header row (Back, a flow's marks) when it shows, the panel's words down to its title, and the line
+   under the title stick, each at the place it already sits (.c-pstick, its top in its style), and puts a plate under
+   them as tall as they are and a little more (.c-splate, shown by #side.c-plated, --plate-h): solid, the panel's color
+   (the glass over the desk, as the kinds list and the hover note are), so nothing that scrolls under shows through. It
+   carries the panel's own top edge, and a hairline under it once the panel has scrolled, as the phone's sheet has
+   under Done. Its margins give its height back, so nothing moves; a field you Tab to scrolls clear of it
+   (scroll-padding). The corner's buttons stand over it, the title over it, and the rest of the panel's words under
+   it. What sticks here wins over a header row's own place (todosheet.css keeps it relative, for its marks), hence the
+   important. The phone's sheet has its own header, so the plate is the desk's only */
+#side > .c-splate { display: none; }
+body.feel:not(.phone):not(.phone-desk) #side .c-pstick { position: sticky !important; z-index: 3; }
+body.feel:not(.phone):not(.phone-desk) #side.c-plated { scroll-padding-top: var(--plate-h, 0px); }
+body.feel:not(.phone):not(.phone-desk) #side.c-plated > .c-splate {
+  display: block; position: sticky; top: calc(0px - var(--side-pt, 20px)); z-index: 2; flex: none; align-self: stretch;
+  height: var(--plate-h, 0px);
+  margin: calc(0px - var(--side-pt, 20px)) calc(1px - var(--side-pr, 20px)) calc(var(--side-pt, 20px) - var(--plate-h, 0px)) calc(1px - var(--side-pl, 20px));
+  border-radius: var(--side-r, 0px) var(--side-r, 0px) 0 0;
+  background: var(--sf-solid);
+  box-shadow: inset 0 1px 0 var(--sf-edge);
+}
+body.feel:not(.phone):not(.phone-desk) #side.c-plated.scrolled > .c-splate { box-shadow: inset 0 1px 0 var(--sf-edge), 0 1px 0 var(--sf-edge); }
+/* (until the panel scrolls nothing is under it, so it's clear: the glass a little warm over the desk, #262322 over the
+   wood where the plate is #232325, shows as it always did, and the plate shows the moment words go under) */
+body.feel:not(.phone):not(.phone-desk) #side.c-plated:not(.scrolled) > .c-splate { background: transparent; box-shadow: none; }

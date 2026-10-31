@@ -1,0 +1,56 @@
+/* == V11-2: the list rides inside the block (docs/BIG-MOMENTS.md, C; mock screen 6) ==
+   Russell's night before a trip: the steps lived on the to-do, not in the block he was in. Now Today's band on the
+   desk and the phone's Now card carry the list of the to-do whose block you're in: a row a thing, a round check that
+   fills green, its name struck through in a real grey once it's in (never faded), Add a thing at the end, and the
+   block's Done (Done packing) as the one gold. A tick is its own undo: a tap again. app.js blockList, listDone. */
+.c-tick { margin: 0; }
+.c-tick-list { list-style: none; margin: 0; padding: 0; }
+.c-tick-row { border-bottom: 1px solid var(--sf-edge, rgba(255, 255, 255, 0.1)); }
+.c-tick-i { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; margin: 0; padding: 0 8px 0 0; border: 0; border-radius: 0; background: transparent; color: var(--tx, #FFFFFF); font: 500 16px/1.3 var(--k-font); text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.c-tick-ck { flex: none; width: 28px; height: 28px; margin-left: 8px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55); transition: background-color 0.12s ease-out, box-shadow 0.12s ease-out; }
+.c-tick-ck canvas { width: 16px; height: 16px; opacity: 0; }
+.c-tick-n { min-width: 0; overflow-wrap: anywhere; }
+.c-tick-i.got .c-tick-ck { background: var(--good, #8FD3B1); box-shadow: none; }
+.c-tick-i.got .c-tick-ck canvas { opacity: 1; }
+.c-tick-i.got .c-tick-n { color: var(--tx-2, #CDCDCD); font-weight: 400; text-decoration: line-through; text-decoration-color: #9A9AA0; text-decoration-thickness: 2px; }
+.c-tick-i:hover .c-tick-ck { box-shadow: inset 0 0 0 2px #FFFFFF; }
+.c-tick-i.got:hover .c-tick-ck { box-shadow: none; }
+@media (hover: hover) { .c-tick-i:not(.got):hover .c-tick-ck canvas { opacity: 1; } }
+.c-tick-i:active .c-tick-ck { transform: scale(0.92); }
+.c-tick-i:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; border-radius: 10px; }
+/* Add a thing: its plus where the checks are, the words typed in place */
+.c-tick-add { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.c-tick-add canvas { flex: none; width: 16px; height: 16px; margin-left: 14px; margin-right: 6px; }
+.c-tick-in { flex: 1; min-width: 0; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--tx, #FFFFFF); font: 500 16px var(--k-font); }
+.c-tick-in::placeholder { color: var(--field-hint, var(--tx-3, #AFAFAF)); opacity: 1; }
+.c-tick-in:focus { outline: none; }
+.c-tick-in:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 3px; border-radius: 10px; }
+
+/* the desk's band is wide: the things flow in columns, two rows at most with Add a thing among them (app.js blockList
+   folds the rest behind Show all 6 in the last place), 44 tall, so the board barely moves */
+body.k-today .band-in.listed { gap: 12px; }
+.c-tick.c-tick-band .c-tick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); column-gap: 16px; }
+.c-tick.c-tick-band .c-tick-i, .c-tick.c-tick-band .c-tick-add { min-height: 44px; }
+.c-tick-row.c-tick-more { display: flex; align-items: center; border-bottom: 0; }
+.c-tick-all { position: relative; flex: none; min-height: 44px; padding: 0 8px; border: 0; background: none; color: var(--tx-2, #CDCDCD); font: 600 14px/44px var(--k-font); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
+.c-tick-all:hover { color: var(--tx, #FFFFFF); }
+.c-tick-all:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; border-radius: 4px; }
+/* the band's chips for open time (your next thing, the library's ideas) are V11's quiet dark chip, the block's color a small
+   tile around the mark, so a yellow block's fill never reads as gold; in open time the gold is Start on your next thing (or
+   the first idea), as on the phone */
+body.feel .band-idea { background: rgba(255, 255, 255, 0.08); color: var(--tx, #FFFFFF); box-shadow: none; }
+body.feel .band-idea:hover { background: rgba(255, 255, 255, 0.15); transform: none; }
+body.feel .band-idea .band-tile { flex: none; width: 22px; height: 22px; margin-left: -4px; border-radius: 6px; display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2); }
+body.feel .band-idea .band-tile canvas { width: 14px; height: 14px; }
+body.feel .band-idea.gold { background: var(--k-gold, #F2CF7A); color: var(--sf-ink, #1C1C1E); }
+body.feel .band-idea.gold:hover { background: var(--gold-hi, #F7DA93); }
+/* Now's one gold on the desk's band (app.js goldNow, the phone's ranking): the block's own move, Focus in a to-do's first
+   ten minutes, then Done, Done packing, or Done early in its last 15; the reset chip goes quiet beside it */
+body.feel .band-btn.gold { background: var(--k-gold, #F2CF7A); color: var(--sf-ink, #1C1C1E); font-weight: 600; }
+body.feel .band-btn.gold:hover:not(:disabled) { background: var(--gold-hi, #F7DA93); }
+
+/* the phone's Now card: the list under the block, a step of air above and below it */
+.c-tick.c-tick-ph { margin: 12px 0 4px; }
+
+body.calm .c-tick-ck, body.calm .c-tick-i:active .c-tick-ck { transition: none; transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-tick-ck, .c-tick-i:active .c-tick-ck { transition: none; transform: none; } }

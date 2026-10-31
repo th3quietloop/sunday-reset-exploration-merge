@@ -1,0 +1,109 @@
+/* == V11-2: Focus, one thing at a time (Russell's pick, Oct 20: the Focus page comes back as a panel over the desk) ==
+   app.js focusPanel draws it in the side panel, the dark panel on the desk and the sheet on a phone, as the countdown
+   is; focus.js keeps the session. Pick one thing (the block you're in, bricks for what's due soon, Find another to-do,
+   an activity in your own words), then how long (lengths as choices, white when picked, and Start, the one gold, at
+   the foot), then the session: the mark and the name, a bar of segments in a pale frame that wears down to now, the
+   time left in words, Pause. Names in Gabarito, the rest in Onest, at the eight sizes; one rhythm down it: 4, 8, 12,
+   16, 24. Nothing moves but the wear, and that has no transition, so calmer motion has nothing to finish */
+
+/* the labels over each kind of pick, as the countdown's are */
+.c-fc-lbl { margin: 24px 0 0; font: 700 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3); }
+.side-in > .c-fc-lbl { margin-bottom: -8px; }
+
+/* a thing as a brick: its color, its mark in a socket, its name, and a line under it */
+.c-fc-brick { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--ink, #FFFFFF); }
+.c-fc-mk { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: rgba(0, 0, 0, 0.14); }
+.c-fc-mk canvas { width: 18px; height: 18px; }
+.c-fc-bw { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.c-fc-bn { font: 700 16px/1.25 var(--name); overflow-wrap: anywhere; }
+.c-fc-bs { font: 500 13px/1.3 var(--k-font); font-variant-numeric: tabular-nums; }
+
+/* a pick is a button the shape of its brick */
+.c-fc-pick { display: block; width: 100%; padding: 0; border: 0; border-radius: 14px; background: none; text-align: left; cursor: pointer; font: inherit; }
+.c-fc-pick > .c-fc-brick { border-radius: 14px; background: var(--c); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -3px 0 rgba(0, 0, 0, 0.22); transition: transform 0.16s var(--f-out), filter 0.15s ease-out; }
+.c-fc-pick:hover > .c-fc-brick { filter: brightness(1.06); }
+.c-fc-pick:active > .c-fc-brick { transform: translateY(1px); }
+/* (the ring is the button's own, round as its brick, so it's where a ring is looked for) */
+.c-fc-pick:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.c-fc-row { border-radius: 12px; }
+/* the block you're in: the whole width, a block's height */
+.c-fc-now > .c-fc-brick { min-height: 64px; padding: 10px 14px; box-sizing: border-box; }
+/* due soon: bricks that wrap, a little smaller */
+.c-fc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.c-fc-chip { width: auto; max-width: 100%; }
+.c-fc-chip > .c-fc-brick { min-height: 52px; padding: 8px 14px 8px 8px; box-sizing: border-box; gap: 10px; }
+.c-fc-chip .c-fc-mk { width: 28px; height: 28px; border-radius: 8px; }
+.c-fc-chip .c-fc-mk canvas { width: 16px; height: 16px; }
+.c-fc-chip .c-fc-bn { font-size: 14px; }
+.c-fc-chip .c-fc-bs { font-size: 12px; }
+
+/* Find another to-do: a quiet button, then a box and the list it finds, as rows on the panel */
+.c-fc-find { align-self: flex-start; min-height: 44px; }
+.c-fc-found { display: flex; flex-direction: column; gap: 4px; margin-top: -8px; }
+.c-fc-row > .c-fc-brick { min-height: 52px; padding: 8px 12px 8px 8px; box-sizing: border-box; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); }
+.c-fc-row:hover > .c-fc-brick { filter: none; background: var(--sf-hover); }
+.c-fc-row .c-fc-mk { width: 28px; height: 28px; border-radius: 8px; background: var(--c); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22); }
+.c-fc-row .c-fc-mk canvas { width: 16px; height: 16px; }
+.c-fc-row .c-fc-bn { font: 600 15px/1.3 var(--k-font); }
+.c-fc-row .c-fc-bs { color: var(--tx-2); }
+.c-fc-none { margin: 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); }
+
+/* or an activity in your own words: the box, Next beside it, and what it won't do */
+.c-fc-ownrow { display: flex; gap: 8px; align-items: stretch; }
+.c-fc-ownrow .input { flex: 1; min-width: 0; min-height: 48px; box-sizing: border-box; }
+.c-fc-next { flex: none; min-height: 48px; padding: 0 16px; }
+.c-fc-note { margin: 8px 0 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-2); }
+
+/* how long: the thing as it'll be, then the lengths, white when picked */
+.c-fc-hero { min-height: 64px; padding: 10px 14px; box-sizing: border-box; border-radius: 14px; background: var(--c); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+.c-fc-lens { display: flex; flex-direction: column; gap: 8px; }
+.c-fc-len { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 56px; padding: 9px 14px; box-sizing: border-box; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); text-align: left; cursor: pointer; transition: background-color 0.15s ease-out, transform 0.16s var(--f-out); }
+.c-fc-len b { font: 600 16px/1.3 var(--k-font); }
+.c-fc-len span { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+.c-fc-len:hover { background: var(--sf-hover); }
+.c-fc-len:active { transform: translateY(1px); }
+.c-fc-len[aria-checked="true"] { background: #FFFFFF; box-shadow: none; color: var(--sf-ink); }
+.c-fc-len[aria-checked="true"] span { color: #3A3A3C; }
+.c-fc-len:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* the session: its head is a to-do's (todosheet.css), a line under the name, the bar, the time left. A panel with a
+   to-do's head lays its rows out with no gap (todosheet.css), so the session keeps its own rhythm */
+.c-ts-head.c-fc-head { align-items: flex-start; }
+.c-fc-head ~ .c-fc-bar { margin-top: 24px; }
+.c-fc-head ~ .c-fc-time, .c-fc-head ~ .c-fc-ask { margin-top: 12px; }
+.c-fc-head ~ .c-fc-acts { margin-top: 16px; }
+.c-fc-head ~ .c-fc-stop { margin-top: 8px; }
+.c-fc-head ~ .c-sfoot { margin-top: 16px; }
+.c-fc-hw { flex: 1; min-width: 0; }
+.c-fc-hw .c-ts-hname { margin-top: 4px; }
+.c-fc-state { margin: 4px 0 0; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+/* the bar: a segment for each five minutes in a pale frame, each wearing its color as the time goes */
+.c-fc-bar { display: flex; gap: 4px; padding: 6px; border-radius: 14px; background: #F2EEE6; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12); }
+.c-fc-seg { position: relative; flex: 1; height: 18px; border-radius: 7px; overflow: hidden; background: #D9D2C5; }
+.c-fc-seg::after { content: ''; position: absolute; inset: 0; transform-origin: left center; transform: scaleX(var(--f, 0)); background: var(--c); }
+.c-fc-time { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; }
+.c-fc-left { font: 800 26px/1.15 var(--name); letter-spacing: -0.01em; color: var(--tx); font-variant-numeric: tabular-nums; }
+.c-fc-until { font: 500 14px/1.4 var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; }
+.c-fc-ask { margin: 0; font-size: 16px; font-weight: 600; }
+.c-fc-acts, .c-fc-after { display: flex; flex-wrap: wrap; gap: 8px; }
+/* (quiet, but a button to the eye: the panel's raised step, as the band's buttons are) */
+.c-fc-acts .small, .c-fc-after .small, .side .small.c-fc-find { min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx); }
+.c-fc-acts .small:hover, .c-fc-after .small:hover, .side .small.c-fc-find:hover { background: var(--sf-hover); }
+.c-fc-after { flex-direction: column; }
+.c-fc-after .small { justify-content: flex-start; width: 100%; }
+/* Stop without finishing: words, quiet, last */
+.c-fc-stop { align-self: flex-start; min-height: 44px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; color: var(--tx-2); font: 500 14px var(--k-font); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(205, 205, 205, 0.5); cursor: pointer; }
+.c-fc-stop:hover { color: var(--tx); background: var(--sf-hover); }
+.c-fc-stop:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 0; }
+/* done: Next with the to-do as a small brick */
+.c-fc-after .c-fc-next-up, .c-fc-after [data-fk="fc-next"] { display: flex; align-items: center; gap: 10px; }
+.c-fc-nw { font: 600 14px var(--k-font); }
+.c-fc-inline { padding: 4px 10px 4px 4px; border-radius: 9px; background: var(--c); min-width: 0; }
+.c-fc-inline .c-fc-mk { width: 24px; height: 24px; border-radius: 7px; }
+.c-fc-inline .c-fc-mk canvas { width: 14px; height: 14px; }
+.c-fc-inline .c-fc-bn { font: 600 13px/1.25 var(--k-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+/* calmer motion: nothing lifts or sinks */
+body.calm .c-fc-pick > .c-fc-brick, body.calm .c-fc-len { transition: none; }
+body.calm .c-fc-pick:active > .c-fc-brick, body.calm .c-fc-len:active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .c-fc-pick > .c-fc-brick, .c-fc-len { transition: none; } }

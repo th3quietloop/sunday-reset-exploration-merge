@@ -49,6 +49,9 @@
      fit flies home, the block in hand casts a shadow and sways, and panels, tools, and toasts move too.
      Only a version whose page carries the class `feel` has it; every other version is as it was. */
   const FEEL = document.body.classList.contains('feel');
+  /* V11 Halloween (Oct 31, docs/V11-HALLOWEEN.md): the Stageshow pass. Only the page with the class v-corners11-halloween has
+     it; V11-2 builds from this same source and stays as it was */
+  const HW = document.body.classList.contains('v-corners11-halloween');
   /* V11: the Moving step goes after the meals step, in this version only (stepsNow shows it when useMove) */
   if (FEEL && D.MOVE_STEP && !D.STEPS.some((s) => s.key === 'move')) D.STEPS.splice(D.STEPS.findIndex((s) => s.key === 'dinners') + 1, 0, D.MOVE_STEP);
   /* V11 goals: the Goals step goes after To-dos, in this version only (stepsFor shows it while a goal is in play) */

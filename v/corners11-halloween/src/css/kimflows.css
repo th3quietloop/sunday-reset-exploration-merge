@@ -1,0 +1,41 @@
+/* Kim's test (Oct 20, docs/KIM-TEST.md): the setup's flows. K8 who does each drop off and pick up, K12 the app's own
+   day picker on See further ahead, K13 Every day on a to-do, K22 the quick start, K23 the sample week as a clear
+   choice on the welcome. One gold per screen: everything here is quiet, white fill means picked. */
+
+/* K22, K23: the welcome's two second choices, side by side under the gold button */
+.onb-alts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.sheet.onb.welcome .onb-alt { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 56px; padding: 8px 10px; border: 0; border-radius: 14px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.32); color: #FFFFFF; text-align: center; cursor: pointer; }
+.sheet.onb.welcome .onb-alt:hover { background: var(--sf-hover); }
+.sheet.onb.welcome .onb-alt:active { transform: translateY(1px); }
+.sheet.onb.welcome .onb-alt:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+.sheet.onb.welcome .onb-alt b { font: 700 14px/1.25 var(--font); color: #FFFFFF; }
+.sheet.onb.welcome .onb-alt small { font: 500 13px/1.3 var(--font); color: var(--tx-2); }
+
+/* K22: the quick start names itself where the four parts would be */
+.onb-quick-k { display: block; font: 700 13px/1.4 var(--font); color: var(--tx-2); letter-spacing: 0.02em; }
+.onb-qchips { flex-wrap: wrap; }
+.sheet.onb .onb-qchips .chip-btn, .sheet.onb .onb-who .chip-btn { min-height: 44px; padding: 0 14px; font: 600 14px var(--font); }
+
+/* K8: a time and who does it, side by side where there's room */
+.onb-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.onb-who { display: flex; flex-wrap: wrap; gap: 6px; }
+.onb-kidday { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.onb-kidday .onb-trow-k { font: 700 14px var(--font); color: #FFFFFF; }
+.dcard.onb-kid { gap: 12px; }
+
+/* K13: Every day, at the end of a to-do's row */
+.onb-todo-row { flex-wrap: wrap; }
+.onb-todo-row .onb-words { flex: 1 1 140px; min-width: 0; }
+.sheet.onb .onb-part .chip-btn.onb-daily { flex: none; min-height: 44px; padding: 0 14px; font: 600 14px var(--font); }
+
+/* K12: the day picker inside the setup, the same as in a goal's panel */
+.onb-dp { max-width: 360px; }
+#sheet .c-dp-arrow { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+#sheet .c-dp-arrow canvas { width: 16px; height: 16px; }
+#sheet .c-dp-arrow:hover:not(:disabled) { background: var(--sf-hover); }
+#sheet .c-dp-arrow:active:not(:disabled) { transform: translateY(1px); }
+#sheet .c-dp-arrow:disabled { cursor: default; visibility: hidden; }
+#sheet .c-dp-arrow:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+#sheet .c-dp-cell { min-height: 44px; padding: 0; justify-content: center; }
+#sheet .c-dp-cell .dn { font-size: 16px; }
+#sheet .c-dp-cell:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }

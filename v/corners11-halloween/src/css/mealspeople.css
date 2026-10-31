@@ -1,0 +1,116 @@
+/* V11 round two: meals and people across the app. Who's cooking is anyone at home, Meals in place of
+   Dinners, one grocery list, Moving outside the reset, and who lives with you. */
+
+/* This week's plan: breakfasts and lunches planned on the meal board, in one line under the nights */
+.c-pmore { margin: 8px 0 0; font-size: 13px; line-height: 20px; color: var(--tx-2); }
+
+/* Settings, More people: family say whether they live with you (white fill means it's on) */
+.pp-home { position: relative; flex: none; min-height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx-2); font: 600 13px var(--k-font, var(--font)); cursor: pointer; }
+.pp-home::after { content: ''; position: absolute; inset: -6px -2px; }
+.pp-home:hover { background: var(--sf-hover); color: var(--tx); }
+.pp-home[aria-pressed='true'] { background: #FFFFFF; box-shadow: none; color: #1C1D1F; }
+.pp-home:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+.pp-home:active { transform: translateY(1px); }
+/* the switch's box: empty when they live elsewhere, checked when they live with you */
+.pp-home { display: inline-flex; align-items: center; gap: 8px; }
+.pp-home-box { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--tx-2); }
+.pp-home[aria-pressed='true'] .pp-home-box { box-shadow: inset 0 0 0 1.5px #1C1D1F; }
+.pp-home-box canvas { width: 12px !important; height: 12px !important; }
+
+/* Moving as a side panel: the step's own cards, stacked, with room between them, and the step's controls
+   (people.css styles them inside the tray and Settings) */
+#side .mv-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+#side .mv-panel .mv-sug { margin-top: 0; }
+#side .mv-panel .rsec { margin: 4px 0 0; }
+#side .mv-panel .rsec-row { flex-wrap: wrap; gap: 8px; }
+#side .mv-panel .rsec-row > .tile { flex: 0 0 calc(50% - 4px); width: auto; max-width: calc(50% - 4px); min-width: 0; min-height: 80px; }
+#side .mv-unit { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: transparent; color: var(--tx-2); font: 500 14px var(--k-font, var(--font)); cursor: pointer; }
+#side .mv-unit:hover { background: var(--sf-hover); color: var(--tx); }
+#side .mv-unit[aria-pressed='true'] { background: #FFFFFF; color: var(--sf-ink, #1C1D1F); font-weight: 600; }
+#side .mv-unit:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+#side .mv-add { flex: none; min-width: 64px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: var(--sf-raised); color: var(--tx); box-shadow: inset 0 0 0 1px var(--sf-edge); font: 600 14px var(--k-font, var(--font)); cursor: pointer; }
+#side .mv-add:hover { background: var(--sf-hover); }
+#side .mv-add:active, #side .mv-unit:active { transform: translateY(1px); }
+#side .mv-add:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+
+/* On a phone a panel fills the bottom of the screen, so while one is open its toasts sit at the top, over
+   the day's header, never over the panel's next answer (the dinner panel's second row of cooks) */
+body.phone:has(#side:not([hidden])) #toasts, body.phone-desk:has(#side:not([hidden])) #toasts { top: max(12px, env(safe-area-inset-top)); bottom: auto !important; }
+
+/* Your time: the line that says where workouts went sits with the other notes under Your blocks */
+.yt-hd .yt-moving canvas { width: 14px; height: 14px; flex: none; }
+
+/* == round three (Oct 14) == */
+/* who's cooking on This week's plan and the finish: gold is the one call to action, so your own tag is a
+   neutral ring; others keep lilac */
+.c-who.me { background: var(--sf-raised); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.4); color: var(--tx); }
+
+/* the meal board's More below: each column that scrolls keeps a strip under it for the button (the button's
+   36 px and 8 px), so the button sits below the rows, never on a meal, a chip, or the groceries' count */
+.c-meals .c-meal-main.c-more-room, .c-meals .c-meal-scroll.c-more-room { margin-bottom: 44px; }
+.c-mat.c-meals .c-mat-in.c-more-room { height: calc(100% - 44px); }
+.c-mat.c-meals.c-onphone .c-mat-in.c-more-room { height: calc(100% - 44px - env(safe-area-inset-bottom)); padding-bottom: 14px; }
+/* with the button in its own strip, the fade at the foot is short, so the last row above it still reads */
+.c-meals .c-more-room.c-more-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+/* on a computer the board leaves the groceries' head and first lines in view above the strip (the rows
+   still grow to fit their longest name) */
+@media (min-width: 1100px) {
+  .c-meals .c-mealgrid > .c-mcell { min-height: clamp(76px, calc((100vh - 560px) / var(--rows, 3)), 150px); }
+}
+
+/* the type scale (12, 13, 14, 16, 19, 22, 26, 30) on the meal board, a meal's own mat, and This week's plan */
+.c-mat.c-meals .c-mat-head h2, .c-mat.c-detail .c-mat-head h2 { font-size: 30px; }
+.c-mat.c-meals .c-go, .c-mat.c-detail .c-go { font-size: 16px; }
+.c-meals .c-meal-side .c-dblock b { font-size: 14px; }
+.c-meals .c-mhead span { font-size: 19px; }
+.c-meals .c-mealgrid.c-tall .c-mhead span { font-size: 16px; }
+.c-mpop-head b { font-size: 16px; }
+@media (max-width: 759px) {
+  .c-mat.c-meals .c-mat-head h2, .c-mat.c-detail .c-mat-head h2 { font-size: 26px; }
+}
+/* a narrow phone keeps the title on one line beside Done */
+@media (max-width: 380px) {
+  .c-mat.c-meals .c-mat-head h2, .c-mat.c-detail .c-mat-head h2 { font-size: 22px; }
+}
+/* the plan is laid out like the finish, and its words take the finish's sizes: names and titles in
+   Gabarito, the big number at 30, a row's name as a to-do's (16), the lines in the side cards at 14 */
+.k-sheet.c-plan .k-lede { font-size: 16px; }
+.c-plan-acts .c-go, .c-plan-acts .c-ghost { font-size: 16px; }
+.c-pcard h3 { font: 600 19px/1.25 var(--name); }
+.c-kbig { font: 700 30px/1.1 var(--name); letter-spacing: -0.01em; }
+.c-pname { font-size: 16px; }
+.c-pbody, .c-pcard.kept p { font-size: 14px; }
+
+/* The cook tag on a meal: the name stays inside the tag and ends in an ellipsis. The tag's old grid look
+   (place-items: center) still centered its block child, so a long name ran out of both sides */
+.c-meals .c-cook { justify-items: stretch; text-align: left; }
+.c-meals .c-cook-name { justify-self: stretch; min-width: 0; }
+/* the dish's name keeps 4 px clear above the tag, and the row grows to fit rather than the tag covering it */
+.c-meals .c-mcell .c-dblock.c-in-cell:has(.c-cook), .c-meals .c-mealgrid.c-tall .c-mcell .c-dblock:has(.c-cook) { padding-bottom: 30px; }
+
+/* == round three, after the check (Oct 14) == */
+/* a name whose longest word doesn't fit its block steps down to 12 px (fitNames measures it), so Leftovers
+   never breaks as Leftover and s */
+.c-meals .c-mealgrid .c-mcell .c-dblock > b.c-fit12 { font-size: 12px; }
+/* from 1100 to 1279 wide the board and the meals sit side by side with little room: the meals' column and
+   the row names give the days some of theirs, so a day is about 70 px or more and a name or a cook's tag
+   isn't cut (352, with Leave out a little snugger, still shows the whole of Find or add a meal) */
+@media (min-width: 1100px) and (max-width: 1279px) {
+  .c-meal-body { grid-template-columns: minmax(0, 1fr) 352px; gap: 20px; }
+  .c-meals .c-libsearch .c-leavebtn { padding: 0 12px; gap: 6px; }
+  .c-meals .c-mealgrid:not(.c-tall) { grid-template-columns: 80px repeat(7, minmax(0, 1fr)); gap: 4px; padding: 10px; }
+  .c-meals .c-mealgrid:not(.c-tall) .c-mrow { padding: 8px 6px; }
+}
+/* on a phone (or any touch screen) every control on the meal board and a meal's day card is 44 px to tap:
+   pills, tabs, and meals grow to 44 tall; the round and square buttons keep the size you see and reach past
+   their edge */
+@media (max-width: 759px), (pointer: coarse) {
+  .c-meals .c-pill.c-check, .c-meals .c-sugbtn, .c-meals .c-again, .c-mat .k-seg.c-for button, .c-meals .c-pastfold,
+  .c-meals .c-meal-side .c-dblock.c-piece, .c-meals .c-way, .c-mpop .c-opt { min-height: 44px; }
+  .k .c-weekbtn, .c-weekbtn, .k .c-mpop-x, .c-mpop-x { position: relative; z-index: 1; }
+  .c-weekbtn::after, .c-mpop-x::after { content: ''; position: absolute; inset: -4px; }
+  /* the days a meal is also on: 40 wide, 5 apart, each reaching 2 px past its edge, so no two overlap */
+  .k .c-opt.c-dayopt, .c-opt.c-dayopt { position: relative; width: 40px; min-width: 40px; }
+  .c-opt.c-dayopt::after { content: ''; position: absolute; inset: -2px; }
+  .c-more::after { content: ''; position: absolute; inset: -4px 0; }
+}

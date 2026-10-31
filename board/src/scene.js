@@ -40,6 +40,8 @@
      bit, and lands with a knock at the moment it touches; the camera and the boards ease in and out.
      Every other version moves as it always did. */
   const FEEL = !!(root.document && root.document.body && root.document.body.classList.contains('feel'));
+  /* V11 Halloween (docs/V11-HALLOWEEN.md): the Stageshow pass, on the page with the class v-corners11-halloween only */
+  const HW = !!(root.document && root.document.body && root.document.body.classList.contains('v-corners11-halloween'));
   /* a critically damped spring: x heads for `to` and keeps its speed from one frame to the next, so a
      new target never jolts it; it settles in about 4.7 / w seconds */
   function spring(x, v, to, w, dt) {

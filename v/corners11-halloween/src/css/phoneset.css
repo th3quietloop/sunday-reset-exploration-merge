@@ -1,0 +1,65 @@
+/* == V11: Settings on the phone (docs/PHONE-REDESIGN.md, 10; board/src/app.js buildDrawer, setValue, smartPage) ==
+   Under 760 wide the list and a page take turns. The list is the overview: Settings in the name type, Find a
+   setting, then grouped rows under their section names in sentence case, each row saying how it's set (Sun 7 pm, 1,
+   On, a gold dot with Back up). A page has ‹ Settings on the left and Done on the right, its title, its groups, and
+   who it's for as its last line. One sheet, solid, from the bottom edge, like every other sheet on the phone. Type at
+   12, 13, 14, 16, 22, and 26; every row 52 tall, every control 44 or more. */
+/* (Done is the corner's word on a phone only; the desk keeps its x) */
+#drawer-x .c-sx-done { display: none; }
+@media (max-width: 760px) {
+  /* -- the sheet: the same edge and shadow as every sheet on the phone (no hairline down its sides, which the bar
+     that stays at the top would cut) -- */
+  body.feel .drawer { left: 0 !important; right: 0 !important; bottom: 0 !important; top: calc(env(safe-area-inset-top, 0px) + 12px) !important; width: auto; max-width: none; border-radius: 28px 28px 0 0; background: var(--sf-sheet, #1E1F23) !important; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 1px 0 var(--sf-edge), 0 -12px 40px -12px rgba(0, 0, 0, 0.55) !important; }
+  body.feel #drawer-x { z-index: 5; top: 8px; right: 8px; width: auto; min-width: 44px; height: 44px; padding: 0 14px; border-radius: 12px; background: transparent !important; color: var(--tx); }
+  body.feel #drawer-x canvas { display: none; }
+  body.feel #drawer-x .c-sx-done { display: inline; font: 600 16px var(--k-font); color: var(--tx); }
+  body.feel #drawer-x:hover { background: var(--sf-hover) !important; }
+  body.feel #drawer-x:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -2px; }
+
+  /* -- the list: the name, Find a setting, and grouped rows. The name stays, solid, level with Done, while the rows
+     scroll under it (nothing above it in the scroller, so it sticks where it stands) -- */
+  body.feel .set-nav { gap: 0; padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 24px); border-radius: 0; background: transparent; }
+  body.feel .set-nav .side-title { position: sticky; top: 0; z-index: 2; margin: 0 -16px; padding: 16px 80px 14px 20px; background: var(--sf-sheet, #1E1F23); font: 800 26px/1.15 var(--name); letter-spacing: -0.01em; }
+  body.feel .set-find { min-height: 44px; padding: 0 12px; border-radius: 12px; background: var(--sf-raised); }
+  body.feel .set-find .find-in { min-height: 44px; padding: 0; font: 500 16px var(--k-font); color: var(--tx); }
+  body.feel .set-find .find-in::placeholder { color: var(--field-hint, var(--tx-3)); opacity: 1; }
+  body.feel .set-find:focus-within { box-shadow: inset 0 0 0 2px #FFFFFF; }
+  body.feel .set-nav .set-group { display: flex; flex-direction: column; gap: 0; margin-top: 22px; }
+  body.feel .set-nav .set-gh { margin: 0 0 8px 12px; padding: 0; font: 600 12px/16px var(--k-font); letter-spacing: 0; text-transform: none; color: var(--tx-3); }
+  body.feel .set-nav .set-link { position: relative; gap: 14px; min-height: 52px; padding: 8px 14px 8px 12px; border-radius: 0; background: var(--sf-raised); color: var(--tx); font: 500 16px/1.25 var(--k-font); }
+  body.feel .set-nav .set-gh + .set-link, body.feel .set-nav .set-group > .set-link:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+  body.feel .set-nav .set-group > .set-link:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+  body.feel .set-nav .set-link + .set-link::before { content: ''; position: absolute; top: 0; left: 56px; right: 0; height: 1px; background: var(--sf-edge); }
+  /* (the mark: white, 16, on a 30 tile with corners of 8) */
+  body.feel .set-nav .set-link > canvas:first-child { box-sizing: border-box; width: 30px; height: 30px; padding: 7px; border-radius: 8px; background: var(--sf-hover); }
+  body.feel .set-nav .set-link:hover { background: var(--sf-hover); color: var(--tx); }
+  body.feel .set-nav .set-link:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -3px; }
+  body.feel .set-nav .set-link > .grow { flex: 1; min-width: 0; }
+  body.feel .set-nav .set-link > canvas:last-child { width: 14px; height: 14px; }
+  body.feel .set-nav .set-link small { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); }
+  .c-set-val { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font: 500 14px var(--k-font); color: var(--tx-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .c-set-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--k-gold, #F2CF7A); }
+
+  /* -- a page: ‹ Settings in a bar that stays, level with Done, then its title, its groups, and who it's for last -- */
+  body.feel .setwrap.open .set-page { gap: 12px; padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 28px); }
+  body.feel .c-set-bar { position: sticky; top: 0; z-index: 2; flex: none; display: flex; margin: 0 -16px; padding: 8px 16px 4px 8px; background: var(--sf-sheet, #1E1F23); }
+  body.feel .set-back { align-self: flex-start; min-height: 44px; margin: 0; padding: 0 10px 0 6px; border-radius: 12px; background: transparent; color: var(--tx); font: 500 16px var(--k-font); box-shadow: none; }
+  body.feel .set-back canvas { width: 16px; height: 16px; }
+  body.feel .set-back:hover { background: var(--sf-hover); }
+  body.feel .set-head { padding-right: 0; }
+  body.feel .set-h { font: 800 22px/1.2 var(--name); }
+  body.feel .set-scope.set-foot { margin: 12px 0 0; padding: 0; font: 500 13px/1.4 var(--k-font); color: var(--tx-3); }
+  body.feel .set-scope.set-foot::before { display: none; }
+}
+
+/* -- Smart breakdowns, at any width: the switch, what's sent, the policy, and who reads it -- */
+.set-page .c-set-sw { display: flex; }
+.set-page .c-set-group { display: flex; flex-direction: column; border-radius: 16px; background: var(--sf-raised); overflow: hidden; }
+.c-set-line { position: relative; margin: 0; padding: 14px 16px; font: 500 14px/1.4 var(--k-font); color: var(--tx); }
+.c-set-line + .c-set-line::before, .c-set-line + .c-set-link-out::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--sf-edge); }
+.set-page a.c-set-link-out { position: relative; display: flex; align-items: center; gap: 12px; min-height: 52px; margin: 0; padding: 0 14px 0 16px; color: var(--tx); font: 600 16px var(--k-font); text-decoration: none; }
+.set-page a.c-set-link-out .grow { flex: 1; min-width: 0; }
+.set-page a.c-set-link-out canvas { width: 14px; height: 14px; flex: none; }
+.set-page a.c-set-link-out:hover { background: var(--sf-hover); }
+.set-page a.c-set-link-out:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: -3px; }
+.set-page .c-set-after { margin: -4px 0 0; padding: 0 16px; font: 500 13px/1.4 var(--k-font); color: var(--tx-3); }

@@ -1,0 +1,85 @@
+/* == V11: contrast, measured on screen (docs/CONTRAST.md) ==
+   Every word passes 4.5 to 1 (3 to 1 when it's large: 24 px, or 18.66 px bold), and every edge, ring, and
+   selected state that has to be seen passes 3 to 1, as drawn, at every size: scripts/gate/contrast.mjs (npm
+   run contrast) walks every screen and measures them over the real pixels behind them, and
+   tests/contrast.test.mjs holds these tokens without a browser. What steps back takes a real color that
+   still passes, never alpha. This file loads after polish.css (the surface system), so the board's own rules
+   and V11's read these tokens; each fix says what it read before. */
+:root {
+  /* words on the phone's desk (the list's gradient, #C99D66 down to #B08250): near black brown, since its
+     darkest end under the bottom bar's shadow, and Earlier's darker chip on it, took the browns that were
+     there (#34230F, #3F2A12, #4A3418) down to 3.6 to 4.3 to 1 */
+  --desk-ink: #1E1408;
+  /* a focus ring on light wood and on the phone's desk, where white read 2.0 to 2.8 to 1 */
+  --ring-dark: #1E1408;
+  /* a field's edge: 3 to 1 on the surface, a raised row, and the phone's bars (white at 14 to 16 percent read
+     1.8 to 2.0 to 1; this reads 4.1 to 4.6); the meal board's fields on its leather take more, below */
+  --field-edge: rgba(255, 255, 255, 0.42);
+  /* a placeholder: the quiet grey, since the faint grey falls to 4.0 to 1 in a field on a raised row over the
+     palest board (tests/contrast.test.mjs; on the screens walked, every placeholder read 5.1 or more) */
+  --field-hint: var(--tx-3);
+  /* a switch: on is a brighter teal and off a track you can see, each 3 to 1 on its row (raised, and hovered),
+     with the white knob 3 to 1 on both (the board's teal read 2.3 to 1 on the row, and the off track 1.9) */
+  --switch-on: #349E92;
+  --switch-off: rgba(255, 255, 255, 0.42);
+}
+
+/* == words on the phone's desk: the list's times, open time, Bed, and Earlier == */
+.td-time, .td-open, .td-bed, .td-bed small, .td-earlier { color: var(--desk-ink); }
+/* free time in the list is drawn on the desk itself (no block under its words), so its words are the desk's too: its
+   own brown, #3F2A12, read 4.2 to 1 low on the gradient (V11-2's walk: a free evening under a long question) */
+.td-block.free { color: var(--desk-ink); }
+/* Earlier's plate is a pale wash on the desk, not a darker one: dark at 12 percent took the gradient's dark end
+   down to where even near black read 4.4 to 1; pale at 20 percent keeps it 6 to 1 or more all the way down */
+.td-earlier { background: rgba(255, 248, 236, 0.2); }
+.td-earlier:focus-visible { outline-color: var(--ring-dark); }
+/* a block's ring sits on the desk around it, so it's the dark ring there */
+.td-block:focus-visible { outline-color: var(--ring-dark); }
+
+/* == fields: an edge you can see, and a placeholder that reads == */
+.input, .quick-in { border-color: var(--field-edge); }
+.c-find { border-color: var(--field-edge); }
+/* the meal board's search sits on the leather: its edge is drawn over its own dark fill, so it takes white at 55
+   percent to clear 3 to 1 on the leather (3.4 to 3.9; it read 1.5 to 1.7), and a day's meal field on the board
+   takes it too (5.4 to 5.9; it read 1.4) */
+.c-mat .c-find { border-color: rgba(255, 255, 255, 0.55); }
+/* (the grocery list's add row, its edge and its rings, is rituals.css's own: since Oct 20 the list is on the meal
+   board's dark, meals.css, so its field's edge is the light grey and its rings are white) */
+.input::placeholder, .quick-in::placeholder { color: var(--field-hint); }
+
+/* == switches == */
+.sw-track { background: var(--switch-off); }
+.switch[aria-checked="true"] .sw-track { background: var(--switch-on); }
+
+/* == focus rings the browser drew (a check box, a summary that opens), now the app's own white ring == */
+.tick:focus-visible, summary:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+/* a toast's button is nearly as tall as its toast, so its ring goes inside it, not out over the desk */
+.toast-act:focus-visible { outline-offset: -3px; }
+
+/* == the setup's picture of the week: today's day in the deeper teal the meal board uses for today on wood. The
+   board's teal read 4.51 to 1 on a Thursday's row, and lower down the wood's gradient (Friday and Saturday) 4.4
+   and 4.25; this reads 6.3, and 5.9 at the wood's darker end. (The rest of the picture's labels keep the wood's
+   own brown, #5A3E1E: 5.3 to 1 or more all the way down.) == */
+.onb-row.today .onb-day { color: #134440; }
+
+/* == a to-do that's late: the badge's red is the board's own block red (white on #C4553F read 4.45) == */
+.tile .badge.late { background: #B84A38; }
+
+/* == a step's shorter and longer buttons that can't be used: a darker mark, not one faded to 30 percent (it
+   read 2.6 to 1); white at half brightness passes 3 to 1 on the step's row and still reads as off == */
+.mini-btn:disabled canvas { opacity: 1; filter: brightness(0.5); }
+
+/* == focus rings on the wood ==
+   The meal board's days had their own dark ring (#252928), but a later rule for every focusable thing in the
+   corners turned it white, 2.0 to 1 on the light wood; it's the dark ring again */
+.c-meals .c-mcell:focus-visible { outline-color: var(--ring-dark); }
+/* a chip that floats on the desk (your circle, the Dev chip): its white ring sits out on the wood, where it
+   read 2.8 to 1, so a dark halo goes under it; white on the halo shows on light wood and on the desk at night */
+.k .c-me:focus-visible, .k .c-devchip:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; box-shadow: 0 0 0 7px var(--sf-ink), var(--sf-float) !important; }
+
+/* == a close mark that stays put while what's under it scrolls (Settings' x, and a panel's x beside the week): its
+   plate is the raised look made solid, so a light card scrolling under it never shows through. Through white at 6
+   percent, Settings' x read 2.98 to 1 over the Warm theme's card on The desk at Duo folded, and less over Light.
+   (On a phone a panel's x is Done in the sheet's solid header, sheet.css, which keeps its own.) == */
+#drawer-x, #side .side-x { background: linear-gradient(var(--sf-raised), var(--sf-raised)), var(--sf-solid); }
+#drawer-x:hover, #side .side-x:hover { background: linear-gradient(var(--sf-hover), var(--sf-hover)), var(--sf-solid); }

@@ -1,0 +1,166 @@
+/* == V11 frame (round two, Oct 14): the reset's frame on every screen, Look back, the step bar's marks,
+   and the way back to a fitted week. Loads after polish.css and before shell.css. == */
+
+/* == a sheet along the bottom on a tablet held upright ==
+   A tablet standing up (768, 820, 834 wide) had the 440 px panel on the left and the week shrunk to about
+   320 px beside it, with the step bar cut off. On a window under 980 wide that's taller than it's wide, the
+   reset is a sheet along the bottom, as on a phone, so the week keeps the whole width above it; the step bar
+   sits centered over the week, its names folded to the step you're on when they don't fit (variant.js
+   sheetMode and fitSteps, body.c-rsheet). */
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) {
+  body.c-resetting .rack.resetting { top: auto !important; left: 12px !important; right: 12px !important; bottom: 12px !important; width: auto !important; height: max(320px, min(58vh, calc(100vh - 560px))) !important; padding: 24px 24px 16px; }
+  body.c-resetting.c-panel-off .rack.resetting { transform: translateY(calc(100% + 30px)); }
+  body.c-resetting .c-steps { left: 50%; max-width: calc(100vw - 32px); }
+  body.c-resetting .k-chip.c-peek { top: auto; bottom: 12px; left: 12px; }
+}
+
+/* == a panel opened from a step, where the reset is a sheet: the panel takes the whole height and the sheet
+   steps aside until it closes (app.js layoutInsets sets body.c-sheet-aside and the panel's top and height) == */
+body.c-sheet-aside #rack, body.c-sheet-aside .c-steps, body.c-sheet-aside .c-peek { visibility: hidden; }
+/* the place panel stands where the sheet was, along the bottom, so the week and the landing spot stay above it */
+body.c-sheet-place #side { top: auto !important; bottom: 12px; left: 12px; right: 12px; width: auto; }
+
+/* the button that brings the sheet back points up, the way the sheet comes */
+body.c-rsheet .k-chip.c-peek canvas { transform: rotate(-90deg); }
+
+/* == a window from 760 to 1079 wide where the reset isn't a sheet (a small laptop, a tablet on its side): the
+   panel is 380 wide, so the week beside it stays about 480 or more; the step bar and the toasts center over
+   the week (a sheet's own rules above win) == */
+@media (min-width: 760px) and (max-width: 1079px) {
+  body.c-resetting .rack.resetting { width: 380px; padding-left: 20px; padding-right: 20px; }
+  .c-steps { left: calc(412px + (100vw - 412px) / 2); max-width: calc(100vw - 440px); }
+  body.c-resetting:not(.c-rsheet):not(.c-panel-off):not(.c-toasts-top) .toasts { left: calc(50% + 206px); }
+  body.c-resetting:not(.c-rsheet):not(.c-panel-off):not(.c-toasts-top) .toast { max-width: min(560px, calc(100vw - 460px)); }
+}
+
+/* == the frame's type, on the scale (12, 13, 14, 16, 19, 22, 26, 30): title 30 and line 16 (variant.css),
+   and 26 on the sheet == */
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { body.c-resetting .rack.resetting .reset-title { font-size: 26px; } }
+/* the intro's headline is the scale's largest size, and its close reaches 44 px to the touch */
+.k-sheet.c-intro .c-intro-h { font-size: 30px; line-height: 1.15; letter-spacing: -0.01em; }
+.k-sheet.c-intro .k-x::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+
+/* == the finish: a question in a row says all of itself, on two lines when it needs them == */
+.c-fin-ask .c-fin-name { white-space: normal; overflow: visible; text-overflow: clip; }
+
+/* == the step bar: a check for a step that's done, a ring for one you've opened, a number for one ahead,
+   and the finish as a quiet last stop == */
+.c-sbtn.seen .c-sdot { background: transparent; box-shadow: inset 0 0 0 2px var(--tx-2, #CDCDCD); color: var(--tx, #FFFFFF); }
+.k .c-sbtn.seen { color: var(--tx-2, #CDCDCD); }
+.c-sbtn.did .c-sdot { background: var(--tx, #FFFFFF); }
+.c-sline.end { width: 12px; }
+.k .c-sbtn.c-sfin { color: var(--tx-3, #AFAFAF); }
+.k .c-sbtn.c-sfin:hover { color: var(--tx, #FFFFFF); }
+.c-sfin .c-sdot { width: 16px; height: 16px; margin: 4px; background: transparent; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.32); }
+.c-sfin.on .c-sdot { width: 24px; height: 24px; margin: 0; background: var(--k-gold, #F2CF7A); box-shadow: none; }
+.k .c-sbtn.c-sfin.on { color: var(--tx, #FFFFFF); }
+.k .c-sbtn:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+/* the finish's wider panel (600) keeps the bar centered over the week beside it, clear of the panel */
+@media (min-width: 1400px) { body.c-resetting.c-step-done.c-finwide:not(.c-panel-off) .c-steps { left: calc(632px + (100vw - 632px) / 2); max-width: calc(100vw - 660px); } }
+/* folded (variant.js fitSteps, when the whole bar doesn't fit): only the step you're on says its name, and the
+   number stays centered in its dot */
+.c-steps.fold .c-sbtn:not(.on) .c-sname { display: none; }
+/* Larger text on the step bar: a size up in its own type (names 14, dots 28 with 13 in them) instead of the 1.14
+   zoom the other chips take (polish.css). Zoomed, its place across the top grew with it, and at 1440 the bar ran
+   off the right edge; at its own size it stays centered over the week, and fitSteps folds the names to the step
+   you're on when they don't fit (Oct 14, the polish pass) */
+body.big-text .k.k-chip.c-steps { zoom: 1; }
+body.big-text .k .c-sbtn { font-size: 14px; }
+body.big-text .c-sdot { width: 28px; height: 28px; font-size: 13px; }
+body.big-text .c-sdot canvas { width: 14px !important; height: 14px !important; }
+body.big-text .c-sfin .c-sdot { width: 18px; height: 18px; margin: 5px; }
+body.big-text .c-sfin.on .c-sdot { width: 28px; height: 28px; margin: 0; }
+
+/* == the way back to the whole week, once a pinch or + looked closer during the reset == */
+.k.c-fitchip { position: fixed; z-index: 45; top: 80px; right: 16px; display: none; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 12px; border-radius: 22px; font: 600 14px/1 var(--k-font); color: var(--tx, #FFFFFF); cursor: pointer; }
+body.c-resetting.c-deskzoomed .k.c-fitchip { display: inline-flex; }
+body.c-sheet-aside .k.c-fitchip, body.c-detail .k.c-fitchip { display: none; }
+.k.c-fitchip canvas { width: 14px !important; height: 14px !important; }
+.k.c-fitchip:active { transform: translateY(1px); }
+.k.c-fitchip:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+@media (max-width: 759px) { .k.c-fitchip { top: 12px; right: 12px; } }
+
+/* == Look back: last week in a card, two facts to a row in white, then the notes stacked == */
+body.c-resetting .rack.resetting .rack-body > .c-lb { flex: 1 1 100%; width: 100%; min-width: 0; }
+.c-lb { display: flex; flex-direction: column; gap: 12px; }
+.c-lb-card { min-width: 0; padding: 16px; border-radius: 18px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); }
+.c-lb-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.c-lb-h h3 { margin: 0; font: 600 16px/1.25 var(--name); color: var(--tx, #FFFFFF); }
+.c-lb-h span { flex: none; font: 500 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-lb-h.c-lb-hsmall { margin-bottom: 8px; font: 600 12px/1.3 var(--k-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--tx-3, #AFAFAF); }
+.c-lb-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.c-lb-facts.n1 { grid-template-columns: minmax(0, 1fr); }
+.c-lb-facts.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.c-lb-facts.n3 .c-lb-fact { padding: 12px 8px 12px 12px; }
+.c-lb-facts.n3 .c-lb-fact b { font-size: 22px; }
+.c-lb-card > .c-lb-open:first-child { margin-top: 0; padding-top: 0; }
+.c-lb-fact { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
+.c-lb-fact b { font: 700 26px/1.1 var(--name); color: var(--tx, #FFFFFF); }
+.c-lb-fact span { font: 500 13px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-lb-open { margin-top: 12px; }
+.c-lb-facts + .c-lb-open { padding-top: 4px; }
+.c-lb-sub { margin-bottom: 4px; font: 600 13px/1.3 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.rack .c-lb-row, .c-lb-row { display: flex; align-items: center; gap: 12px; width: calc(100% + 16px); min-height: 44px; margin: 0 -8px; padding: 8px; border: 0; border-radius: 10px; background: none; box-shadow: none; color: var(--tx, #FFFFFF); font: 400 14px/1.3 var(--k-font); text-align: left; cursor: pointer; }
+.c-lb-row:hover { background: var(--sf-hover); }
+.c-lb-row:active { background: var(--sf-press); transform: translateY(1px); }
+.c-lb-row:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: -2px; }
+.c-lb-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-lb-ring { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--tx-3, #AFAFAF); }
+.c-lb-more, .c-lb-quiet { margin: 4px 0 0; font: 400 13px/1.4 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.c-lb-quiet { margin: 0; color: var(--tx-2, #CDCDCD); font-size: 14px; }
+.c-lb-said p { margin: 4px 0 0; font: 400 14px/1.45 var(--k-font); color: var(--tx, #FFFFFF); overflow-wrap: anywhere; }
+.c-lb-said b { font-weight: 600; color: var(--tx-2, #CDCDCD); }
+.c-lb-notes { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.c-lb-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.c-lb-lab { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.c-lb-lab label { font: 600 14px/1.3 var(--k-font); color: var(--tx, #FFFFFF); }
+.c-lb-ok { font: 500 12px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+.rack .c-lb-field .input, .c-lb-field .input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--sf-raised); box-shadow: inset 0 0 0 1px var(--sf-edge); color: var(--tx, #FFFFFF); font: 400 16px/1.3 var(--k-font); }
+.c-lb-field .input::placeholder { color: var(--tx-4, #A2A2A6); }
+.c-lb-field .input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--tx-2, #CDCDCD); }
+.c-lb-hint { margin: 0; font: 400 13px/1.4 var(--k-font); color: var(--tx-3, #AFAFAF); }
+@media (prefers-reduced-motion: reduce) { .c-lb-row:active, .k.c-fitchip:active { transform: none; } }
+/* (the rituals walk) what you said, from whenever you said it: each note with Still true beside it, which
+   carries it to this week; one already carried says so, quietly */
+.c-lb-saidrow { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.c-lb-saidrow p { flex: 1; min-width: 0; margin: 0; }
+.rack .c-lb-still, .c-lb-still { position: relative; flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--sf-hover); color: var(--tx, #FFFFFF); font: 600 14px/1 var(--k-font); cursor: pointer; }
+.c-lb-still::after { content: ''; position: absolute; inset: -4px; }
+.rack .c-lb-still:hover, .c-lb-still:hover { background: var(--sf-press); }
+.rack .c-lb-still:active, .c-lb-still:active { transform: translateY(1px); }
+.c-lb-still:focus-visible { outline: 2px solid var(--k-gold, #F2CF7A); outline-offset: 2px; }
+.c-lb-carried { flex: none; font: 500 13px/1.3 var(--k-font); color: var(--tx-3, #AFAFAF); }
+/* the tag over the board while Look back shows last week, centered under the step bar, over the week */
+.k.c-weektag { position: fixed; z-index: 44; top: 76px; left: calc(472px + (100vw - 472px) / 2); transform: translateX(-50%); display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 18px; font: 600 14px/1 var(--k-font); color: var(--tx, #FFFFFF); white-space: nowrap; pointer-events: none; }
+.k.c-weektag[hidden] { display: none; }
+@media (min-width: 760px) and (max-width: 1079px) { .k.c-weektag { left: calc(412px + (100vw - 412px) / 2); } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { .k.c-weektag { left: 50%; } }
+@media (max-width: 759px) { .k.c-weektag { top: 10px; left: 50%; } }
+body.c-panel-off .k.c-weektag { left: 50%; }
+body.c-sheet-aside .k.c-weektag, body.c-detail .k.c-weektag, body.drawer-live .k.c-weektag, body.c-away .k.c-weektag { visibility: hidden; }
+/* Look back on a sheet: nothing to drag, so the sheet takes most of the height and the week above is a strip,
+   with the question in view as the step opens */
+@media (max-width: 759px) { body.c-resetting.c-step-back .rack.resetting { height: calc(100vh - 150px) !important; } }
+@media (min-width: 760px) and (max-width: 979px) and (orientation: portrait) { body.c-resetting.c-step-back .rack.resetting { height: max(320px, calc(100vh - 380px)) !important; } }
+@media (max-height: 639px) and (max-width: 979px) { body.c-resetting.c-rsheet.c-step-back .rack.resetting { height: calc(100vh - 96px) !important; } }
+
+/* == round three: a panel opened from a step where the reset is a sheet ==
+   On a tablet standing up (600 wide or more) the panel stands on the right, up to 420 wide, narrower on a small
+   tablet, and never under 380, where a to-do's step row (its time and its length) fits. The week stays where it
+   was, at its size, so its left part stays in view beside the panel. A phone keeps the whole width. The panel's
+   top and height come from app.js (layoutInsets, asideBox): clear of the screen's safe edges, and only as tall
+   as what's in it. The place panel along the bottom and a block's own mat keep their own places. */
+@media (min-width: 600px) {
+  body.c-sheet-aside:not(.c-sheet-place):not(.c-detail) #side { left: auto !important; right: 12px !important; width: min(420px, max(380px, calc(100vw - 280px))) !important; }
+}
+/* Bigger text draws toasts 1.14 times bigger, so on a narrow screen they're held to the screen's width as drawn */
+@media (max-width: 759px) {
+  body.big-text #toasts, body.big-text #toasts .toast { max-width: calc((100vw - 32px) / 1.14); }
+}
+/* while a panel is open in the reset its toasts never land on it (app.js placePanelToasts): in the middle of the
+   room beside it, or under it at the foot of the screen with the panel lifted over them while they show */
+body.c-toasts-side #toasts { left: var(--toast-x, 50%) !important; width: max-content; }
+body.c-toasts-side #toasts .toast { max-width: min(560px, var(--toast-room, calc(100vw - 32px))); }
+
+/* == This week's plan's close reaches 44 px to the touch, as the intro's does == */
+.k-sheet.c-plan .k-x::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; }

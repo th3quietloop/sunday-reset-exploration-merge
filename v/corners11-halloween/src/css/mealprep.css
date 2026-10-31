@@ -1,0 +1,97 @@
+/* == V11 goals: cook once, eat twice (Oct 14) ==
+   From Russell's brother: "Sunday you make rice and chicken for Monday, Tuesday, but then Wednesday you make
+   this." A meal's card covers later meals with its leftovers (Cook extra for), a leftover says the meal it
+   comes from, the week's batch cooks sit under the board with their Meal prep blocks, a prep week shows dashed
+   on the board before it's used, and the reset's Meals step offers one. On the one surface (polish.css): white
+   fill for what's on, gold only for Use this plan, the bar's one call to action. Words measured in the
+   browser: on a batch cook's row (#674C3C), white 7.9 to 1, #CDCDCD 4.9, Take it off's #E9D4B8 5.5; the kicker
+   on the leather (#5B3E2C) 6.7; on the paler wood of a dashed idea (#E0C49A), #4A3418 7.0. */
+
+/* == a meal's card: the meals it covers, a row for each meal and a column for each of the next four days ==
+   White fill on the ones it covers, an outline on the ones it could, as Also on; a meal it can't cover (one
+   with another meal, one that's over, a day away) is a quiet dotted space, so the days stay in their columns */
+.c-xgrid { display: grid; grid-template-columns: 52px repeat(4, minmax(0, 1fr)); gap: 8px; align-items: center; }
+.c-xrow { font: 600 13px/1.2 var(--k-font); color: var(--tx-2); }
+.k .c-xgrid .c-opt, .c-xgrid .c-opt { justify-content: center; min-width: 0; padding: 0 4px; }
+.c-xnone { height: 36px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.08); background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 4px, transparent 4px 8px); }
+@media (max-width: 759px), (pointer: coarse) { .c-xnone { height: 44px; } }
+/* it says which day it is and why it can't be covered (variant.js noCover): the day as the buttons have it, and under
+   it the meal that's there by name, Over, Away, This one, or No room, cut to the cell. #CDCDCD and #AFAFAF on the
+   dotted space pass 4.5 to 1 (Oct 14: it was a blank box) */
+.c-xnone { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden; }
+.c-xnone-in { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; max-width: 100%; padding: 0 4px; }
+.c-xnone-in b { font: 600 13px/1.1 var(--k-font); color: var(--tx-2, #CDCDCD); }
+.c-xnone-in small { max-width: 100%; font: 500 12px/1.15 var(--k-font); color: var(--tx-3, #AFAFAF); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-mpop .c-xsay { margin-top: -4px; }
+/* on the board, a leftover's line says the meal it comes from in full, on a second line where the day is narrow
+   (a phone's column), never cut to "From Thu dinne" */
+.c-meals .c-mcell .c-dblock.c-leftover small { white-space: normal; line-height: 1.2; }
+/* leftovers: the meal they come from, and the way to it */
+.c-xfrom { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.c-xfrom-words { min-width: 0; flex: 1 1 160px; font: 500 14px/1.4 var(--k-font); color: var(--tx-2); overflow-wrap: anywhere; }
+.k .c-opt.c-xgo, .c-opt.c-xgo { flex: none; }
+
+/* == a prep week to look at: its meals dashed in the open days, the batch cook saying how many meals it makes,
+   its leftovers saying where they come from. A preview, not buttons == */
+.c-meals .c-mcell.c-inplan { cursor: default; }
+.c-prop.c-prepprop { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; cursor: default; }
+.c-prop.c-prepprop:hover { background: color-mix(in srgb, var(--b) 16%, rgba(255, 248, 235, 0.6)); }
+.c-prop.c-prepprop small { font: 600 12px/1.2 var(--k-font); color: #4A3418; }
+/* the bar over the board while it shows: what it does on the left, Clear and Use this plan on the right, the
+   Meal prep block's toggle under it */
+.c-sugbar.c-prepbar .c-prepwords { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.c-sugbar.c-prepbar .c-prepwords p { margin: 0; font: 500 14px/1.45 var(--k-font); color: var(--tx); }
+.c-sugbar.c-prepbar .c-prepwords .c-kick { margin: 0; }
+.c-sugbar.c-prepbar .c-prepwords .c-have { margin-top: 8px; }
+/* Use this plan sits level with the Meal prep toggle, the last thing it's about */
+.c-sugbar.c-prepbar .c-sugline { align-items: flex-end; }
+.k .c-opt.c-preptog, .c-opt.c-preptog { min-height: 44px; }
+.c-opt.c-preptog canvas { width: 14px !important; height: 14px !important; }
+.c-sugbar.c-prepbar .c-sugbtns .c-opt, .c-sugbar.c-prepbar .c-keepall { min-height: 44px; }
+.c-prepbtn canvas { width: 14px !important; height: 14px !important; }
+
+/* == the week's batch cooks, under the board: a raised row each, its Meal prep block or the way to add one == */
+.c-prep { display: flex; flex-direction: column; gap: 8px; flex: none; }
+.c-prep[hidden] { display: none; }
+.c-prep > .c-kick { margin: 4px 0 0; }
+.c-prep-row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 8px 8px 16px; border-radius: 14px; background: rgba(255, 255, 255, 0.08); color: var(--tx); }
+.c-prep-row > canvas:first-child { flex: none; width: 20px !important; height: 20px !important; }
+.c-prep-words { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-prep-words b { font: 700 16px/1.25 'Gabarito', var(--k-font); overflow-wrap: anywhere; }
+.c-prep-words span { font: 500 13px/1.3 var(--k-font); color: var(--tx-2); }
+.c-prep-on { flex: none; display: inline-flex; align-items: center; gap: 8px; font: 600 13px var(--k-font); color: var(--tx); white-space: nowrap; }
+.c-prep-on canvas { width: 14px !important; height: 14px !important; }
+.k .c-prep-add, .c-prep-add { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.c-prep-add canvas { width: 14px !important; height: 14px !important; }
+.k .c-mpop-off.c-prep-off, .c-mpop-off.c-prep-off { flex: none; margin-right: 0; }
+/* on a phone a row's words take the width, and what it does sits under them */
+@media (max-width: 599px) {
+  .c-prep-row { flex-wrap: wrap; row-gap: 8px; padding: 12px 12px 12px 16px; }
+  .c-prep-words { flex-basis: calc(100% - 32px); }
+  .c-prep-on { margin-left: 32px; }
+  .k .c-prep-add, .c-prep-add { margin-left: 32px; }
+  .k .c-mpop-off.c-prep-off, .c-mpop-off.c-prep-off { margin-left: auto; }
+}
+
+/* == a Meal prep block's panel: what it makes, each meal a row that opens its card on the meal board == */
+#side .c-prep-make, .c-prep-make { width: 100%; min-height: 48px; border: 0; color: var(--tx); text-align: left; font: 600 14px var(--k-font, var(--font)); cursor: pointer; transition: background-color 0.12s ease-out; }
+#side .c-prep-make:hover, .c-prep-make:hover { background: var(--sf-hover); }
+#side .c-prep-make:active, .c-prep-make:active { background: var(--sf-press); transform: translateY(1px); }
+#side .c-prep-make:focus-visible, .c-prep-make:focus-visible { outline: 2.5px solid #FFFFFF; outline-offset: 2px; }
+#side .c-prep-make small, .c-prep-make small { color: var(--tx-2); font: 500 13px var(--k-font, var(--font)); }
+#side .c-prep-make canvas, .c-prep-make canvas { flex: none; width: 18px !important; height: 18px !important; }
+#side .c-prep-make canvas:last-child, .c-prep-make canvas:last-child { width: 14px !important; height: 14px !important; }
+
+/* == the reset's Meals step: Same as last week and Plan a prep week, side by side, wrapping when narrow == */
+.c-ms-acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.k .c-ms-prep, .c-ms-prep { display: inline-flex; align-items: center; gap: 8px; }
+.c-ms-prep canvas { width: 14px !important; height: 14px !important; }
+.c-ms-head:has(.c-ms-acts) { flex-wrap: wrap; }
+
+/* calmer motion: nothing here slides or grows, it's there (a meal that lands on the board, covered by Cook
+   extra or a prep week, too) */
+body.calm .c-meals .c-land { animation: none; }
+body.calm .c-prep-row, body.calm .c-prep-add, body.calm .c-xgo, body.calm .c-prep-make { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .c-prep-row, .c-prep-add, .c-xgo, .c-prep-make { transition: none; }
+}
