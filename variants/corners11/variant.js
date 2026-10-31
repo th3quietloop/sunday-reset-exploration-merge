@@ -52,6 +52,8 @@
     /* V11 feel: whether the pieces on top may move (Calmer motion and the system's reduced motion keep them still) */
     const feelOn = () => !SR.view.calm && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
     const FOUT = 'cubic-bezier(0.16, 1, 0.3, 1)', FIN = 'cubic-bezier(0.4, 0, 1, 1)';
+    /* V11 Halloween (Stageshow, D1 and D2): the Halloween page's own motion (counts roll, switches slide), from app.js */
+    const HWM = document.body.classList.contains('v-corners11-halloween') && !!SR.hwRoll;
     /* this device's own things (meals, routines, the rack, reminders): a Dev board or any preview never writes them */
     const keep = (k, v) => { if (SR.view.preview) return; try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch (e) { /* storage off */ } };
     const stored = (k, fb) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? fb : v; } catch (e) { return fb; } };
@@ -450,6 +452,8 @@
       const dots = h('div', 'c-tdots');
       const presets = h('div', 'k-seg c-tpre');
       [[25, 5], [50, 10]].forEach(([w, r]) => { const b = Kit.btn('', w + ' and ' + r, () => setLens(w, r)); b.dataset.w = w; b.dataset.r = r; presets.appendChild(b); });
+      /* (V11 Halloween, Stageshow D2: its white slides between the two) */
+      if (HWM) SR.hwSlide(presets);
       const own = h('div', 'c-town');
       const step = (label, key, d) => { const b = Kit.btn('c-tstep', '', () => setLens(Math.max(5, Math.min(90, pom.work + (key === 'work' ? d : 0))), Math.max(5, Math.min(30, pom.rest + (key === 'rest' ? d : 0))))); b.setAttribute('aria-label', (d > 0 ? 'Longer ' : 'Shorter ') + key); b.appendChild(SR.icon(label === '+' ? 'plus' : 'minus', 7, CREAM)); return b; };
       const wv = h('span', 'c-tv'), rv = h('span', 'c-tv');
@@ -1710,7 +1714,8 @@
           const n = Math.ceil(dt * 240), hh = dt / n;
           for (let i = 0; i < n; i++) { sw.v += (-101 * (sw.x - lean) - 7.24 * sw.v + 0.145 * acc) * hh; sw.x += sw.v * hh; }
           if (!Number.isFinite(sw.x) || !Number.isFinite(sw.v)) { sw.x = 0; sw.v = 0; }
-          ghost.style.rotate = (-2 + 12 * Math.tanh(sw.x / 12)).toFixed(2) + 'deg';
+          /* (V11 Halloween, Russell's call on the Stageshow audit: a softer cap, 7 degrees) */
+          ghost.style.rotate = (HWM ? -2 + 7 * Math.tanh(sw.x / 7) : -2 + 12 * Math.tanh(sw.x / 12)).toFixed(2) + 'deg';
           sw.raf = requestAnimationFrame(swing);
         };
         const move = (ev) => {
@@ -2704,6 +2709,8 @@
         leaveBtn.setAttribute('aria-expanded', 'false');
         const searchRow = h('div', 'c-libsearch'); searchRow.append(findForm, leaveBtn);
         const forRow = h('div', 'k-seg c-for'); forRow.setAttribute('role', 'group'); forRow.setAttribute('aria-label', 'Show first the meals for');
+        /* (V11 Halloween, Stageshow D2: its white slides to the meal picked, across redraws of its buttons) */
+        if (HWM) SR.hwSlide(forRow);
         const leave = h('div', 'c-leave'); leave.hidden = true;
         libHead.append(searchRow, forRow, leave);
         const lib = h('div', 'c-tray c-lib');
@@ -4762,6 +4769,7 @@
     }
     function drawStackBar() {
       const b = SR.view.bench, on = !!(b && b.tab === 'todo') && !SR.view.reset && !mat && !dock;
+      const shown = !stackBar.hidden;
       stackBar.hidden = !on;
       if (!on) return;
       const level = b.level || 'soon';
@@ -4770,6 +4778,7 @@
       const kids = stacks.map(([id, name, n]) => {
         const x = Kit.btn('c-stack' + (id === level ? ' on' : ''), name, () => { layOut('todo', id); });
         if (n) x.appendChild(h('span', 'c-sn', capN(n)));
+        if (HWM) x.dataset.hwStack = id;
         x.setAttribute('aria-pressed', String(id === level));
         return x;
       });
@@ -4787,6 +4796,23 @@
       const close = Kit.btn('c-stack c-stackx', '', () => { SR.view.bench = null; snd('slide'); SR.render(); }, 'x'); close.setAttribute('aria-label', 'Put the to-dos away');
       kids.push(close);
       stackBar.replaceChildren(...kids);
+      if (HWM) rollStacks(kids, shown);
+    }
+
+    /* V11 Halloween (Stageshow, D1): a stack's count that changes while the strip is up rolls. The strip is drawn anew on
+       every redraw, so each stack keeps the number it last showed and when its roll began, and a redraw mid roll picks
+       the roll up where it was */
+    const stackRolls = new Map();
+    function rollStacks(kids, shown) {
+      const now = performance.now();
+      kids.forEach((x) => {
+        const id = x.dataset && x.dataset.hwStack;
+        if (!id) return;
+        const sn = x.querySelector('.c-sn'), to = sn ? sn.textContent : '', was = stackRolls.get(id);
+        if (!shown || !was) { stackRolls.set(id, { to, from: '', at: 0 }); return; }
+        if (was.to !== to) { stackRolls.set(id, { to, from: was.to, at: now }); if (sn && was.to) { sn.textContent = was.to; SR.hwRoll(sn, to); } return; }
+        if (sn && was.from && now - was.at < SR.hwRollSpan(to.length + 1)) { sn.textContent = was.from; SR.hwRoll(sn, to, { elapsed: now - was.at }); }
+      });
     }
 
     /* == V5: kinds of day, one tap each, under the date in the day view == */
@@ -6542,7 +6568,9 @@
       bl.hidden = !running;
       /* V11: what's due in the next 7 days, the count its list in To-dos, the strip, and the desk use, and
          never wider than 99+ */
-      const dl = dueWeek(), n = dl.length; due.textContent = n ? capN(n) : '';
+      const dl = dueWeek(), n = dl.length;
+      /* (V11 Halloween, Stageshow D1: the count rolls to its new number) */
+      if (HWM) SR.hwRoll(due, n ? capN(n) : ''); else due.textContent = n ? capN(n) : '';
       /* V11: what was due before today is said as that, not as due in the next 7 days */
       const was = dl.filter((x) => x.task.due < SR.today).length, ahead = n - was;
       const dueSaid = [ahead ? ahead + ' due in the next 7 days' : '', was ? was + ' due before today' : ''].filter(Boolean).join(', ');
@@ -6647,7 +6675,9 @@
     /* the zoom switch: its white slides to the one you picked */
     {
       const seg = tr.querySelector('.k-seg');
-      if (seg) {
+      /* (V11 Halloween, Stageshow D2: the shared slide, 200 ms on one curve, turning from where it is) */
+      if (seg && HWM) SR.hwSlide(seg);
+      if (seg && !HWM) {
         seg.classList.add('c-slide');
         const pill = h('i', 'c-segpill'); pill.setAttribute('aria-hidden', 'true');
         seg.prepend(pill);
@@ -6689,6 +6719,8 @@
     {
       let lastN = due.textContent;
       Kit.renders.push(() => {
+        /* (V11 Halloween, Stageshow D1: it rolls instead, and holds, with no pop) */
+        if (HWM) return;
         const n = due.textContent, was = lastN;
         if (n === was) return;
         lastN = n;

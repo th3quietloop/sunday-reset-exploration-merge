@@ -1630,10 +1630,12 @@
     buildDayLanes(dayb.group);
   }
 
-  function dayHeaderTexture(sp) {
+  function dayHeaderTexture(sp, roll) {
     /* drawn at the plank's own shape, so a narrower board never stretches its words */
     const H = 170, W = Math.round(H * (DAY_BOX.x1 - DAY_BOX.x0 - 1.4) / 1.28);
-    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    /* (V11 Halloween, Stageshow D1: a roll draws each of its frames on one canvas of its own) */
+    const cv = roll && roll.cv && roll.cv.width === W ? roll.cv : document.createElement('canvas'); cv.width = W; cv.height = H;
+    if (roll) roll.cv = cv;
     const g = cv.getContext('2d');
     g.fillStyle = '#F4E8D2'; rr(g, 4, 4, W - 8, H - 8, 40); g.fill();
     g.textBaseline = 'middle'; g.textAlign = 'left';
@@ -1671,15 +1673,135 @@
       wide.t = cut;
       wide.w = g.measureText(wide.t).width;
     }
+    /* (V11 Halloween, Stageshow D1: mid roll, a fact whose number is changing takes the width it has at this moment, and
+       prints its changing digits in their slots; one cut short to fit prints as it will end) */
+    if (roll) bits.forEach((it) => { const i = (sp.bits || []).indexOf(it.b), f = roll.from[i], r = f && it.t === said(it.b) ? rollPair(said(f), it.t) : null; if (r) { it.r = r; it.w = rollText(g, r, 0, 0, roll.t, fs, false); } });
     let bx = W - 56 - total();
     for (const it of bits) {
       const c = it.b.color || '#4A3A2A';
       g.fillStyle = c;
       Icons.draw(g, it.b.icon || 'star', bx + 22 * fk, 88, 46 * fk, c);
-      g.fillText(it.t, bx + ICON, 90);
+      if (it.r) rollText(g, it.r, bx + ICON, 90, roll.t, fs, true);
+      else g.fillText(it.t, bx + ICON, 90);
       bx += ICON + it.w + GAP;
     }
-    return canvasTex(cv);
+    return roll ? null : canvasTex(cv);
+  }
+  /* V11 Halloween (Stageshow, D1): when a block lands or is stretched and a number in the day's header changes ("4.5 h
+     to yourself" to "6.5 h to yourself"), the number rolls a beat after the landing (250 ms after the contact), so the
+     time is seen to move, not only the block. The words either side stay still; each digit that changed slides in a
+     clipped slot, the old one up and out and the new one in from below, the last digit first, 300 ms each, 60 ms
+     apart, on the same curve as the counts on the page. Then it holds. Calmer motion and reduced motion: no roll. */
+  const ROLL_S = 0.3, ROLL_GAP = 0.06, ROLL_BEAT = 0.25, ROLL_WAIT = 0.6;
+  const numParts = (t) => { const m = /^(.*?)(\d+(?:\.\d+)?)(.*)$/.exec(t || ''); return m ? { pre: m[1], num: m[2], post: m[3] } : null; };
+  /* null when the words are the same, false when they changed some other way, else the number's two values */
+  function rollPair(a, b) {
+    if (a === b) return null;
+    const x = numParts(a), y = numParts(b);
+    return x && y && x.pre === y.pre && x.post === y.post && x.num !== y.num ? { pre: y.pre, post: y.post, from: x.num, to: y.num } : false;
+  }
+  /* cubic-bezier(0.45, 0, 0.1, 1), the page's curve for counts and switches */
+  function rollEase(k) {
+    if (k <= 0) return 0;
+    if (k >= 1) return 1;
+    const bx = (u) => 3 * u * (1 - u) * (1 - u) * 0.45 + 3 * u * u * (1 - u) * 0.1 + u * u * u;
+    const by = (u) => 3 * u * u * (1 - u) + u * u * u;
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (bx(mid) < k) lo = mid; else hi = mid; }
+    return by((lo + hi) / 2);
+  }
+  /* the two numbers lined up on their point, so 3 to 3.5 keeps its 3 still and opens a slot for the half */
+  const rollAlign = (r) => {
+    const [xi, xf = ''] = r.from.split('.'), [yi, yf = ''] = r.to.split('.'), I = Math.max(xi.length, yi.length), F = Math.max(xf.length, yf.length);
+    const lay = (i, f) => i.padStart(I, ' ') + (F ? (f ? '.' + f : '').padEnd(F + 1, ' ') : '');
+    return [lay(xi, xf), lay(yi, yf)];
+  };
+  const rollLen = (r) => { const [a, b] = rollAlign(r); let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+  /* a fact's words with its number t seconds into its roll, at x (baseline middle); draw false only measures. Returns its width */
+  function rollText(g, r, x, y, t, fs, draw) {
+    const [a, b] = rollAlign(r), L = a.length;
+    const n = rollLen(r), lh = fs * 1.12, wOf = (c) => (c === ' ' ? 0 : g.measureText(c).width);
+    let at = x, k = 0;
+    if (draw) g.fillText(r.pre, at, y);
+    at += g.measureText(r.pre).width;
+    for (let i = 0; i < L; i++) {
+      const oa = a[i], ob = b[i];
+      if (oa === ob) { if (draw) g.fillText(ob, at, y); at += wOf(ob); continue; }
+      /* the last digit first: the slot furthest right starts at 0, each one to its left a gap later */
+      const e = rollEase((t - (n - 1 - k) * ROLL_GAP) / ROLL_S); k++;
+      const sw = wOf(oa) + (wOf(ob) - wOf(oa)) * e;
+      if (draw) {
+        g.save(); g.beginPath(); g.rect(at, y - lh / 2, Math.max(0.5, sw), lh); g.clip();
+        if (oa !== ' ') g.fillText(oa, at, y - e * lh);
+        if (ob !== ' ') g.fillText(ob, at, y + (1 - e) * lh);
+        g.restore();
+      }
+      at += sw;
+    }
+    if (draw) g.fillText(r.post, at, y);
+    at += g.measureText(r.post).width;
+    return at - x;
+  }
+  /* the roll waiting for its landing, or running: its words before and after, when it was asked for, and its canvas */
+  const headRoll = { job: null, clock: 0, contact: -9 };
+  const rollable = (a, b) => {
+    if (!a || !b || a.date !== b.date || a.title !== b.title || a.today !== b.today) return false;
+    const x = a.bits || [], y = b.bits || [];
+    if (x.length !== y.length) return false;
+    let any = false;
+    for (let i = 0; i < x.length; i++) {
+      if (x[i].icon !== y[i].icon || x[i].color !== y[i].color) return false;
+      const r = rollPair(x[i].text, y[i].text), q = rollPair(x[i].short || x[i].text, y[i].short || y[i].text);
+      if (r === false || q === false) return false;
+      if (r) any = true;
+    }
+    return any;
+  };
+  /* the header shows sp: at once, or rolled to from what it shows now */
+  function headerTo(sp) {
+    const j = headRoll.job;
+    /* what the plank shows now: a roll still waiting for its landing shows its old words; one under way ends first */
+    const was = j && j.start == null ? j.fromSp : dayb.hwShown;
+    const show = (to) => { const old = dayb.header.material.map; dayb.header.material.map = dayHeaderTexture(to); dayb.header.material.needsUpdate = true; if (old) old.dispose(); };
+    dayb.hwShown = sp;
+    if (j) { headRoll.job = null; if (j.tex && dayb.header.material.map !== j.tex) j.tex.dispose(); }
+    if (HW && !reduced && rollable(was, sp)) {
+      if (j && j.start != null) show(j.to);
+      headRoll.job = { fromSp: was, from: was.bits, to: sp, asked: headRoll.clock, start: null, t: 0, cv: null, tex: null };
+      return;
+    }
+    show(sp);
+  }
+  /* each frame: wait for the landing (or a moment, for a change that didn't land), then roll, then hold the new words */
+  function stepHeadRoll(dt) {
+    headRoll.clock += dt;
+    const j = headRoll.job;
+    if (!j) return;
+    if (!dayb.header || !dayb.date) { headRoll.job = null; return; }
+    moving = true;
+    if (j.start == null) {
+      if (headRoll.contact >= j.asked - 0.3) j.start = Math.max(headRoll.clock, headRoll.contact + ROLL_BEAT);
+      else if (headRoll.clock - j.asked > ROLL_WAIT) j.start = headRoll.clock;
+      else return;
+    }
+    if (headRoll.clock < j.start) return;
+    j.t = headRoll.clock - j.start;
+    const n = Math.max(1, ...j.to.bits.map((b, i) => { const r = rollPair(j.from[i] && j.from[i].text, b.text); return r ? rollLen(r) : 1; }));
+    if (j.t >= ROLL_S + (n - 1) * ROLL_GAP) {
+      headRoll.job = null;
+      const old = dayb.header.material.map;
+      dayb.header.material.map = dayHeaderTexture(j.to); dayb.header.material.needsUpdate = true;
+      if (old) old.dispose();
+      if (j.tex && j.tex !== old) j.tex.dispose();
+      return;
+    }
+    dayHeaderTexture(j.to, j);
+    if (!j.tex || j.tex.image !== j.cv) {
+      const old = dayb.header.material.map;
+      j.tex = canvasTex(j.cv);
+      dayb.header.material.map = j.tex; dayb.header.material.needsUpdate = true;
+      if (old) old.dispose();
+    } else j.tex.needsUpdate = true;
   }
   /* Lane names are printed on the wood like the ruler, so nothing that can't move looks like a block. */
   function laneLabelTexture(l) {
@@ -1785,9 +1907,13 @@
     const hs = JSON.stringify([sp.title, sp.bits, sp.today]);
     if (hs !== dayb.headerSig) {
       dayb.headerSig = hs;
-      const old = dayb.header.material.map;
-      dayb.header.material.map = dayHeaderTexture(sp); dayb.header.material.needsUpdate = true;
-      if (old) old.dispose();
+      /* (V11 Halloween, Stageshow D1: a number that changed on the same day rolls to its new value, headerTo) */
+      if (HW) headerTo(sp);
+      else {
+        const old = dayb.header.material.map;
+        dayb.header.material.map = dayHeaderTexture(sp); dayb.header.material.needsUpdate = true;
+        if (old) old.dispose();
+      }
     }
     const seen = new Set();
     /* feel: as in the week, pieces of a cut block keep their bricks, and nothing flies in under your hand */
@@ -3941,6 +4067,8 @@
      said now, at the touch, not when it was let go. */
   function touchDown(m, f) {
     const u = m.userData, fx = f.fx;
+    /* (V11 Halloween, Stageshow D1: the day's header rolls a beat after this) */
+    if (HW) headRoll.contact = headRoll.clock;
     /* V11, lift and place: the squash by its length and how fast it came down; a ring of dust and the
        neighbours' knock only on the board in view (its copy on the other board settles quietly) */
     if (FEEL && fx && fx.kind !== 'tap') u.sq = { t: 0, amp: squashFor(fx.size, fx.speed || f.speed), hand: true };
@@ -3959,7 +4087,9 @@
       if (Math.abs(sp) > 0.06) u.rock = { x: 0, v: -sp * 1.4 };
     }
     const seen = !FEEL || inView(m);
-    if (seen) { if (FEEL) { ringAt(m); flecks(m); } else dust(m, fx.played ? 3 : 7); }
+    /* (V11 Halloween, Russell's call on the Stageshow audit: no ring of dust, the one part that read as a game effect;
+       the squash, the chips, and the knock stay) */
+    if (seen) { if (FEEL) { if (!HW) ringAt(m); flecks(m); } else dust(m, fx.played ? 3 : 7); }
     if (!fx.played && seen) { fx.played = true; feelSay(fx.kind || 'land', fx.size, fx.speed || f.speed); knockAround(m); }
   }
   /* the blocks either side of one that landed hop a little, the nearest first and most */
@@ -4179,7 +4309,10 @@
     const was = g.visible && u.on;
     if (!u.to) { u.to = new T.Vector3(); u.v = new T.Vector3(); u.op = 0; }
     u.to.set(x, y, z); u.sx = sx; u.sz = sz; u.on = true;
-    if (!was || reduced) { g.position.set(x, y, z); g.scale.set(sx, sz, 1); u.v.set(0, 0, 0); u.snap = true; }
+    /* (V11 Halloween, Russell's call on the Stageshow audit: on the week, where slots are small, the outline jumps from
+       slot to slot instead of gliding, so it never looks unsure of where it's going; it still fades in the first time.
+       The day keeps its glide) */
+    if (!was || reduced || (HW && g === drag.ghost)) { g.position.set(x, y, z); g.scale.set(sx, sz, 1); u.v.set(0, 0, 0); u.snap = true; }
     if (reduced) u.op = 1;
     g.material.opacity = u.op;
     g.visible = true;
@@ -4378,6 +4511,8 @@
         for (let i = feelQueue.length - 1; i >= 0; i--) if (now >= feelQueue[i].at) { const q = feelQueue.splice(i, 1)[0]; feelSay(q.kind, q.a); }
       }
       stepRings(dt);
+      /* (V11 Halloween, Stageshow D1: the day's header rolls its changed number, and keeps the desk drawing while it does) */
+      if (HW) stepHeadRoll(dt);
       /* V11: nothing on the desk keeps a number that isn't one into the frame it's drawn in */
       watchBlocks();
       watchBoards();
@@ -4788,6 +4923,9 @@
     middle: {},
     bolder: { lift: { week: 1.8, day: 2.1, mini: 1.0, desk: 1.9 }, size: { mouse: 1.18, touch: 1.26 }, g: 30000, zeta: 0.32, capRoll: 16, capPitch: 11, capYaw: 8, speedLeanMax: 4 }
   };
+  /* V11 Halloween (Russell's call on the Stageshow audit): the swing's soft caps come down from 14, 9, and 7 degrees to
+     8, 5, and 4, so a normal stop still swings (about 5 degrees) and a flick no longer reads as loose */
+  if (HW) Object.assign(HAND_TUNE, { capRoll: 8, capPitch: 5, capYaw: 4 });
   const HAND_BASE = JSON.parse(JSON.stringify(HAND_TUNE));
   root.HAND_TUNE = HAND_TUNE;
   let handPresetName = 'middle';
@@ -5491,7 +5629,7 @@
   }
   function squash(date, bkey, amp) {
     /* V11, lift and place: amp, a settle of that size only (a stretch let go: 0.03), with no dust or knock */
-    if (FEEL && amp) { if (!reduced) blockMeshes(date, bkey).forEach((m) => { if (m.visible) m.userData.sq = { t: 0, amp, dur: 0.16 }; }); return; }
+    if (FEEL && amp) { if (HW) headRoll.contact = headRoll.clock; if (!reduced) blockMeshes(date, bkey).forEach((m) => { if (m.visible) m.userData.sq = { t: 0, amp, dur: 0.16 }; }); return; }
     /* feel: a landing, with its knock, its dust, and no sound of its own (whoever asked plays one) */
     if (FEEL) { land(date, bkey, null); return; }
     blockMeshes(date, bkey).forEach((m) => {
@@ -5937,7 +6075,7 @@
     get userZoom() { return user.zoomTo; }, get focused() { return !!focus.pt; },
     xOf, minOf, rowZ, BOARD_Y, BLOCK_D, H_HARD, DB_HMUL,
     get layout() { return layout; }, get camera() { return camera; }, get busy() { return pops.length > 0 || tileMotions.size > 0; },
-    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size }, repairs: { count: repairs.count, list: repairs.list.slice() }, hand, handShadow, falls, vapors, drag, user }; },
+    get debug() { return { week, month, year, dayb, bench, pops, cam, camTo, holds, TF, WEEK_BOX, DAY_BOX, motion: { direction: navigationDirection, active: tileMotions.size }, repairs: { count: repairs.count, list: repairs.list.slice() }, hand, handShadow, falls, vapors, drag, user, headRoll }; },
     get hours() { return { start: RAIL0, end: RAIL1 }; },
     get benchOn() { return benchOn; },
     /* V11: the bench's close framing, for checking by hand: wanted, how close, where it is now, in hand */

@@ -1,0 +1,28 @@
+/* == V11 Halloween: the desk's motion (Stageshow D1 and D2) ==
+   Only the Halloween page (body.v-corners11-halloween) reads these; V11-2 loads the file and matches none of it. */
+
+/* D1: a count that changes while you watch rolls (rollCount in app.js). Each character sits in a slot of its own,
+   clipped to one line, so a digit that changed slides up and out while the new one comes in from below, and the
+   digits that stayed are still. The badge keeps its size and its place in the button while it rolls. */
+.v-corners11-halloween .hw-rolling { display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.v-corners11-halloween .hw-rolling > .hw-slot { display: inline-block; position: relative; overflow: hidden; height: 1.2em; line-height: 1.2em; vertical-align: top; white-space: pre; }
+.v-corners11-halloween .hw-rolling .hw-new { display: inline-block; }
+.v-corners11-halloween .hw-rolling .hw-old { position: absolute; left: 0; top: 0; }
+.v-corners11-halloween .hw-rolling .hw-old.hw-alone { position: static; display: inline-block; }
+
+/* D2: a switch's white fill slides to the one you picked (slidePill in app.js). The fill is one piece under the
+   buttons; the picked button lets it show through, and keeps it under the pointer. */
+.v-corners11-halloween .hw-slide { position: relative; isolation: isolate; }
+.v-corners11-halloween .hw-slide > .hw-pill { position: absolute; z-index: -1; left: 0; top: 0; width: 0; height: 0; background: var(--cream, #FFFFFF); pointer-events: none; opacity: 0; }
+.v-corners11-halloween .hw-slide > button[aria-pressed="true"],
+.v-corners11-halloween .hw-slide > button[aria-pressed="true"]:hover { background: transparent; }
+.v-corners11-halloween .hw-slide > button[aria-pressed="true"]:hover { color: var(--sf-ink, #2A2A28); }
+/* the labels swap as the fill arrives: the one it leaves takes its light ink at once, the one it goes to takes its dark
+   ink as the fill gets there (100 ms into 200, when the curve has carried it most of the way) */
+.v-corners11-halloween .hw-slide > button { transition: color 0.08s linear, transform 0.16s var(--f-out, ease-out); }
+.v-corners11-halloween .hw-slide > button[aria-pressed="true"] { transition: color 0.08s linear 0.1s, transform 0.16s var(--f-out, ease-out); }
+/* Calmer motion and reduced motion: the fill moves at once (slidePill doesn't animate it) and the labels swap with it */
+body.calm.v-corners11-halloween .hw-slide > button { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .v-corners11-halloween .hw-slide > button { transition: none; }
+}
